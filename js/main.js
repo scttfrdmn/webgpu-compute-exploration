@@ -4,6 +4,9 @@ import { runMatrixMultiplication } from './examples/matrix-multiplication.js';
 import { runImageBlur } from './examples/image-blur.js';
 import { initGameOfLife } from './examples/game-of-life.js';
 import { initMolecularDynamics } from './examples/molecular-dynamics.js';
+import { initSPHFluid } from './examples/sph-fluid.js';
+import { initRayMarching } from './examples/ray-marching.js';
+import { initBoids } from './examples/boids.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -28,6 +31,9 @@ async function init() {
         setupEventListeners();
         await initGameOfLife(gpuDevice);
         await initMolecularDynamics(gpuDevice);
+        await initSPHFluid(gpuDevice);
+        await initRayMarching(gpuDevice);
+        await initBoids(gpuDevice);
     } catch (error) {
         statusDiv.className = 'status not-supported';
         statusDiv.innerHTML = `❌ Error initializing WebGPU: ${error.message}`;

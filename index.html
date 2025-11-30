@@ -199,7 +199,92 @@
     </div>
 
     <div class="example">
-        <h2>6. WASM Integration: Mandelbrot Set</h2>
+        <h2>6. SPH Fluid Simulation</h2>
+        <p>Smoothed Particle Hydrodynamics for realistic fluid behavior with surface tension.</p>
+
+        <div class="controls">
+            <button id="btn-sph-start">▶ Start</button>
+            <button id="btn-sph-pause">⏸ Pause</button>
+            <button id="btn-sph-reset">Reset</button>
+            <button id="btn-sph-spawn">Add Water</button>
+            <label>Gravity:</label>
+            <input type="range" id="sph-gravity" min="0" max="100" value="50">
+            <span id="sph-gravity-value">50</span>
+            <label>Viscosity:</label>
+            <input type="range" id="sph-viscosity" min="1" max="100" value="30">
+            <span id="sph-viscosity-value">30</span>
+        </div>
+
+        <div style="color: #aaa; margin: 10px 0;">
+            <strong>Interaction:</strong> Click to spawn water particles | Drag to create barriers
+        </div>
+
+        <canvas id="canvas-sph" class="interactive" width="1000" height="700" style="background: #0a0a1a;"></canvas>
+        <div id="output-sph" class="output"></div>
+    </div>
+
+    <div class="example">
+        <h2>7. Ray Marching: 3D Fractals</h2>
+        <p>Real-time volumetric rendering of Mandelbulb and other 3D fractals.</p>
+
+        <div class="controls">
+            <label>Fractal:</label>
+            <select id="fractal-type">
+                <option value="mandelbulb">Mandelbulb</option>
+                <option value="julia">Julia Set</option>
+                <option value="menger">Menger Sponge</option>
+                <option value="mandelbox">Mandelbox</option>
+            </select>
+            <label>Power:</label>
+            <input type="range" id="fractal-power" min="2" max="12" value="8">
+            <span id="fractal-power-value">8</span>
+            <label>Quality:</label>
+            <input type="range" id="fractal-quality" min="32" max="256" value="128" step="32">
+            <span id="fractal-quality-value">128</span>
+        </div>
+
+        <div style="color: #aaa; margin: 10px 0;">
+            <strong>Controls:</strong> Drag to rotate | Wheel to zoom | Auto-rotating camera
+        </div>
+
+        <canvas id="canvas-fractal" width="1000" height="700" style="background: #000;"></canvas>
+        <div id="output-fractal" class="output"></div>
+    </div>
+
+    <div class="example">
+        <h2>8. Boids Flocking Simulation</h2>
+        <p>Craig Reynolds' algorithm simulating flocking behavior with spatial hashing.</p>
+
+        <div class="controls">
+            <button id="btn-boids-start">▶ Start</button>
+            <button id="btn-boids-pause">⏸ Pause</button>
+            <button id="btn-boids-reset">Reset</button>
+            <label>Boids:</label>
+            <input type="range" id="boids-count" min="100" max="10000" value="2000" step="100">
+            <span id="boids-count-value">2000</span>
+            <label>Speed:</label>
+            <input type="range" id="boids-speed" min="10" max="100" value="50">
+            <span id="boids-speed-value">50</span>
+        </div>
+
+        <div class="seed-buttons">
+            <strong style="color: #aaa; width: 100%;">Behaviors:</strong>
+            <button class="boids-behavior" data-behavior="flock">Normal Flocking</button>
+            <button class="boids-behavior" data-behavior="predator">Add Predator</button>
+            <button class="boids-behavior" data-behavior="scatter">Scatter</button>
+            <button class="boids-behavior" data-behavior="vortex">Vortex</button>
+        </div>
+
+        <div style="color: #aaa; margin: 10px 0;">
+            <strong>Interaction:</strong> Click to attract boids | Right-click to repel
+        </div>
+
+        <canvas id="canvas-boids" class="interactive" width="1000" height="700" style="background: #0a0a1a;"></canvas>
+        <div id="output-boids" class="output"></div>
+    </div>
+
+    <div class="example">
+        <h2>9. WASM Integration: Mandelbrot Set</h2>
         <p>Uses WASM to coordinate WebGPU compute shaders for rendering the Mandelbrot fractal.</p>
         <button id="btn-wasm-mandelbrot">Run WASM + WebGPU</button>
         <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>

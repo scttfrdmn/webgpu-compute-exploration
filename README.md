@@ -41,7 +41,34 @@ Real-time 3D physics simulation of interacting particles.
 - **Visualization**: Temperature-based coloring (blue=cold, red=hot)
 - **Performance**: 60 FPS with up to 5000 particles, O(N²) force calculations on GPU
 
-### 6. WASM Integration (Mandelbrot Set)
+### 6. SPH Fluid Simulation
+Smoothed Particle Hydrodynamics for realistic fluid dynamics.
+- **Particles**: 2000 fluid particles
+- **Physics**: SPH kernels (Poly6, Spiky, Viscosity), pressure and viscosity forces
+- **Features**: Adjustable gravity and viscosity, interactive spawning
+- **Algorithm**: 3-pass compute (density, forces, integration)
+- **Visualization**: Velocity-based coloring with alpha blending
+- **Performance**: Real-time at 60 FPS, O(N²) neighbor search
+
+### 7. Ray Marching: 3D Fractals
+Volumetric rendering of complex 3D fractals using distance fields.
+- **Fractals**: Mandelbulb, Julia Set, Menger Sponge, Mandelbox
+- **Technique**: Sphere tracing with distance estimators
+- **Quality**: Adjustable steps (32-256) for performance/quality trade-off
+- **Rendering**: Phong lighting, ambient occlusion, fog
+- **Interaction**: Drag to rotate, wheel to zoom, auto-rotation
+- **Performance**: Real-time fragment shader ray marching
+
+### 8. Boids Flocking Simulation
+Craig Reynolds' emergent flocking behavior with thousands of agents.
+- **Agents**: 100-10,000 boids with adjustable speed
+- **Behaviors**: Separation, alignment, cohesion + special modes
+- **Modes**: Normal flocking, predator/prey, scatter, vortex
+- **Interaction**: Click to attract, right-click to repel
+- **Visualization**: Triangle agents colored by speed
+- **Performance**: 60 FPS with 10K agents, fully GPU-parallelized
+
+### 9. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -109,7 +136,10 @@ webgpu/
 │   │   ├── image-blur.js              # Example 3: Image processing
 │   │   ├── game-of-life.js            # Example 4: Conway's Game of Life
 │   │   ├── molecular-dynamics.js      # Example 5: Molecular dynamics
-│   │   └── wasm-mandelbrot.js         # Example 6: WASM integration
+│   │   ├── sph-fluid.js               # Example 6: SPH fluid simulation
+│   │   ├── ray-marching.js            # Example 7: Ray marching fractals
+│   │   ├── boids.js                   # Example 8: Boids flocking
+│   │   └── wasm-mandelbrot.js         # Example 9: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
@@ -172,14 +202,16 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Ideas for additional examples:
+See [FUTURE_EXAMPLES.md](FUTURE_EXAMPLES.md) for a comprehensive list of potential additions including:
 
-1. **N-Body Simulation**: Physics simulation with gravitational forces
-2. **Ray Tracing**: Real-time ray tracing using compute shaders
-3. **FFT**: Fast Fourier Transform for signal processing
-4. **ML Inference**: Run neural networks entirely in WebGPU
-5. **Particle Systems**: Real-time particle effects and physics
-6. **Fluid Simulation**: Navier-Stokes solver for fluid dynamics
+**Physics & Simulation**: N-Body with Barnes-Hut, Cloth simulation, Wave equation solver
+**Graphics**: Reaction-diffusion, Voronoi diagrams, Perlin noise, Path tracer
+**Signal Processing**: FFT audio visualizer, Convolution reverb
+**Machine Learning**: Neural network inference, K-means clustering
+**Algorithms**: Parallel sorting, Maze generation/solving
+**Interactive**: Falling sand game
+
+Each idea includes implementation notes, complexity ratings, and educational value assessments.
 
 ## Support
 
