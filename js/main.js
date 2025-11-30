@@ -2,6 +2,7 @@ import { checkWebGPUSupport, getGPUDevice } from './webgpu-utils.js';
 import { runVectorAddition } from './examples/vector-addition.js';
 import { runMatrixMultiplication } from './examples/matrix-multiplication.js';
 import { runImageBlur } from './examples/image-blur.js';
+import { initGameOfLife } from './examples/game-of-life.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -24,6 +25,7 @@ async function init() {
         statusDiv.innerHTML = `✅ WebGPU is supported! Using adapter: ${gpuDevice.adapter.name || 'Unknown'}`;
 
         setupEventListeners();
+        await initGameOfLife(gpuDevice);
     } catch (error) {
         statusDiv.className = 'status not-supported';
         statusDiv.innerHTML = `❌ Error initializing WebGPU: ${error.message}`;

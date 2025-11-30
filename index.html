@@ -68,6 +68,9 @@
             border: 1px solid #555;
             margin-top: 10px;
         }
+        canvas.interactive {
+            cursor: crosshair;
+        }
         .status {
             padding: 10px;
             margin: 10px 0;
@@ -80,6 +83,33 @@
         .status.not-supported {
             background: #b71c1c;
             border: 1px solid #c62828;
+        }
+        .controls {
+            margin: 15px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+        .controls label {
+            color: #aaa;
+            margin-right: 5px;
+        }
+        .controls input[type="range"] {
+            width: 150px;
+        }
+        .seed-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .seed-buttons button {
+            padding: 8px 15px;
+            font-size: 14px;
+        }
+        button.active {
+            background: #81c784;
         }
     </style>
 </head>
@@ -114,7 +144,38 @@
     </div>
 
     <div class="example">
-        <h2>4. WASM Integration: Mandelbrot Set</h2>
+        <h2>4. Conway's Game of Life</h2>
+        <p>Interactive cellular automaton simulation running entirely on GPU with compute shaders.</p>
+
+        <div class="controls">
+            <button id="btn-gol-start">▶ Start</button>
+            <button id="btn-gol-pause">⏸ Pause</button>
+            <button id="btn-gol-step">⏭ Step</button>
+            <button id="btn-gol-clear">Clear</button>
+            <button id="btn-gol-random">Random</button>
+            <label>Speed:</label>
+            <input type="range" id="gol-speed" min="1" max="60" value="10">
+            <span id="gol-speed-value">10 fps</span>
+        </div>
+
+        <div class="seed-buttons">
+            <strong style="color: #aaa; width: 100%;">Classic Patterns:</strong>
+            <button class="seed-btn" data-seed="glider">Glider</button>
+            <button class="seed-btn" data-seed="lwss">Lightweight Spaceship</button>
+            <button class="seed-btn" data-seed="pulsar">Pulsar</button>
+            <button class="seed-btn" data-seed="pentadecathlon">Pentadecathlon</button>
+            <button class="seed-btn" data-seed="gosper-gun">Gosper Glider Gun</button>
+            <button class="seed-btn" data-seed="acorn">Acorn</button>
+            <button class="seed-btn" data-seed="r-pentomino">R-Pentomino</button>
+            <button class="seed-btn" data-seed="diehard">Diehard</button>
+        </div>
+
+        <canvas id="canvas-gol" class="interactive" width="800" height="600"></canvas>
+        <div id="output-gol" class="output"></div>
+    </div>
+
+    <div class="example">
+        <h2>5. WASM Integration: Mandelbrot Set</h2>
         <p>Uses WASM to coordinate WebGPU compute shaders for rendering the Mandelbrot fractal.</p>
         <button id="btn-wasm-mandelbrot">Run WASM + WebGPU</button>
         <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>

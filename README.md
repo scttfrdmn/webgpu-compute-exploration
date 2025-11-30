@@ -24,7 +24,15 @@ Real-time image filtering using compute shaders.
 - **Use Case**: Video filters, anti-aliasing, depth of field
 - **Visualization**: Side-by-side original and processed images
 
-### 4. WASM Integration (Mandelbrot Set)
+### 4. Conway's Game of Life
+Interactive cellular automaton with GPU acceleration.
+- **Grid Size**: 200×150 cells (30,000 cells)
+- **Interaction**: Click to toggle cells, load classic patterns
+- **Patterns**: Glider, Pulsar, Gosper Glider Gun, R-Pentomino, and more
+- **Performance**: Real-time simulation at 60 FPS with zero CPU overhead
+- **Features**: Play/pause, step-through, adjustable speed
+
+### 5. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -90,7 +98,8 @@ webgpu/
 │   │   ├── vector-addition.js         # Example 1: Vector addition
 │   │   ├── matrix-multiplication.js   # Example 2: Matrix multiply
 │   │   ├── image-blur.js              # Example 3: Image processing
-│   │   └── wasm-mandelbrot.js         # Example 4: WASM integration
+│   │   ├── game-of-life.js            # Example 4: Conway's Game of Life
+│   │   └── wasm-mandelbrot.js         # Example 5: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
@@ -161,6 +170,12 @@ Ideas for additional examples:
 4. **ML Inference**: Run neural networks entirely in WebGPU
 5. **Particle Systems**: Real-time particle effects and physics
 6. **Fluid Simulation**: Navier-Stokes solver for fluid dynamics
+
+## Support
+
+If you find this project helpful, consider supporting my work:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/scttfrdmn)
 
 ## Troubleshooting
 
