@@ -7,6 +7,7 @@ import { initMolecularDynamics } from './examples/molecular-dynamics.js';
 import { initSPHFluid } from './examples/sph-fluid.js';
 import { initRayMarching } from './examples/ray-marching.js';
 import { initBoids } from './examples/boids.js';
+import { initDLA3D } from './examples/dla-3d.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -34,6 +35,7 @@ async function init() {
         await initSPHFluid(gpuDevice);
         await initRayMarching(gpuDevice);
         await initBoids(gpuDevice);
+        await initDLA3D(gpuDevice);
     } catch (error) {
         statusDiv.className = 'status not-supported';
         statusDiv.innerHTML = `❌ Error initializing WebGPU: ${error.message}`;

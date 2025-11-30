@@ -68,7 +68,16 @@ Craig Reynolds' emergent flocking behavior with thousands of agents.
 - **Visualization**: Triangle agents colored by speed
 - **Performance**: 60 FPS with 10K agents, fully GPU-parallelized
 
-### 9. WASM Integration (Mandelbrot Set)
+### 9. Diffusion Limited Aggregation (3D)
+Fractal growth simulation creating dendritic crystal structures.
+- **Grid**: 64³ voxel space (262,144 cells)
+- **Particles**: 5,000 walkers performing random walks
+- **Algorithm**: Particles stick when adjacent to aggregate
+- **Seeds**: Single center, line, circle, or multiple points
+- **Rendering**: Instanced cubes with gradient coloring
+- **Interaction**: Drag to rotate, wheel to zoom, adjustable stickiness
+
+### 10. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -139,7 +148,8 @@ webgpu/
 │   │   ├── sph-fluid.js               # Example 6: SPH fluid simulation
 │   │   ├── ray-marching.js            # Example 7: Ray marching fractals
 │   │   ├── boids.js                   # Example 8: Boids flocking
-│   │   └── wasm-mandelbrot.js         # Example 9: WASM integration
+│   │   ├── dla-3d.js                  # Example 9: 3D DLA
+│   │   └── wasm-mandelbrot.js         # Example 10: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies

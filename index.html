@@ -284,7 +284,39 @@
     </div>
 
     <div class="example">
-        <h2>9. WASM Integration: Mandelbrot Set</h2>
+        <h2>9. Diffusion Limited Aggregation</h2>
+        <p>Fractal growth simulation creating organic crystal-like structures through particle aggregation.</p>
+
+        <div class="controls">
+            <button id="btn-dla-start">▶ Start</button>
+            <button id="btn-dla-pause">⏸ Pause</button>
+            <button id="btn-dla-reset">Reset</button>
+            <label>Particles/Frame:</label>
+            <input type="range" id="dla-rate" min="1" max="50" value="10">
+            <span id="dla-rate-value">10</span>
+            <label>Stickiness:</label>
+            <input type="range" id="dla-stickiness" min="1" max="100" value="50">
+            <span id="dla-stickiness-value">50%</span>
+        </div>
+
+        <div class="seed-buttons">
+            <strong style="color: #aaa; width: 100%;">Growth Patterns:</strong>
+            <button class="dla-seed" data-seed="center">Single Center</button>
+            <button class="dla-seed" data-seed="line">Horizontal Line</button>
+            <button class="dla-seed" data-seed="circle">Circle</button>
+            <button class="dla-seed" data-seed="multiple">Multiple Seeds</button>
+        </div>
+
+        <div style="color: #aaa; margin: 10px 0;">
+            <strong>Info:</strong> Watch particles perform random walks until they stick to the growing structure
+        </div>
+
+        <canvas id="canvas-dla" width="1000" height="1000" style="background: #000;"></canvas>
+        <div id="output-dla" class="output"></div>
+    </div>
+
+    <div class="example">
+        <h2>10. WASM Integration: Mandelbrot Set</h2>
         <p>Uses WASM to coordinate WebGPU compute shaders for rendering the Mandelbrot fractal.</p>
         <button id="btn-wasm-mandelbrot">Run WASM + WebGPU</button>
         <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
