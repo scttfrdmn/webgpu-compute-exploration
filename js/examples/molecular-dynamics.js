@@ -184,7 +184,7 @@ const VERTICES = array<vec3<f32>, 42>(
 );
 
 @vertex
-fn main(
+fn vs_main(
     @builtin(vertex_index) vertexIdx: u32,
     @builtin(instance_index) instanceIdx: u32
 ) -> VertexOutput {
@@ -211,7 +211,7 @@ fn main(
 // Fragment shader for shading
 const fragmentShader = `
 @fragment
-fn main(
+fn fs_main(
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>
 ) -> @location(0) vec4<f32> {
@@ -494,11 +494,11 @@ class MolecularDynamics {
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             vertex: {
                 module: shaderModule,
-                entryPoint: 'main'
+                entryPoint: 'vs_main'
             },
             fragment: {
                 module: shaderModule,
-                entryPoint: 'main',
+                entryPoint: 'fs_main',
                 targets: [{ format: 'bgra8unorm' }]
             },
             primitive: {
@@ -538,11 +538,12 @@ class MolecularDynamics {
 
     updateParams() {
         const params = new Float32Array([
-            this.numAtoms,
+            0, // numAtoms (u32, set below)
             0.016, // deltaTime
             this.boxSize,
             this.temperature
         ]);
+        new Uint32Array(params.buffer)[0] = this.numAtoms;
         this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
     }
 
@@ -598,6 +599,7 @@ class MolecularDynamics {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
     }

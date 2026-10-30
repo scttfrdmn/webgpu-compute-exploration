@@ -4,7 +4,7 @@
 const PARTICLE_UPDATE_SHADER = `
 struct Particle {
     position: vec3<f32>,
-    active: u32,
+    isActive: u32,
 }
 
 struct GridCell {
@@ -69,7 +69,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var particle = particles[idx];
 
-    if (particle.active == 0u) {
+    if (particle.isActive == 0u) {
         return;
     }
 
@@ -116,7 +116,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let gridIdx = gridIndex(newPos);
             if (gridIdx != 0xFFFFFFFFu) {
                 atomicStore(&grid[gridIdx].occupied, 1u);
-                particle.active = 0u;
+                particle.isActive = 0u;
             }
         }
     }
@@ -177,7 +177,7 @@ const CUBE_NORMALS = array<vec3<f32>, 6>(
 );
 
 @vertex
-fn main(
+fn vs_main(
     @builtin(vertex_index) vertexIdx: u32,
     @builtin(instance_index) instanceIdx: u32
 ) -> VertexOutput {
@@ -228,7 +228,7 @@ fn main(
 
 const RENDER_FRAGMENT_SHADER = `
 @fragment
-fn main(
+fn fs_main(
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>
 ) -> @location(0) vec4<f32> {
@@ -387,8 +387,9 @@ class DLA3D {
     }
 
     initializeParticles() {
-        // position(3) + active(1)
+        // position(3) + isActive(1, u32 — written through a Uint32Array view)
         this.particles = new Float32Array(this.numParticles * 4);
+        const particlesU32 = new Uint32Array(this.particles.buffer);
 
         const center = this.gridSize / 2;
         const spawnRadius = this.gridSize * 0.45;
@@ -400,7 +401,7 @@ class DLA3D {
             this.particles[i * 4 + 0] = center + spawnRadius * Math.sin(phi) * Math.cos(theta);
             this.particles[i * 4 + 1] = center + spawnRadius * Math.sin(phi) * Math.sin(theta);
             this.particles[i * 4 + 2] = center + spawnRadius * Math.cos(phi);
-            this.particles[i * 4 + 3] = 1; // active
+            particlesU32[i * 4 + 3] = 1; // isActive
         }
     }
 
@@ -534,11 +535,11 @@ class DLA3D {
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             vertex: {
                 module: shaderModule,
-                entryPoint: 'main'
+                entryPoint: 'vs_main'
             },
             fragment: {
                 module: shaderModule,
-                entryPoint: 'main',
+                entryPoint: 'fs_main',
                 targets: [{ format: 'bgra8unorm' }]
             },
             primitive: {
@@ -570,11 +571,14 @@ class DLA3D {
 
     updateParams() {
         const params = new Float32Array([
-            this.numParticles,
-            this.gridSize,
+            0, // numParticles (u32, set below)
+            0, // gridSize (u32, set below)
             this.stickiness,
             this.time
         ]);
+        const paramsU32 = new Uint32Array(params.buffer);
+        paramsU32[0] = this.numParticles;
+        paramsU32[1] = this.gridSize;
         this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
     }
 
@@ -635,6 +639,7 @@ class DLA3D {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
     }

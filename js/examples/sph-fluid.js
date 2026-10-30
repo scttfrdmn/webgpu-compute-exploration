@@ -256,7 +256,7 @@ fn vertexMain(
     // Transform from world space to clip space
     let worldRange = uniforms.boundsMax - uniforms.boundsMin;
     let normalized = (particle.position - uniforms.boundsMin) / worldRange;
-    let clipPos = normalized * 2.0 - 1.0;
+    var clipPos = normalized * 2.0 - 1.0;
     clipPos.y *= -1.0; // Flip Y for screen coordinates
 
     let pixelSize = vec2<f32>(2.0, 2.0) / uniforms.canvasSize * particleSize;
@@ -517,7 +517,7 @@ class SPHFluidSimulation {
 
     updateParams() {
         const params = new Float32Array(32);
-        params[0] = this.numParticles;
+        new Uint32Array(params.buffer)[0] = this.numParticles;
         params[1] = this.smoothingRadius;
         params[2] = this.restDensity;
         params[3] = this.gasConstant;
@@ -601,6 +601,7 @@ class SPHFluidSimulation {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
     }

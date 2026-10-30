@@ -9,6 +9,10 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   on this machine Homebrew's `rustc` shadows rustup's, so run with `PATH=~/.cargo/bin:$PATH`.
 - Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done` and the WASM build.
 - There are no automated tests; examples must be verified in a browser.
+- Validate WGSL without a GPU using naga (`cargo install naga-cli`): extract the shader strings and run
+  `naga file.wgsl`. It catches the same errors Chrome's compiler reports.
+- Uniform structs with `u32` fields must be written through a `Uint32Array` view of the buffer, and vec2/vec3/vec4
+  fields follow WGSL alignment (8/16 bytes) — writing ints as floats turns small counts into ~1e9.
 - Do not drive the page with headless Chrome + `--enable-unsafe-webgpu` on macOS: loading it starts six GPU
   simulations at once and hung the machine (see #32). Ask the user to check in their own browser.
 

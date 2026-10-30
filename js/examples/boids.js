@@ -474,8 +474,11 @@ class BoidsSimulation {
     }
 
     updateParams() {
+        // Uniform layout follows WGSL alignment: vec2 fields start on 8-byte boundaries,
+        // so index 9 is padding. u32 fields must be written through a Uint32Array view.
         const params = new Float32Array(32);
-        params[0] = this.numBoids;
+        const paramsU32 = new Uint32Array(params.buffer);
+        paramsU32[0] = this.numBoids;
         params[1] = this.separationRadius;
         params[2] = this.alignmentRadius;
         params[3] = this.cohesionRadius;
@@ -484,15 +487,15 @@ class BoidsSimulation {
         params[6] = this.cohesionWeight;
         params[7] = this.maxSpeed;
         params[8] = this.maxForce;
-        params[9] = 0; // boundsMin.x
-        params[10] = 0; // boundsMin.y
-        params[11] = this.canvas.width; // boundsMax.x
-        params[12] = this.canvas.height; // boundsMax.y
-        params[13] = this.mousePos[0];
-        params[14] = this.mousePos[1];
-        params[15] = this.mouseRadius;
-        params[16] = this.mouseForce;
-        params[17] = this.behaviorMode;
+        params[10] = 0; // boundsMin.x
+        params[11] = 0; // boundsMin.y
+        params[12] = this.canvas.width; // boundsMax.x
+        params[13] = this.canvas.height; // boundsMax.y
+        params[14] = this.mousePos[0];
+        params[15] = this.mousePos[1];
+        params[16] = this.mouseRadius;
+        params[17] = this.mouseForce;
+        paramsU32[18] = this.behaviorMode;
 
         this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
     }
@@ -542,6 +545,7 @@ class BoidsSimulation {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
     }
@@ -583,7 +587,7 @@ export async function initBoids(gpuDevice) {
 
     let numBoids = 2000;
     let simulation = new BoidsSimulation(device, canvas, numBoids);
-    simulation.start();
+    simulation.render();
 
     document.getElementById('btn-boids-start').addEventListener('click', () => {
         simulation.start();
@@ -596,9 +600,10 @@ export async function initBoids(gpuDevice) {
     });
 
     document.getElementById('btn-boids-reset').addEventListener('click', () => {
+        const wasRunning = simulation.running;
         simulation.destroy();
         simulation = new BoidsSimulation(device, canvas, numBoids);
-        simulation.start();
+        if (wasRunning) simulation.start(); else simulation.render();
         updateOutput();
     });
 
@@ -606,9 +611,10 @@ export async function initBoids(gpuDevice) {
     const countValue = document.getElementById('boids-count-value');
     countSlider.addEventListener('change', (e) => {
         numBoids = parseInt(e.target.value);
+        const wasRunning = simulation.running;
         simulation.destroy();
         simulation = new BoidsSimulation(device, canvas, numBoids);
-        if (simulation.running) simulation.start();
+        if (wasRunning) simulation.start(); else simulation.render();
         updateOutput();
     });
     countSlider.addEventListener('input', (e) => {

@@ -172,12 +172,9 @@ fn rotateY(p: vec3<f32>, angle: f32) -> vec3<f32> {
     return vec3<f32>(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
 }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let coords = vec2<f32>(global_id.xy);
-    if (coords.x >= uniforms.resolution.x || coords.y >= uniforms.resolution.y) {
-        return;
-    }
+@fragment
+fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+    let coords = fragCoord.xy;
 
     // Normalized coordinates
     let uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
@@ -187,8 +184,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     ro = rotateX(ro, uniforms.cameraRotX);
     ro = rotateY(ro, uniforms.cameraRotY + uniforms.time * 0.1);
 
-    let target = vec3<f32>(0.0, 0.0, 0.0);
-    let forward = normalize(target - ro);
+    let lookAt = vec3<f32>(0.0, 0.0, 0.0);
+    let forward = normalize(lookAt - ro);
     let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
     let up = cross(forward, right);
 
@@ -218,15 +215,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         color = mix(color, vec3<f32>(0.0), clamp(t / 50.0, 0.0, 1.0));
     }
 
-    // Output to texture (would need storage texture binding)
-    // For now we'll use render pass
+    return vec4<f32>(color, 1.0);
 }
 `;
 
-// We'll use a simpler full-screen render approach
+// Full-screen quad; the fragment shader ray-marches each pixel
 const FULLSCREEN_VERTEX = `
 @vertex
-fn main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
     let pos = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>(1.0, -1.0),
@@ -238,12 +234,6 @@ fn main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32>
     return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
 }
 `;
-
-const FRAGMENT_SHADER = RAY_MARCH_SHADER.replace('@compute @workgroup_size(8, 8)\nfn main(@builtin(global_invocation_id) global_id: vec3<u32>)',
-'@fragment\nfn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32>') + `
-    return vec4<f32>(color, 1.0);
-}
-`.replace('let coords = vec2<f32>(global_id.xy);', 'let coords = fragCoord.xy;');
 
 class RayMarchingRenderer {
     constructor(device, canvas) {
@@ -309,7 +299,7 @@ class RayMarchingRenderer {
         });
 
         const shaderModule = this.device.createShaderModule({
-            code: FULLSCREEN_VERTEX + '\n' + FRAGMENT_SHADER
+            code: FULLSCREEN_VERTEX + '\n' + RAY_MARCH_SHADER
         });
 
         this.uniformBuffer = this.device.createBuffer({
@@ -337,24 +327,26 @@ class RayMarchingRenderer {
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             vertex: {
                 module: shaderModule,
-                entryPoint: 'main'
+                entryPoint: 'vs_main'
             },
             fragment: {
                 module: shaderModule,
-                entryPoint: 'main',
+                entryPoint: 'fs_main',
                 targets: [{ format: 'bgra8unorm' }]
             }
         });
     }
 
     updateUniforms() {
+        // maxSteps and fractalType are u32 in WGSL; written as floats they would read as ~1e9
         const uniforms = new Float32Array(16);
+        const uniformsU32 = new Uint32Array(uniforms.buffer);
         uniforms[0] = this.canvas.width;
         uniforms[1] = this.canvas.height;
         uniforms[2] = this.time;
         uniforms[3] = this.power;
-        uniforms[4] = this.maxSteps;
-        uniforms[5] = this.fractalType;
+        uniformsU32[4] = this.maxSteps;
+        uniformsU32[5] = this.fractalType;
         uniforms[6] = this.cameraRotX;
         uniforms[7] = this.cameraRotY;
         uniforms[8] = this.cameraZoom;
@@ -388,8 +380,13 @@ class RayMarchingRenderer {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
+    }
+
+    pause() {
+        this.running = false;
     }
 
     animate() {
@@ -410,8 +407,8 @@ export async function initRayMarching(gpuDevice) {
     const canvas = document.getElementById('canvas-fractal');
     const output = document.getElementById('output-fractal');
 
+    // Not started here: main.js runs it only while the canvas is on screen
     const renderer = new RayMarchingRenderer(device, canvas);
-    renderer.start();
 
     const fractalTypes = {
         'mandelbulb': 0,
