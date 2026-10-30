@@ -30,6 +30,20 @@ All notable changes to this project are documented here. The format follows
 - WGSL compile errors in molecular dynamics, SPH, ray marching and DLA
   (duplicate `main` entry points, reserved words `target`/`active`, assignment to
   a `let`, malformed ray-marching fragment shader).
+- Molecular dynamics and DLA drew nothing: the 4x4 matrix multiply used row-major
+  indexing on column-major matrices, so the view-projection was inverted. Projection
+  now uses WebGPU's [0, 1] depth range; molecular dynamics uses a real icosahedron mesh.
+- SPH used 3D kernels in 2D with inconsistent units (density ~1e-3 vs rest density 1000),
+  divided gravity by density, and lost every other integration step in its buffer
+  ping-pong. Now 2D kernels, normalized mass, 6 stable substeps per frame, and a working
+  Spawn button. Parameters were checked against a CPU replica across the slider ranges.
+- Ray marching was almost black: its ambient-occlusion term went negative with camera
+  distance. Fixed AO, Menger sponge (floored modulo), Mandelbox scale, image orientation,
+  and added a background gradient.
+- Boids mouse interaction used CSS pixels instead of canvas pixels, had attract/repel
+  reversed, and was too weak to notice.
+- DLA walkers moved in straight lines (same random seed for every step within a frame).
+  Each walker now carries its own PCG random state.
 - Interactive examples are created when scrolled into view instead of all at page
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.

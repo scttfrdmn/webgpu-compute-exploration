@@ -24,12 +24,12 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> particlesOut: array<Particle>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-// Poly6 kernel for density
+// Poly6 kernel for density (2D normalization)
 fn poly6Kernel(r: f32, h: f32) -> f32 {
     if (r >= h) {
         return 0.0;
     }
-    let coef = 315.0 / (64.0 * 3.14159265 * pow(h, 9.0));
+    let coef = 4.0 / (3.14159265 * pow(h, 8.0));
     let diff = h * h - r * r;
     return coef * diff * diff * diff;
 }
@@ -57,7 +57,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var output = particle;
     output.density = density;
-    output.pressure = params.gasConstant * (density - params.restDensity);
+    // Clamp to non-negative so sparse regions don't pull particles together into clumps
+    output.pressure = max(params.gasConstant * (density - params.restDensity), 0.0);
 
     particlesOut[idx] = output;
 }
@@ -86,23 +87,23 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> forces: array<vec2<f32>>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-// Spiky kernel gradient for pressure
+// Spiky kernel gradient for pressure (2D normalization)
 fn spikyKernelGradient(r: vec2<f32>, h: f32) -> vec2<f32> {
     let dist = length(r);
     if (dist >= h || dist < 0.0001) {
         return vec2<f32>(0.0, 0.0);
     }
-    let coef = -45.0 / (3.14159265 * pow(h, 6.0));
+    let coef = -30.0 / (3.14159265 * pow(h, 5.0));
     let diff = h - dist;
     return coef * diff * diff * normalize(r);
 }
 
-// Viscosity Laplacian kernel
+// Viscosity Laplacian kernel (2D normalization)
 fn viscosityLaplacian(r: f32, h: f32) -> f32 {
     if (r >= h) {
         return 0.0;
     }
-    let coef = 45.0 / (3.14159265 * pow(h, 6.0));
+    let coef = 40.0 / (3.14159265 * pow(h, 5.0));
     return coef * (h - r);
 }
 
@@ -141,8 +142,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     viscosityForce *= params.viscosity;
 
-    // Gravity
-    let gravityForce = vec2<f32>(0.0, params.gravity);
+    // Gravity as a force density, so that force / density in the integrator yields acceleration g
+    let gravityForce = vec2<f32>(0.0, params.gravity) * particle.density;
 
     forces[idx] = pressureForce + viscosityForce + gravityForce;
 }
@@ -287,18 +288,24 @@ class SPHFluidSimulation {
     constructor(device, canvas, numParticles) {
         this.device = device;
         this.canvas = canvas;
+        this.initialParticles = numParticles;
         this.numParticles = numParticles;
+        this.maxParticles = numParticles * 2; // headroom for Spawn
         this.running = false;
         this.frameCount = 0;
 
-        // SPH parameters
-        this.smoothingRadius = 20.0;
-        this.restDensity = 1000.0;
-        this.gasConstant = 2000.0;
-        this.mass = 1.0;
-        this.viscosity = 0.3;
-        this.gravity = 300.0;
-        this.damping = 0.5;
+        // SPH parameters, in pixel units. Mass is chosen so the initial lattice sits at rest
+        // density 1, and the time step is split into substeps for stability at gasConstant 1e6.
+        this.smoothingRadius = 16.0;
+        this.particleSpacing = this.smoothingRadius * 0.5;
+        this.restDensity = 1.0;
+        this.mass = 1.0 / this.latticeDensity();
+        this.gasConstant = 1e6;
+        this.viscosity = 300.0;
+        this.gravity = 500.0;
+        this.damping = 0.3;
+        this.substeps = 6;
+        this.deltaTime = 1 / 60 / this.substeps;
 
         this.boundsMin = [10, 10];
         this.boundsMax = [canvas.width - 10, canvas.height - 10];
@@ -309,13 +316,27 @@ class SPHFluidSimulation {
         this.setupRenderPipeline();
     }
 
+    // Density at an interior lattice point for unit mass, using the 2D Poly6 kernel
+    latticeDensity() {
+        const h = this.smoothingRadius, s = this.particleSpacing;
+        const coef = 4 / (Math.PI * Math.pow(h, 8));
+        let density = 0;
+        for (let i = -3; i <= 3; i++) {
+            for (let j = -3; j <= 3; j++) {
+                const r2 = (i * s) ** 2 + (j * s) ** 2;
+                if (r2 < h * h) density += coef * Math.pow(h * h - r2, 3);
+            }
+        }
+        return density;
+    }
+
     initializeParticles() {
         // 8 floats per particle: pos(2) + vel(2) + density(1) + pressure(1) + padding(2)
         this.particles = new Float32Array(this.numParticles * 8);
 
         // Initialize particles in a dam-break configuration
         const particlesPerRow = Math.ceil(Math.sqrt(this.numParticles));
-        const spacing = this.smoothingRadius * 0.5;
+        const spacing = this.particleSpacing;
         const startX = this.boundsMin[0] + 50;
         const startY = this.boundsMin[1] + 50;
 
@@ -333,7 +354,7 @@ class SPHFluidSimulation {
     }
 
     setupBuffers() {
-        const particleBufferSize = this.numParticles * 8 * 4;
+        const particleBufferSize = this.maxParticles * 8 * 4;
 
         this.particleBuffers = [
             this.device.createBuffer({
@@ -347,11 +368,11 @@ class SPHFluidSimulation {
             })
         ];
 
-        new Float32Array(this.particleBuffers[0].getMappedRange()).set(this.particles);
+        new Float32Array(this.particleBuffers[0].getMappedRange(), 0, this.particles.length).set(this.particles);
         this.particleBuffers[0].unmap();
 
         this.forcesBuffer = this.device.createBuffer({
-            size: this.numParticles * 2 * 4,
+            size: this.maxParticles * 2 * 4,
             usage: GPUBufferUsage.STORAGE
         });
 
@@ -365,7 +386,6 @@ class SPHFluidSimulation {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
         });
 
-        this.currentBuffer = 0;
     }
 
     setupComputePipelines() {
@@ -524,7 +544,7 @@ class SPHFluidSimulation {
         params[4] = this.mass;
         params[5] = this.viscosity;
         params[6] = this.gravity;
-        params[7] = 0.0016; // deltaTime
+        params[7] = this.deltaTime;
         params[8] = this.boundsMin[0];
         params[9] = this.boundsMin[1];
         params[10] = this.boundsMax[0];
@@ -549,30 +569,29 @@ class SPHFluidSimulation {
     step() {
         this.updateParams();
 
+        // Each substep: density/pressure (buffer 0 -> 1), forces (read 1), integrate (1 -> 0).
+        // The simulation state therefore always lives in buffer 0 between substeps.
         const commandEncoder = this.device.createCommandEncoder();
+        const workgroups = Math.ceil(this.numParticles / 64);
+        for (let i = 0; i < this.substeps; i++) {
+            const densityPass = commandEncoder.beginComputePass();
+            densityPass.setPipeline(this.densityPipeline);
+            densityPass.setBindGroup(0, this.densityBindGroups[0]);
+            densityPass.dispatchWorkgroups(workgroups);
+            densityPass.end();
 
-        // Compute density and pressure
-        const densityPass = commandEncoder.beginComputePass();
-        densityPass.setPipeline(this.densityPipeline);
-        densityPass.setBindGroup(0, this.densityBindGroups[this.currentBuffer]);
-        densityPass.dispatchWorkgroups(Math.ceil(this.numParticles / 64));
-        densityPass.end();
+            const forcePass = commandEncoder.beginComputePass();
+            forcePass.setPipeline(this.forcePipeline);
+            forcePass.setBindGroup(0, this.forceBindGroups[0]);
+            forcePass.dispatchWorkgroups(workgroups);
+            forcePass.end();
 
-        this.currentBuffer = 1 - this.currentBuffer;
-
-        // Compute forces
-        const forcePass = commandEncoder.beginComputePass();
-        forcePass.setPipeline(this.forcePipeline);
-        forcePass.setBindGroup(0, this.forceBindGroups[0]);
-        forcePass.dispatchWorkgroups(Math.ceil(this.numParticles / 64));
-        forcePass.end();
-
-        // Integrate
-        const integratePass = commandEncoder.beginComputePass();
-        integratePass.setPipeline(this.integratePipeline);
-        integratePass.setBindGroup(0, this.integrateBindGroups[0]);
-        integratePass.dispatchWorkgroups(Math.ceil(this.numParticles / 64));
-        integratePass.end();
+            const integratePass = commandEncoder.beginComputePass();
+            integratePass.setPipeline(this.integratePipeline);
+            integratePass.setBindGroup(0, this.integrateBindGroups[0]);
+            integratePass.dispatchWorkgroups(workgroups);
+            integratePass.end();
+        }
 
         this.device.queue.submit([commandEncoder.finish()]);
 
@@ -593,7 +612,7 @@ class SPHFluidSimulation {
         });
 
         renderPass.setPipeline(this.renderPipeline);
-        renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
+        renderPass.setBindGroup(0, this.renderBindGroups[0]);
         renderPass.draw(6, this.numParticles);
         renderPass.end();
 
@@ -612,22 +631,28 @@ class SPHFluidSimulation {
 
     reset() {
         this.frameCount = 0;
+        this.numParticles = this.initialParticles;
         this.initializeParticles();
         this.device.queue.writeBuffer(this.particleBuffers[0], 0, this.particles);
-        this.currentBuffer = 0;
         this.render();
     }
 
+    // Drop a 10x10 block of particles centered at (x, y) into the free buffer slots
     spawnParticles(x, y) {
-        // Add particles at mouse position
-        const newParticles = 50;
-        const oldCount = this.numParticles;
-        this.numParticles = Math.min(this.numParticles + newParticles, 10000);
+        const side = 10;
+        const count = Math.min(side * side, this.maxParticles - this.numParticles);
+        if (count <= 0) return;
 
-        if (this.numParticles === oldCount) return;
-
-        // Would need to resize buffers - for now just reset
-        console.log('Spawn not fully implemented - would need buffer resize');
+        const block = new Float32Array(count * 8);
+        const s = this.particleSpacing;
+        for (let i = 0; i < count; i++) {
+            block[i * 8 + 0] = x + ((i % side) - side / 2) * s;
+            block[i * 8 + 1] = y + (Math.floor(i / side) - side / 2) * s;
+            block[i * 8 + 4] = this.restDensity;
+        }
+        this.device.queue.writeBuffer(this.particleBuffers[0], this.numParticles * 8 * 4, block);
+        this.numParticles += count;
+        if (!this.running) this.render();
     }
 
     animate() {
@@ -673,6 +698,7 @@ export async function initSPHFluid(gpuDevice) {
 
     document.getElementById('btn-sph-spawn').addEventListener('click', () => {
         simulation.spawnParticles(canvas.width / 2, 100);
+        updateOutput();
     });
 
     const gravitySlider = document.getElementById('sph-gravity');
@@ -685,7 +711,7 @@ export async function initSPHFluid(gpuDevice) {
     const viscositySlider = document.getElementById('sph-viscosity');
     const viscosityValue = document.getElementById('sph-viscosity-value');
     viscositySlider.addEventListener('input', (e) => {
-        simulation.viscosity = parseInt(e.target.value) / 100;
+        simulation.viscosity = parseInt(e.target.value) * 10;
         viscosityValue.textContent = e.target.value;
     });
 
@@ -702,7 +728,7 @@ export async function initSPHFluid(gpuDevice) {
 • Algorithm: Smoothed Particle Hydrodynamics (SPH)
 • Kernels: Poly6 (density), Spiky (pressure), Viscosity
 • Gravity: ${(simulation.gravity / 10).toFixed(0)}
-• Viscosity: ${simulation.viscosity.toFixed(2)}
+• Viscosity: ${simulation.viscosity.toFixed(0)}
 • Integration: Explicit Euler
 
 <span class="info">Performance:</span>

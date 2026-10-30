@@ -118,9 +118,10 @@ fn mouseInteraction(boid: Boid) -> vec2<f32> {
     let diff = params.mousePos - boid.position;
     let dist = length(diff);
 
+    // Positive mouseForce pulls boids toward the cursor, negative pushes them away;
+    // strongest at the cursor and fading to zero at mouseRadius
     if (dist < params.mouseRadius && dist > 0.0) {
-        var force = normalize(diff) * params.mouseForce / dist;
-        return force;
+        return normalize(diff) * params.mouseForce * (1.0 - dist / params.mouseRadius);
     }
 
     return vec2<f32>(0.0);
@@ -310,7 +311,7 @@ class BoidsSimulation {
         this.behaviorMode = 0; // 0: normal, 1: predator, 2: scatter, 3: vortex
 
         this.mousePos = [canvas.width / 2, canvas.height / 2];
-        this.mouseRadius = 100.0;
+        this.mouseRadius = 150.0;
         this.mouseForce = 0.0;
 
         this.setupMouseControls();
@@ -321,26 +322,27 @@ class BoidsSimulation {
     }
 
     setupMouseControls() {
-        this.canvas.addEventListener('mousedown', (e) => {
+        // The canvas is CSS-scaled, so convert client coordinates to canvas pixels
+        const toCanvas = (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            this.mousePos = [
-                e.clientX - rect.left,
-                e.clientY - rect.top
+            return [
+                (e.clientX - rect.left) * this.canvas.width / rect.width,
+                (e.clientY - rect.top) * this.canvas.height / rect.height
             ];
-            this.mouseForce = e.button === 0 ? -5.0 : 5.0; // Left: attract, Right: repel
+        };
+
+        this.canvas.addEventListener('mousedown', (e) => {
+            this.mousePos = toCanvas(e);
+            this.mouseForce = e.button === 0 ? 1.0 : -1.0; // Left: attract, Right: repel
         });
 
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
         this.canvas.addEventListener('mousemove', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            this.mousePos = [
-                e.clientX - rect.left,
-                e.clientY - rect.top
-            ];
+            this.mousePos = toCanvas(e);
         });
 
-        this.canvas.addEventListener('mouseup', () => {
+        window.addEventListener('mouseup', () => {
             this.mouseForce = 0.0;
         });
     }

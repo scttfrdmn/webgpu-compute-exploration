@@ -126,61 +126,18 @@ struct VertexOutput {
     @location(1) normal: vec3<f32>,
 }
 
-// Icosphere vertices for a nice sphere representation
-const VERTICES = array<vec3<f32>, 42>(
-    // Top cap
-    vec3<f32>(0.0, 1.0, 0.0),
-    vec3<f32>(0.723607, 0.447214, 0.525731),
-    vec3<f32>(-0.276393, 0.447214, 0.850651),
-    vec3<f32>(-0.894427, 0.447214, 0.0),
-    vec3<f32>(-0.276393, 0.447214, -0.850651),
-    vec3<f32>(0.723607, 0.447214, -0.525731),
-
-    // Upper middle
-    vec3<f32>(0.276393, 0.447214, 0.850651),
-    vec3<f32>(-0.723607, 0.447214, 0.525731),
-    vec3<f32>(-0.723607, 0.447214, -0.525731),
-    vec3<f32>(0.276393, 0.447214, -0.850651),
-    vec3<f32>(0.894427, 0.447214, 0.0),
-
-    // Equator
-    vec3<f32>(0.0, 0.0, 1.0),
-    vec3<f32>(-0.951057, 0.0, 0.309017),
-    vec3<f32>(-0.587785, 0.0, -0.809017),
-    vec3<f32>(0.587785, 0.0, -0.809017),
-    vec3<f32>(0.951057, 0.0, 0.309017),
-
-    // Lower middle
-    vec3<f32>(-0.276393, -0.447214, 0.850651),
-    vec3<f32>(-0.894427, -0.447214, 0.0),
-    vec3<f32>(-0.276393, -0.447214, -0.850651),
-    vec3<f32>(0.723607, -0.447214, -0.525731),
-    vec3<f32>(0.723607, -0.447214, 0.525731),
-
-    // Bottom cap
-    vec3<f32>(0.0, -1.0, 0.0),
-    vec3<f32>(-0.723607, -0.447214, 0.525731),
-    vec3<f32>(0.276393, -0.447214, 0.850651),
-    vec3<f32>(0.894427, -0.447214, 0.0),
-    vec3<f32>(0.276393, -0.447214, -0.850651),
-    vec3<f32>(-0.723607, -0.447214, -0.525731),
-
-    // Fill
-    vec3<f32>(-0.951057, 0.0, -0.309017),
-    vec3<f32>(0.587785, 0.0, 0.809017),
-    vec3<f32>(0.0, 0.0, -1.0),
-    vec3<f32>(-0.587785, 0.0, 0.809017),
-    vec3<f32>(0.951057, 0.0, -0.309017),
-    vec3<f32>(-0.587785, 0.0, -0.809017),
-    vec3<f32>(0.587785, 0.0, -0.809017),
-    vec3<f32>(-0.951057, 0.0, 0.309017),
-    vec3<f32>(0.0, 0.0, 1.0),
-    vec3<f32>(0.951057, 0.0, 0.309017),
-    vec3<f32>(-0.587785, 0.0, 0.809017),
-    vec3<f32>(0.587785, 0.0, 0.809017),
-    vec3<f32>(-0.951057, 0.0, -0.309017),
-    vec3<f32>(0.951057, 0.0, -0.309017),
-    vec3<f32>(0.0, 0.0, -1.0)
+// Icosahedron: 12 vertices, 20 counter-clockwise faces (60 indices) approximating a sphere
+const ICO_T = 1.618034;
+const ICO_VERTICES = array<vec3<f32>, 12>(
+    vec3<f32>(-1.0, ICO_T, 0.0), vec3<f32>(1.0, ICO_T, 0.0), vec3<f32>(-1.0, -ICO_T, 0.0), vec3<f32>(1.0, -ICO_T, 0.0),
+    vec3<f32>(0.0, -1.0, ICO_T), vec3<f32>(0.0, 1.0, ICO_T), vec3<f32>(0.0, -1.0, -ICO_T), vec3<f32>(0.0, 1.0, -ICO_T),
+    vec3<f32>(ICO_T, 0.0, -1.0), vec3<f32>(ICO_T, 0.0, 1.0), vec3<f32>(-ICO_T, 0.0, -1.0), vec3<f32>(-ICO_T, 0.0, 1.0)
+);
+const ICO_INDICES = array<u32, 60>(
+    0u, 11u, 5u,  0u, 5u, 1u,   0u, 1u, 7u,   0u, 7u, 10u,  0u, 10u, 11u,
+    1u, 5u, 9u,   5u, 11u, 4u,  11u, 10u, 2u, 10u, 7u, 6u,  7u, 1u, 8u,
+    3u, 9u, 4u,   3u, 4u, 2u,   3u, 2u, 6u,   3u, 6u, 8u,   3u, 8u, 9u,
+    4u, 9u, 5u,   2u, 4u, 11u,  6u, 2u, 10u,  8u, 6u, 7u,   9u, 8u, 1u
 );
 
 @vertex
@@ -189,7 +146,7 @@ fn vs_main(
     @builtin(instance_index) instanceIdx: u32
 ) -> VertexOutput {
     let atom = atoms[instanceIdx];
-    let sphereVertex = VERTICES[vertexIdx % 42u];
+    let sphereVertex = normalize(ICO_VERTICES[ICO_INDICES[vertexIdx]]);
 
     let scale = 0.3;
     let worldPos = atom.position + sphereVertex * scale;
@@ -227,13 +184,14 @@ fn fs_main(
 // Simple matrix math utilities
 class Mat4 {
     static perspective(fov, aspect, near, far) {
+        // Column-major, WebGPU clip-space depth range [0, 1]
         const f = 1.0 / Math.tan(fov / 2);
         const nf = 1 / (near - far);
         return new Float32Array([
             f / aspect, 0, 0, 0,
             0, f, 0, 0,
-            0, 0, (far + near) * nf, -1,
-            0, 0, 2 * far * near * nf, 0
+            0, 0, far * nf, -1,
+            0, 0, far * near * nf, 0
         ]);
     }
 
@@ -250,15 +208,16 @@ class Mat4 {
         ]);
     }
 
+    // a * b for column-major matrices (element [col * 4 + row])
     static multiply(a, b) {
         const result = new Float32Array(16);
-        for (let i = 0; i < 4; i++) {
-            for (let j = 0; j < 4; j++) {
-                result[i * 4 + j] =
-                    a[i * 4 + 0] * b[0 * 4 + j] +
-                    a[i * 4 + 1] * b[1 * 4 + j] +
-                    a[i * 4 + 2] * b[2 * 4 + j] +
-                    a[i * 4 + 3] * b[3 * 4 + j];
+        for (let col = 0; col < 4; col++) {
+            for (let row = 0; row < 4; row++) {
+                result[col * 4 + row] =
+                    a[0 * 4 + row] * b[col * 4 + 0] +
+                    a[1 * 4 + row] * b[col * 4 + 1] +
+                    a[2 * 4 + row] * b[col * 4 + 2] +
+                    a[3 * 4 + row] * b[col * 4 + 3];
             }
         }
         return result;
@@ -592,7 +551,7 @@ class MolecularDynamics {
 
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
-        renderPass.draw(42, this.numAtoms); // 42 vertices per sphere, numAtoms instances
+        renderPass.draw(60, this.numAtoms); // 20 icosahedron faces per atom, numAtoms instances
         renderPass.end();
 
         this.device.queue.submit([commandEncoder.finish()]);

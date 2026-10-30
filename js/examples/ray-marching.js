@@ -70,14 +70,18 @@ fn juliaDE(pos: vec3<f32>) -> f32 {
     return 0.25 * sqrt(mz2 / md2) * log(mz2);
 }
 
-// Menger sponge distance estimator
+// Menger sponge distance estimator (Inigo Quilez's formulation)
+fn floorMod(x: vec3<f32>, m: f32) -> vec3<f32> {
+    return x - m * floor(x / m);
+}
+
 fn mengerDE(pos: vec3<f32>) -> f32 {
-    var p = pos;
-    var d = max(max(abs(p.x), abs(p.y)), abs(p.z)) - 1.0;
+    let q = abs(pos) - vec3<f32>(1.0);
+    var d = length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
     var s = 1.0;
 
     for (var i = 0; i < 4; i++) {
-        let a = (abs(p) * 3.0 - 1.0) % 2.0 - 1.0;
+        let a = floorMod(pos * s, 2.0) - 1.0;
         s *= 3.0;
         let r = abs(1.0 - 3.0 * abs(a));
 
@@ -87,7 +91,6 @@ fn mengerDE(pos: vec3<f32>) -> f32 {
         let c = (min(da, min(db, dc)) - 1.0) / s;
 
         d = max(d, c);
-        p = a;
     }
 
     return d;
@@ -97,7 +100,8 @@ fn mengerDE(pos: vec3<f32>) -> f32 {
 fn mandelboxDE(pos: vec3<f32>) -> f32 {
     var p = pos;
     var dr = 1.0;
-    let scale = 2.0;
+    // Negative scale keeps the whole fractal within about 2 units of the origin
+    let scale = -1.5;
     let fixedRadius = 1.0;
     let minRadius = 0.5;
     let fixedRadius2 = fixedRadius * fixedRadius;
@@ -130,7 +134,7 @@ fn sceneSDF(pos: vec3<f32>) -> f32 {
         case 0u: { return mandelbulbDE(pos, uniforms.power); }
         case 1u: { return juliaDE(pos); }
         case 2u: { return mengerDE(pos); }
-        case 3u: { return mandelboxDE(pos); }
+        case 3u: { return mandelboxDE(pos * 3.0) / 3.0; } // shrink to fit the default view
         default: { return mandelbulbDE(pos, uniforms.power); }
     }
 }
@@ -160,6 +164,18 @@ fn rayMarch(ro: vec3<f32>, rd: vec3<f32>) -> f32 {
     return -1.0;
 }
 
+// Soft ambient occlusion from a few distance samples along the normal
+fn ambientOcclusion(p: vec3<f32>, n: vec3<f32>) -> f32 {
+    var occlusion = 0.0;
+    var weight = 1.0;
+    for (var i = 1; i <= 5; i++) {
+        let d = 0.03 * f32(i);
+        occlusion += weight * (d - sceneSDF(p + n * d));
+        weight *= 0.5;
+    }
+    return clamp(1.0 - 4.0 * occlusion, 0.0, 1.0);
+}
+
 fn rotateX(p: vec3<f32>, angle: f32) -> vec3<f32> {
     let c = cos(angle);
     let s = sin(angle);
@@ -176,8 +192,9 @@ fn rotateY(p: vec3<f32>, angle: f32) -> vec3<f32> {
 fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     let coords = fragCoord.xy;
 
-    // Normalized coordinates
-    let uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
+    // Pixel y grows downward; flip so +y is up in camera space
+    var uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
+    uv.y = -uv.y;
 
     // Camera setup
     var ro = vec3<f32>(0.0, 0.0, uniforms.cameraZoom);
@@ -194,7 +211,8 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
     // Ray march
     let t = rayMarch(ro, rd);
 
-    var color = vec3<f32>(0.0);
+    // Background gradient so the silhouette stays visible against the page
+    var color = mix(vec3<f32>(0.02, 0.02, 0.05), vec3<f32>(0.12, 0.14, 0.22), uv.y + 0.5);
     if (t > 0.0) {
         let pos = ro + rd * t;
         let normal = estimateNormal(pos);
@@ -204,15 +222,14 @@ fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
         let diffuse = max(dot(normal, lightDir), 0.0);
         let specular = pow(max(dot(reflect(-lightDir, normal), -rd), 0.0), 32.0);
 
-        // Ambient occlusion approximation
-        let ao = 1.0 - f32(i32(t * 10.0)) * 0.05;
+        let ao = ambientOcclusion(pos, normal);
 
         // Color based on position and normal
         let baseColor = vec3<f32>(0.8, 0.4, 0.2) + normal * 0.2;
         color = baseColor * (diffuse * 0.7 + 0.3) * ao + specular * 0.5;
 
         // Fog
-        color = mix(color, vec3<f32>(0.0), clamp(t / 50.0, 0.0, 1.0));
+        color = mix(color, vec3<f32>(0.02, 0.02, 0.05), clamp(t / 20.0, 0.0, 1.0));
     }
 
     return vec4<f32>(color, 1.0);
