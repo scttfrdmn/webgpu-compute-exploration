@@ -187,8 +187,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     ro = rotateX(ro, uniforms.cameraRotX);
     ro = rotateY(ro, uniforms.cameraRotY + uniforms.time * 0.1);
 
-    let target = vec3<f32>(0.0, 0.0, 0.0);
-    let forward = normalize(target - ro);
+    let lookAt = vec3<f32>(0.0, 0.0, 0.0);
+    let forward = normalize(lookAt - ro);
     let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
     let up = cross(forward, right);
 
