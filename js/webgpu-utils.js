@@ -34,19 +34,13 @@ export function createBuffer(device, data, usage) {
         mappedAtCreation: true
     });
 
-    if (data instanceof Float32Array) {
-        new Float32Array(buffer.getMappedRange()).set(data);
-    } else if (data instanceof Uint32Array) {
-        new Uint32Array(buffer.getMappedRange()).set(data);
-    } else if (data instanceof Int32Array) {
-        new Int32Array(buffer.getMappedRange()).set(data);
-    }
+    new data.constructor(buffer.getMappedRange()).set(data);
 
     buffer.unmap();
     return buffer;
 }
 
-export async function readBuffer(device, buffer, size) {
+export async function readBuffer(device, buffer, size, ArrayType = Float32Array) {
     const readBuffer = device.createBuffer({
         size: size,
         usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
@@ -57,8 +51,9 @@ export async function readBuffer(device, buffer, size) {
     device.queue.submit([commandEncoder.finish()]);
 
     await readBuffer.mapAsync(GPUMapMode.READ);
-    const result = new Float32Array(readBuffer.getMappedRange().slice(0));
+    const result = new ArrayType(readBuffer.getMappedRange().slice(0));
     readBuffer.unmap();
+    readBuffer.destroy();
 
     return result;
 }

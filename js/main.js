@@ -20,7 +20,7 @@ async function init() {
 
         if (!isSupported) {
             statusDiv.className = 'status not-supported';
-            statusDiv.innerHTML = '❌ WebGPU is not supported in this browser. Please use Chrome 113+, Edge 113+, or another compatible browser.';
+            statusDiv.innerHTML = '❌ WebGPU is not supported in this browser. Please use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac).';
             disableAllButtons();
             return;
         }

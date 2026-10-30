@@ -1,6 +1,6 @@
 {
   "name": "webgpu-compute-exploration",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Exploration of WebGPU computational capabilities with WASM integration",
   "type": "module",
   "scripts": {
@@ -14,6 +14,11 @@
     "gpu-computing",
     "wgsl"
   ],
-  "author": "",
+  "author": "Scott Friedman",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/scttfrdmn/webgpu-compute-exploration.git"
+  },
+  "homepage": "https://scttfrdmn.github.io/webgpu-compute-exploration/",
   "license": "MIT"
 }

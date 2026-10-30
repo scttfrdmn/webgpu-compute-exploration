@@ -1,5 +1,9 @@
 # WebGPU Compute Exploration
 
+[![CI](https://github.com/scttfrdmn/webgpu-compute-exploration/actions/workflows/ci.yml/badge.svg)](https://github.com/scttfrdmn/webgpu-compute-exploration/actions/workflows/ci.yml)
+
+**Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
+
 A comprehensive exploration of WebGPU's computational capabilities, featuring pure JavaScript examples and WASM integration for high-performance computing in the browser.
 
 ## Features
@@ -86,11 +90,10 @@ Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 
 ## Browser Support
 
-WebGPU is supported in:
-- Chrome 113+ (Stable)
-- Edge 113+ (Stable)
-- Firefox 118+ (Behind flag, experimental)
-- Safari 18+ (Technical Preview)
+WebGPU ships by default in (as of late 2026):
+- **Chrome / Edge 113+** on Windows, macOS and ChromeOS; Android 121+. On Linux it is behind `chrome://flags/#enable-unsafe-webgpu` for most hardware.
+- **Firefox 141+** on Windows and **147+** on Apple silicon Macs. Linux, Android and Intel Macs are Nightly-only.
+- **Safari 26+** on macOS, iOS, iPadOS and visionOS.
 
 Check support at: https://caniuse.com/webgpu
 
@@ -106,7 +109,7 @@ Then open http://localhost:8000 in a WebGPU-compatible browser.
 
 ### Full Setup (with WASM)
 
-1. **Install Rust** (if not already installed):
+1. **Install Rust** via rustup (if not already installed):
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
@@ -118,14 +121,13 @@ cargo install wasm-pack
 
 3. **Build WASM module**:
 ```bash
-cd wasm
-chmod +x build.sh
-./build.sh
+./wasm/build.sh   # or: npm run build-wasm
 ```
+
+   `build.sh` needs a `rustc` with the `wasm32-unknown-unknown` target. With rustup: `rustup target add wasm32-unknown-unknown`. If a Homebrew `rustc` shadows rustup's, put `~/.cargo/bin` first on `PATH`.
 
 4. **Start development server**:
 ```bash
-cd ..
 python3 -m http.server 8000
 ```
 
@@ -135,6 +137,7 @@ python3 -m http.server 8000
 
 ```
 webgpu/
+├── .github/workflows/                 # CI and GitHub Pages deployment
 ├── index.html                          # Main application page
 ├── js/
 │   ├── main.js                        # Application entry point
@@ -156,6 +159,8 @@ webgpu/
 │   ├── build.sh                       # WASM build script
 │   └── src/
 │       └── lib.rs                     # Rust/WASM source code
+├── CHANGELOG.md
+├── CITATION.cff
 └── README.md
 ```
 
@@ -209,19 +214,13 @@ This architecture is ideal for:
 - [WGSL Specification](https://gpuweb.github.io/gpuweb/wgsl/)
 - [WebGPU Samples](https://webgpu.github.io/webgpu-samples/)
 - [GPU Gems (Advanced Techniques)](https://developer.nvidia.com/gpugems/gpugems/contributors)
+- [Shadertoy](https://www.shadertoy.com/) — a large body of shader techniques
+- Books: *Real-Time Rendering* (Akenine-Möller et al.), *Physically Based Rendering* (Pharr, Jakob, Humphreys)
+- Papers: "Position Based Dynamics" (Müller et al.), "Particle-Based Fluid Simulation for Interactive Applications" (Müller et al.), "Fast Parallel GPU-Sorting Using a Hybrid Algorithm" (Sintorn & Assarsson)
 
 ## Extending This Project
 
-See [FUTURE_EXAMPLES.md](FUTURE_EXAMPLES.md) for a comprehensive list of potential additions including:
-
-**Physics & Simulation**: N-Body with Barnes-Hut, Cloth simulation, Wave equation solver
-**Graphics**: Reaction-diffusion, Voronoi diagrams, Perlin noise, Path tracer
-**Signal Processing**: FFT audio visualizer, Convolution reverb
-**Machine Learning**: Neural network inference, K-means clustering
-**Algorithms**: Parallel sorting, Maze generation/solving
-**Interactive**: Falling sand game
-
-Each idea includes implementation notes, complexity ratings, and educational value assessments.
+Planned examples (reaction-diffusion, wave equation, falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 
@@ -237,7 +236,7 @@ If you find this project helpful, consider supporting my work:
 - Update your graphics drivers
 
 ### WASM Module Fails to Load
-- Run the build script: `cd wasm && ./build.sh`
+- Run the build script: `./wasm/build.sh`
 - Check that `js/wasm-pkg/` directory exists
 - Ensure wasm-pack installed correctly
 
@@ -248,12 +247,14 @@ If you find this project helpful, consider supporting my work:
 
 ## License
 
-This project is provided as-is for educational purposes. Feel free to use and modify for your own learning and projects.
+[MIT](LICENSE) © 2025-2026 Scott Friedman
 
 ## Contributing
 
 This is an exploration project. If you add new examples or improvements:
 1. Keep examples focused and well-documented
-2. Include performance metrics
-3. Add shader code comments explaining the algorithm
-4. Update this README with your additions
+2. Include performance metrics; target 60 FPS for interactive simulations (30 FPS minimum for heavy rendering)
+3. Offer quality/size controls so the example scales down to weaker and mobile GPUs
+4. Provide interactive controls and preset configurations
+5. Add shader code comments explaining the algorithm
+6. Update this README and CHANGELOG with your additions

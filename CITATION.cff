@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "WebGPU Compute Exploration"
+abstract: "Interactive WebGPU/WGSL compute examples, from basic parallel operations to physics simulations, with Rust/WASM integration."
+authors:
+  - family-names: Friedman
+    given-names: Scott
+version: 0.1.0
+license: MIT
+repository-code: "https://github.com/scttfrdmn/webgpu-compute-exploration"
+url: "https://scttfrdmn.github.io/webgpu-compute-exploration/"
+keywords:
+  - webgpu
+  - wgsl
+  - compute-shaders
+  - wasm
