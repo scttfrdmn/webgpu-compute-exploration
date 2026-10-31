@@ -216,6 +216,7 @@
             <li><a href="#dla">9 DLA</a></li>
             <li><a href="#reaction-diffusion">10 Turing</a></li>
             <li><a href="#wave-equation">11 Waves</a></li>
+            <li><a href="#noise">13 Noise</a></li>
             <li><a href="#wasm-mandelbrot">14 WASM</a></li>
         </ul>
     </nav>
@@ -466,6 +467,57 @@
         <p class="hint"><strong>Interaction:</strong> click to drop a ripple, hold to keep dropping them · shift-drag to draw walls. Reset clears the water and keeps the walls; a preset replaces both.</p>
         <canvas id="canvas-wave" class="interactive" width="1024" height="768"></canvas>
         <div id="output-wave" class="output"></div>
+    </section>
+
+    <section class="example" id="noise">
+        <h3><span class="num">13</span>Procedural Noise</h3>
+        <p>A compute shader evaluates 3D Perlin or simplex noise as fractal Brownian motion, with optional ridges and domain warping, for every pixel; a render pass colors it as terrain, clouds, marble or grayscale.</p>
+        <div class="controls">
+            <button id="btn-noise-animate" class="primary">▶ Animate</button>
+            <button id="btn-noise-reset-view">Reset view</button>
+            <label for="noise-type">Noise</label>
+            <select id="noise-type">
+                <option value="0">Perlin</option>
+                <option value="1">Simplex</option>
+            </select>
+            <label for="noise-color">Colors</label>
+            <select id="noise-color">
+                <option value="0">Terrain</option>
+                <option value="1">Clouds</option>
+                <option value="2">Marble</option>
+                <option value="3">Grayscale</option>
+            </select>
+            <label for="noise-ridged">Ridged</label>
+            <input type="checkbox" id="noise-ridged">
+        </div>
+        <div class="controls">
+            <label for="noise-frequency">Frequency</label>
+            <input type="range" id="noise-frequency" min="0.5" max="10" step="0.1" value="2.5">
+            <span id="noise-frequency-value">2.5</span>
+            <label for="noise-octaves">Octaves</label>
+            <input type="range" id="noise-octaves" min="1" max="8" step="1" value="7">
+            <span id="noise-octaves-value">7</span>
+            <label for="noise-lacunarity">Lacunarity</label>
+            <input type="range" id="noise-lacunarity" min="1.5" max="3" step="0.05" value="2">
+            <span id="noise-lacunarity-value">2.00</span>
+            <label for="noise-gain">Persistence</label>
+            <input type="range" id="noise-gain" min="0.2" max="0.8" step="0.01" value="0.5">
+            <span id="noise-gain-value">0.50</span>
+            <label for="noise-warp">Warp</label>
+            <input type="range" id="noise-warp" min="0" max="4" step="0.1" value="0.4">
+            <span id="noise-warp-value">0.4</span>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="noise-preset" data-preset="terrain">Terrain</button>
+            <button class="noise-preset" data-preset="mountains">Mountains</button>
+            <button class="noise-preset" data-preset="clouds">Clouds</button>
+            <button class="noise-preset" data-preset="marble">Marble</button>
+            <button class="noise-preset" data-preset="gray">Warped</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> drag to pan · wheel to zoom. Animate moves through the third (time) dimension of the noise.</p>
+        <canvas id="canvas-noise" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-noise" class="output"></div>
     </section>
 
     <h2 class="group-title">WebAssembly</h2>

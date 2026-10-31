@@ -104,6 +104,16 @@ Water ripples from the 2D wave equation: drop ripples, draw walls, and watch the
 - **Rendering**: Full-screen fragment shader computes surface normals from height differences, diffuse + specular lighting over a blue/teal height ramp
 - **Performance**: Measured FPS and simulation steps per second; no CPU readback
 
+### 13. Procedural Noise
+3D gradient (Perlin) and simplex noise, summed as fractal Brownian motion, for terrain and texture generation.
+- **Compute**: One dispatch evaluates the noise for every pixel of a 1024×768 field into a storage buffer (one f32 per pixel)
+- **Algorithms**: Improved Perlin noise (quintic fade, 12 edge gradients) and simplex noise, with a PCG integer hash instead of a permutation table; time is the third coordinate
+- **fBm**: 1-8 octaves, lacunarity, persistence, optional ridged mode, and domain warping (fBm of fBm)
+- **Presets**: Terrain, Mountains, Clouds, Marble, Warped
+- **Interaction**: Drag to pan, wheel to zoom; Animate moves through time, and while paused any change re-runs one compute + render
+- **Visualization**: Full-screen fragment shader colors the field as hillshaded terrain bands, clouds, veined marble or grayscale
+- **Performance**: Measured FPS and noise evaluations per frame; no CPU readback
+
 ### 14. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
@@ -179,6 +189,7 @@ webgpu/
 │   │   ├── dla-3d.js                  # Example 9: 3D DLA
 │   │   ├── reaction-diffusion.js      # Example 10: Gray-Scott reaction-diffusion
 │   │   ├── wave-equation.js           # Example 11: 2D wave equation (water ripples)
+│   │   ├── noise.js                   # Example 13: Perlin/simplex noise and fBm
 │   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
@@ -252,7 +263,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (falling sand, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 

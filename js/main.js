@@ -10,6 +10,7 @@ import { initBoids } from './examples/boids.js';
 import { initDLA3D } from './examples/dla-3d.js';
 import { initReactionDiffusion } from './examples/reaction-diffusion.js';
 import { initWaveEquation } from './examples/wave-equation.js';
+import { initNoise } from './examples/noise.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -111,6 +112,7 @@ function initInteractiveExamplesOnVisible() {
         'canvas-dla': initDLA3D,
         'canvas-rd': initReactionDiffusion,
         'canvas-wave': initWaveEquation,
+        'canvas-noise': initNoise,
     };
     const instances = new Map();
 
