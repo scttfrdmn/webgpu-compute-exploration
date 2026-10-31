@@ -8,6 +8,7 @@ import { initSPHFluid } from './examples/sph-fluid.js';
 import { initRayMarching } from './examples/ray-marching.js';
 import { initBoids } from './examples/boids.js';
 import { initDLA3D } from './examples/dla-3d.js';
+import { initReactionDiffusion } from './examples/reaction-diffusion.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -107,6 +108,7 @@ function initInteractiveExamplesOnVisible() {
         'canvas-fractal': initRayMarching,
         'canvas-boids': initBoids,
         'canvas-dla': initDLA3D,
+        'canvas-rd': initReactionDiffusion,
     };
     const instances = new Map();
 
