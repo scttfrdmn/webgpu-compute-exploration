@@ -9,6 +9,11 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - Molecular dynamics shows the periodic simulation box as faint glass faces with
   glowing edges; the default camera now frames the whole box.
+- Page redesign: hero header with a WebGPU status badge, sticky example navigation,
+  grouped sections, primary/secondary buttons, keyboard focus styles, canvases that
+  scale to the window, and result panels hidden until used.
+- Search and link-preview metadata (description, Open Graph, Twitter card, canonical
+  URL) and a Mandelbulb social preview image (`assets/social-preview.png`).
 - Ten WebGPU/WGSL examples: vector addition, matrix multiplication, Gaussian blur,
   Game of Life, molecular dynamics, SPH fluid, ray-marched 3D fractals, boids,
   3D diffusion-limited aggregation, and a Rust/WASM-coordinated Mandelbrot set.
@@ -23,6 +28,9 @@ All notable changes to this project are documented here. The format follows
   `wasm32-unknown-unknown` target clearly.
 
 ### Fixed
+- Page text claimed features that don't exist (SPH surface tension and click-to-spawn
+  barriers, boids spatial hashing); README now matches the code.
+- Game of Life leaked a staging buffer on every cell click.
 - Image blur looked like a no-op: the smooth test image hid a 5×5 blur. Now a
   sharp-edged test pattern, σ = 4 over a 25×25 kernel, and Original/Blurred captions.
 - `readBuffer` no longer leaks its staging buffer and accepts the typed-array

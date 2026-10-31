@@ -370,6 +370,7 @@ class GameOfLife {
             data[idx] = data[idx] === 1 ? 0 : 1;
             this.setGrid(data);
             readBuffer.unmap();
+            readBuffer.destroy();
         });
     }
 

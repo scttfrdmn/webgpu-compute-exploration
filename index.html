@@ -3,153 +3,224 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGPU Compute Exploration</title>
+    <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
+    <meta name="description" content="Ten interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="author" content="Scott Friedman">
+    <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="WebGPU Compute Shader Examples">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
+    <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#0d1117">
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #1a1a1a;
-            color: #e0e0e0;
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-2: #1c2330;
+            --border: #2a3342;
+            --text: #e6edf3;
+            --muted: #9aa7b6;
+            --accent: #4fc3f7;
+            --accent-strong: #29b6f6;
+            --accent-2: #81c784;
+            --error: #ff6b6b;
+            --radius: 10px;
         }
-        h1 {
-            color: #4fc3f7;
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; scroll-padding-top: 72px; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.55;
+        }
+        a { color: var(--accent); }
+        .page { max-width: 1100px; margin: 0 auto; padding: 0 20px 40px; }
+
+        /* Header */
+        header.hero {
+            padding: 48px 20px 28px;
+            background: radial-gradient(ellipse at top, #1b2a44 0%, var(--bg) 70%);
+            border-bottom: 1px solid var(--border);
+        }
+        header.hero .inner { max-width: 1100px; margin: 0 auto; }
+        header.hero h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -0.02em; }
+        header.hero h1 span { color: var(--accent); }
+        header.hero p { margin: 0 0 18px; max-width: 760px; color: var(--muted); font-size: 1.05rem; }
+        .hero-links { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .hero-links a {
+            text-decoration: none; padding: 7px 14px; border: 1px solid var(--border);
+            border-radius: 999px; color: var(--text); font-size: 0.92rem;
+        }
+        .hero-links a:hover { border-color: var(--accent); color: var(--accent); }
+
+        .status {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 7px 14px; border-radius: 999px; font-size: 0.92rem;
+            background: var(--surface-2); border: 1px solid var(--border); color: var(--muted);
+        }
+        .status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+        .status.supported { color: #b9f6ca; border-color: #2e7d32; background: #10261a; }
+        .status.supported::before { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+        .status.not-supported { color: #ffcdd2; border-color: #c62828; background: #2b1214; }
+        .status.not-supported::before { background: var(--error); }
+
+        /* Section navigation */
+        nav.toc {
+            position: sticky; top: 0; z-index: 10;
+            background: rgba(13, 17, 23, 0.88); backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border);
+        }
+        nav.toc ul {
+            max-width: 1100px; margin: 0 auto; padding: 10px 20px; list-style: none;
+            display: flex; gap: 6px; overflow-x: auto; white-space: nowrap;
+        }
+        nav.toc a {
+            display: block; padding: 5px 11px; border-radius: 6px;
+            color: var(--muted); text-decoration: none; font-size: 0.88rem;
+        }
+        nav.toc a:hover { color: var(--text); background: var(--surface-2); }
+
+        /* Sections and example cards */
+        .group-title {
+            margin: 40px 0 4px; font-size: 0.8rem; font-weight: 600;
+            letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
         }
         .example {
-            background: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 22px 24px;
+            margin: 16px 0;
         }
-        .example h2 {
-            margin-top: 0;
-            color: #81c784;
-        }
+        .example h3 { margin: 0 0 6px; font-size: 1.3rem; }
+        .example h3 .num { color: var(--accent); margin-right: 6px; font-variant-numeric: tabular-nums; }
+        .example > p { margin: 0 0 12px; color: var(--muted); }
+        .hint { color: var(--muted); font-size: 0.9rem; margin: 10px 0; }
+        .hint strong { color: var(--text); font-weight: 600; }
+
+        /* Controls */
         button {
-            background: #4fc3f7;
-            color: #1a1a1a;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 5px;
+            font: inherit; font-size: 0.92rem;
+            background: var(--surface-2); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px;
+            padding: 7px 14px; cursor: pointer; margin: 0;
+            transition: background 0.15s, border-color 0.15s;
         }
-        button:hover {
-            background: #29b6f6;
+        button:hover { border-color: var(--accent); }
+        button.primary, .example > button:first-of-type {
+            background: var(--accent); color: #0b1a24; border-color: var(--accent); font-weight: 600;
         }
-        button:disabled {
-            background: #555;
-            cursor: not-allowed;
-        }
-        .output {
-            background: #1a1a1a;
-            border: 1px solid #555;
-            padding: 15px;
-            margin-top: 10px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            white-space: pre-wrap;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-        .error {
-            color: #ff5252;
-        }
-        .success {
-            color: #81c784;
-        }
-        .info {
-            color: #4fc3f7;
-        }
-        canvas {
-            border: 1px solid #555;
-            margin-top: 10px;
-        }
-        .image-pair {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 16px;
-        }
-        .image-pair figure {
-            margin: 0;
-        }
-        .image-pair figcaption {
-            margin-top: 10px;
-            color: #aaa;
-            font-size: 0.9em;
-        }
-        canvas.interactive {
-            cursor: crosshair;
-        }
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .status.supported {
-            background: #1b5e20;
-            border: 1px solid #2e7d32;
-        }
-        .status.not-supported {
-            background: #b71c1c;
-            border: 1px solid #c62828;
+        button.primary:hover, .example > button:first-of-type:hover { background: var(--accent-strong); }
+        button:disabled { opacity: 0.45; cursor: not-allowed; }
+        button:focus-visible, select:focus-visible, input:focus-visible, a:focus-visible {
+            outline: 2px solid var(--accent); outline-offset: 2px;
         }
         .controls {
-            margin: 15px 0;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: center;
+            display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 12px 0;
         }
-        .controls label {
-            color: #aaa;
-            margin-right: 5px;
+        .controls label { color: var(--muted); font-size: 0.9rem; margin-left: 8px; }
+        .controls input[type="range"] { width: 140px; accent-color: var(--accent); }
+        .controls span { font-variant-numeric: tabular-nums; min-width: 3.5em; font-size: 0.9rem; }
+        select {
+            font: inherit; font-size: 0.92rem; background: var(--surface-2); color: var(--text);
+            border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
         }
-        .controls input[type="range"] {
-            width: 150px;
+        .seed-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; }
+        .seed-buttons .label { color: var(--muted); font-size: 0.85rem; margin-right: 4px; }
+        .seed-buttons button { padding: 5px 11px; font-size: 0.85rem; }
+        button.active { border-color: var(--accent-2); color: var(--accent-2); }
+
+        /* Canvases scale down to fit; JS maps pointer coordinates to canvas pixels */
+        canvas {
+            display: block; max-width: 100%; height: auto;
+            margin-top: 12px; border: 1px solid var(--border); border-radius: 8px;
+            background: #000;
         }
-        .seed-buttons {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
-            margin-top: 10px;
+        canvas.interactive { cursor: crosshair; }
+        canvas.square { max-width: min(100%, 720px); }
+        .image-pair { display: flex; flex-wrap: wrap; gap: 16px; }
+        .image-pair figure { margin: 0; flex: 1 1 300px; max-width: 512px; }
+        .image-pair figcaption { margin-top: 12px; color: var(--muted); font-size: 0.85rem; }
+        .image-pair canvas { width: 100%; margin-top: 6px; }
+
+        /* Result panels stay hidden until an example writes to them */
+        .output {
+            background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+            padding: 14px 16px; margin-top: 12px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem;
+            white-space: pre-wrap; max-height: 360px; overflow-y: auto;
         }
-        .seed-buttons button {
-            padding: 8px 15px;
-            font-size: 14px;
+        .output:empty { display: none; }
+        .error { color: var(--error); }
+        .success { color: var(--accent-2); }
+        .info { color: var(--accent); }
+
+        footer {
+            border-top: 1px solid var(--border); margin-top: 40px; padding: 24px 20px;
+            text-align: center; color: var(--muted); font-size: 0.9rem;
         }
-        button.active {
-            background: #81c784;
+        @media (max-width: 640px) {
+            .example { padding: 16px; }
+            .controls label { margin-left: 0; }
         }
     </style>
 </head>
 <body>
-    <h1>🚀 WebGPU Compute Exploration</h1>
+    <header class="hero">
+        <div class="inner">
+            <h1>WebGPU <span>Compute</span> Exploration</h1>
+            <p>Ten interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
+            set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
+            <div class="hero-links">
+                <div id="gpu-status" class="status">Checking WebGPU support…</div>
+                <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">Source on GitHub</a>
+                <a href="https://caniuse.com/webgpu">Browser support</a>
+            </div>
+        </div>
+    </header>
 
-    <div id="gpu-status" class="status">
-        Checking WebGPU support...
-    </div>
+    <nav class="toc" aria-label="Examples">
+        <ul>
+            <li><a href="#vector-addition">1 Vectors</a></li>
+            <li><a href="#matrix-multiplication">2 Matrices</a></li>
+            <li><a href="#gaussian-blur">3 Blur</a></li>
+            <li><a href="#game-of-life">4 Life</a></li>
+            <li><a href="#molecular-dynamics">5 Molecules</a></li>
+            <li><a href="#sph-fluid">6 Fluid</a></li>
+            <li><a href="#ray-marching">7 Fractals</a></li>
+            <li><a href="#boids">8 Boids</a></li>
+            <li><a href="#dla">9 DLA</a></li>
+            <li><a href="#wasm-mandelbrot">10 WASM</a></li>
+        </ul>
+    </nav>
 
-    <div class="example">
-        <h2>1. Basic Compute: Vector Addition</h2>
-        <p>Demonstrates parallel computation by adding two vectors of numbers on the GPU.</p>
+    <main class="page">
+    <h2 class="group-title">Compute basics</h2>
+
+    <section class="example" id="vector-addition">
+        <h3><span class="num">1</span>Vector Addition</h3>
+        <p>Adds two vectors of one million numbers in parallel on the GPU, one invocation per element.</p>
         <button id="btn-vector-add">Run Vector Addition</button>
         <div id="output-vector-add" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>2. Matrix Multiplication</h2>
-        <p>Performs matrix multiplication using compute shaders - a fundamental operation in ML and graphics.</p>
+    <section class="example" id="matrix-multiplication">
+        <h3><span class="num">2</span>Matrix Multiplication</h3>
+        <p>Multiplies two 512×512 matrices with 2D workgroups, a fundamental operation in ML and graphics.</p>
         <button id="btn-matrix-mul">Run Matrix Multiplication</button>
         <div id="output-matrix-mul" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>3. Image Processing: Gaussian Blur</h2>
-        <p>Applies a Gaussian blur filter to an image using compute shaders.</p>
+    <section class="example" id="gaussian-blur">
+        <h3><span class="num">3</span>Image Processing: Gaussian Blur</h3>
+        <p>Applies a 25×25 Gaussian blur (σ = 4) to a sharp-edged test image with a compute shader.</p>
         <button id="btn-image-blur">Run Image Blur</button>
         <div class="image-pair">
             <figure>
@@ -162,25 +233,25 @@
             </figure>
         </div>
         <div id="output-image-blur" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>4. Conway's Game of Life</h2>
-        <p>Interactive cellular automaton simulation running entirely on GPU with compute shaders.</p>
+    <h2 class="group-title">Simulations &amp; rendering</h2>
 
+    <section class="example" id="game-of-life">
+        <h3><span class="num">4</span>Conway's Game of Life</h3>
+        <p>A 200×150 cellular automaton; each generation is one compute dispatch.</p>
         <div class="controls">
-            <button id="btn-gol-start">▶ Start</button>
+            <button id="btn-gol-start" class="primary">▶ Start</button>
             <button id="btn-gol-pause">⏸ Pause</button>
             <button id="btn-gol-step">⏭ Step</button>
             <button id="btn-gol-clear">Clear</button>
             <button id="btn-gol-random">Random</button>
-            <label>Speed:</label>
+            <label for="gol-speed">Speed</label>
             <input type="range" id="gol-speed" min="1" max="60" value="10">
             <span id="gol-speed-value">10 fps</span>
         </div>
-
         <div class="seed-buttons">
-            <strong style="color: #aaa; width: 100%;">Classic Patterns:</strong>
+            <span class="label">Patterns</span>
             <button class="seed-btn" data-seed="glider">Glider</button>
             <button class="seed-btn" data-seed="lwss">Lightweight Spaceship</button>
             <button class="seed-btn" data-seed="pulsar">Pulsar</button>
@@ -190,159 +261,140 @@
             <button class="seed-btn" data-seed="r-pentomino">R-Pentomino</button>
             <button class="seed-btn" data-seed="diehard">Diehard</button>
         </div>
-
+        <p class="hint"><strong>Interaction:</strong> click a cell to toggle it.</p>
         <canvas id="canvas-gol" class="interactive" width="800" height="600"></canvas>
         <div id="output-gol" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>5. Molecular Dynamics Simulation</h2>
-        <p>Real-time 3D physics simulation of interacting atoms using Lennard-Jones potential.</p>
-
+    <section class="example" id="molecular-dynamics">
+        <h3><span class="num">5</span>Molecular Dynamics</h3>
+        <p>Atoms interacting through the Lennard-Jones potential in a periodic 3D box, all forces computed on the GPU.</p>
         <div class="controls">
-            <button id="btn-md-start">▶ Start</button>
+            <button id="btn-md-start" class="primary">▶ Start</button>
             <button id="btn-md-pause">⏸ Pause</button>
             <button id="btn-md-reset">Reset</button>
-            <label>Atoms:</label>
+            <label for="md-atoms">Atoms</label>
             <input type="range" id="md-atoms" min="100" max="5000" value="1000" step="100">
             <span id="md-atoms-value">1000</span>
-            <label>Temperature:</label>
+            <label for="md-temp">Temperature</label>
             <input type="range" id="md-temp" min="1" max="100" value="30">
             <span id="md-temp-value">30</span>
         </div>
-
-        <div style="color: #aaa; margin: 10px 0;">
-            <strong>Controls:</strong> Left-click + drag to rotate | Mouse wheel to zoom | Right-click + drag to pan
-        </div>
-
-        <canvas id="canvas-md" width="1000" height="700" style="background: #000;"></canvas>
+        <p class="hint"><strong>Camera:</strong> drag to rotate · wheel to zoom · right-drag to pan</p>
+        <canvas id="canvas-md" width="1000" height="700"></canvas>
         <div id="output-md" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>6. SPH Fluid Simulation</h2>
-        <p>Smoothed Particle Hydrodynamics for realistic fluid behavior with surface tension.</p>
-
+    <section class="example" id="sph-fluid">
+        <h3><span class="num">6</span>SPH Fluid</h3>
+        <p>2D Smoothed Particle Hydrodynamics: a dam-break fluid with pressure, viscosity and gravity.</p>
         <div class="controls">
-            <button id="btn-sph-start">▶ Start</button>
+            <button id="btn-sph-start" class="primary">▶ Start</button>
             <button id="btn-sph-pause">⏸ Pause</button>
             <button id="btn-sph-reset">Reset</button>
             <button id="btn-sph-spawn">Add Water</button>
-            <label>Gravity:</label>
+            <label for="sph-gravity">Gravity</label>
             <input type="range" id="sph-gravity" min="0" max="100" value="50">
             <span id="sph-gravity-value">50</span>
-            <label>Viscosity:</label>
+            <label for="sph-viscosity">Viscosity</label>
             <input type="range" id="sph-viscosity" min="1" max="100" value="30">
             <span id="sph-viscosity-value">30</span>
         </div>
-
-        <div style="color: #aaa; margin: 10px 0;">
-            <strong>Interaction:</strong> Click to spawn water particles | Drag to create barriers
-        </div>
-
-        <canvas id="canvas-sph" class="interactive" width="1000" height="700" style="background: #0a0a1a;"></canvas>
+        <p class="hint"><strong>Add Water</strong> drops a block of 100 particles from the top (up to 4,000 in total).</p>
+        <canvas id="canvas-sph" width="1000" height="700" style="background: #0a0a1a;"></canvas>
         <div id="output-sph" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>7. Ray Marching: 3D Fractals</h2>
-        <p>Real-time volumetric rendering of Mandelbulb and other 3D fractals.</p>
-
+    <section class="example" id="ray-marching">
+        <h3><span class="num">7</span>Ray Marching: 3D Fractals</h3>
+        <p>Sphere tracing of distance-estimated fractals in a fragment shader, with lighting and ambient occlusion.</p>
         <div class="controls">
-            <label>Fractal:</label>
+            <label for="fractal-type">Fractal</label>
             <select id="fractal-type">
                 <option value="mandelbulb">Mandelbulb</option>
                 <option value="julia">Julia Set</option>
                 <option value="menger">Menger Sponge</option>
                 <option value="mandelbox">Mandelbox</option>
             </select>
-            <label>Power:</label>
+            <label for="fractal-power">Power</label>
             <input type="range" id="fractal-power" min="2" max="12" value="8">
             <span id="fractal-power-value">8</span>
-            <label>Quality:</label>
+            <label for="fractal-quality">Quality</label>
             <input type="range" id="fractal-quality" min="32" max="256" value="128" step="32">
             <span id="fractal-quality-value">128</span>
         </div>
-
-        <div style="color: #aaa; margin: 10px 0;">
-            <strong>Controls:</strong> Drag to rotate | Wheel to zoom | Auto-rotating camera
-        </div>
-
-        <canvas id="canvas-fractal" width="1000" height="700" style="background: #000;"></canvas>
+        <p class="hint"><strong>Camera:</strong> auto-rotates · drag to rotate · wheel to zoom. Renders only while on screen.</p>
+        <canvas id="canvas-fractal" width="1000" height="700"></canvas>
         <div id="output-fractal" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>8. Boids Flocking Simulation</h2>
-        <p>Craig Reynolds' algorithm simulating flocking behavior with spatial hashing.</p>
-
+    <section class="example" id="boids">
+        <h3><span class="num">8</span>Boids Flocking</h3>
+        <p>Craig Reynolds' flocking rules — separation, alignment and cohesion — for up to 10,000 agents.</p>
         <div class="controls">
-            <button id="btn-boids-start">▶ Start</button>
+            <button id="btn-boids-start" class="primary">▶ Start</button>
             <button id="btn-boids-pause">⏸ Pause</button>
             <button id="btn-boids-reset">Reset</button>
-            <label>Boids:</label>
+            <label for="boids-count">Boids</label>
             <input type="range" id="boids-count" min="100" max="10000" value="2000" step="100">
             <span id="boids-count-value">2000</span>
-            <label>Speed:</label>
+            <label for="boids-speed">Speed</label>
             <input type="range" id="boids-speed" min="10" max="100" value="50">
             <span id="boids-speed-value">50</span>
         </div>
-
         <div class="seed-buttons">
-            <strong style="color: #aaa; width: 100%;">Behaviors:</strong>
+            <span class="label">Behaviors</span>
             <button class="boids-behavior" data-behavior="flock">Normal Flocking</button>
             <button class="boids-behavior" data-behavior="predator">Add Predator</button>
             <button class="boids-behavior" data-behavior="scatter">Scatter</button>
             <button class="boids-behavior" data-behavior="vortex">Vortex</button>
         </div>
-
-        <div style="color: #aaa; margin: 10px 0;">
-            <strong>Interaction:</strong> Click to attract boids | Right-click to repel
-        </div>
-
+        <p class="hint"><strong>Interaction:</strong> hold the left mouse button to attract boids, the right button to repel them.</p>
         <canvas id="canvas-boids" class="interactive" width="1000" height="700" style="background: #0a0a1a;"></canvas>
         <div id="output-boids" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>9. Diffusion Limited Aggregation</h2>
-        <p>Fractal growth simulation creating organic crystal-like structures through particle aggregation.</p>
-
+    <section class="example" id="dla">
+        <h3><span class="num">9</span>Diffusion-Limited Aggregation (3D)</h3>
+        <p>Random walkers drift through a 64³ grid and stick to the growing structure, forming branching, coral-like growth.</p>
         <div class="controls">
-            <button id="btn-dla-start">▶ Start</button>
+            <button id="btn-dla-start" class="primary">▶ Start</button>
             <button id="btn-dla-pause">⏸ Pause</button>
             <button id="btn-dla-reset">Reset</button>
-            <label>Particles/Frame:</label>
+            <label for="dla-rate">Walk steps / frame</label>
             <input type="range" id="dla-rate" min="1" max="50" value="10">
             <span id="dla-rate-value">10</span>
-            <label>Stickiness:</label>
+            <label for="dla-stickiness">Stickiness</label>
             <input type="range" id="dla-stickiness" min="1" max="100" value="50">
             <span id="dla-stickiness-value">50%</span>
         </div>
-
         <div class="seed-buttons">
-            <strong style="color: #aaa; width: 100%;">Growth Patterns:</strong>
+            <span class="label">Seeds</span>
             <button class="dla-seed" data-seed="center">Single Center</button>
             <button class="dla-seed" data-seed="line">Horizontal Line</button>
             <button class="dla-seed" data-seed="circle">Circle</button>
             <button class="dla-seed" data-seed="multiple">Multiple Seeds</button>
         </div>
-
-        <div style="color: #aaa; margin: 10px 0;">
-            <strong>Info:</strong> Watch particles perform random walks until they stick to the growing structure
-        </div>
-
-        <canvas id="canvas-dla" width="1000" height="1000" style="background: #000;"></canvas>
+        <p class="hint"><strong>Camera:</strong> drag to rotate · wheel to zoom</p>
+        <canvas id="canvas-dla" class="square" width="1000" height="1000"></canvas>
         <div id="output-dla" class="output"></div>
-    </div>
+    </section>
 
-    <div class="example">
-        <h2>10. WASM Integration: Mandelbrot Set</h2>
-        <p>Uses WASM to coordinate WebGPU compute shaders for rendering the Mandelbrot fractal.</p>
+    <h2 class="group-title">WebAssembly</h2>
+
+
+    <section class="example" id="wasm-mandelbrot">
+        <h3><span class="num">10</span>WASM Integration: Mandelbrot Set</h3>
+        <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <button id="btn-wasm-mandelbrot">Run WASM + WebGPU</button>
         <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
         <div id="output-wasm-mandelbrot" class="output"></div>
-    </div>
+    </section>
+    </main>
+
+    <footer>
+        Source, issues and roadmap on <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">GitHub</a> · MIT License · © 2025-2026 Scott Friedman
+    </footer>
 
     <script type="module" src="./js/main.js"></script>
 </body>

@@ -4,7 +4,11 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-A comprehensive exploration of WebGPU's computational capabilities, featuring pure JavaScript examples and WASM integration for high-performance computing in the browser.
+Ten interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
+
+![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
+
+Open the page in a WebGPU browser and scroll: each interactive example is set up when it comes into view and starts when you press **Start**, so only what you are looking at uses the GPU. Ray marching renders while it is on screen.
 
 ## Features
 
@@ -23,36 +27,36 @@ Implements efficient matrix multiplication using 2D workgroups.
 
 ### 3. Image Processing (Gaussian Blur)
 Real-time image filtering using compute shaders.
-- **Algorithm**: Gaussian blur with configurable kernel
+- **Algorithm**: Gaussian blur, σ = 4 over a 25×25 kernel
 - **Shader**: 2D convolution with boundary handling
 - **Use Case**: Video filters, anti-aliasing, depth of field
-- **Visualization**: Side-by-side original and processed images
+- **Visualization**: Side-by-side original and blurred images of a sharp-edged test pattern
 
 ### 4. Conway's Game of Life
 Interactive cellular automaton with GPU acceleration.
 - **Grid Size**: 200×150 cells (30,000 cells)
 - **Interaction**: Click to toggle cells, load classic patterns
 - **Patterns**: Glider, Pulsar, Gosper Glider Gun, R-Pentomino, and more
-- **Performance**: Real-time simulation at 60 FPS with zero CPU overhead
+- **Performance**: Each generation is one compute dispatch; the grid is read back only when you click a cell
 - **Features**: Play/pause, step-through, adjustable speed
 
 ### 5. Molecular Dynamics Simulation
 Real-time 3D physics simulation of interacting particles.
 - **Particles**: 100-5000 atoms with Lennard-Jones potential
-- **Physics**: Velocity Verlet integration, periodic boundaries
-- **Rendering**: Instanced 3D spheres with Phong shading
+- **Physics**: Symplectic Euler integration, periodic boundaries, simple velocity-rescaling thermostat
+- **Rendering**: Instanced icosahedron atoms with diffuse lighting, inside a glass simulation box with glowing edges
 - **Interaction**: Mouse drag to rotate, wheel to zoom, right-drag to pan
-- **Visualization**: Temperature-based coloring (blue=cold, red=hot)
-- **Performance**: 60 FPS with up to 5000 particles, O(N²) force calculations on GPU
+- **Visualization**: Speed-based coloring (blue = slow, red = fast)
+- **Performance**: O(N²) all-pairs forces on the GPU
 
 ### 6. SPH Fluid Simulation
 Smoothed Particle Hydrodynamics for realistic fluid dynamics.
-- **Particles**: 2000 fluid particles
-- **Physics**: SPH kernels (Poly6, Spiky, Viscosity), pressure and viscosity forces
-- **Features**: Adjustable gravity and viscosity, interactive spawning
-- **Algorithm**: 3-pass compute (density, forces, integration)
+- **Particles**: 2,000 particles in a dam-break start; **Add Water** drops in more (up to 4,000)
+- **Physics**: 2D Müller et al. kernels (Poly6 density, Spiky pressure, viscosity Laplacian), gravity
+- **Algorithm**: 3 compute passes (density, forces, integration), 6 substeps per frame for stability
+- **Features**: Adjustable gravity and viscosity
 - **Visualization**: Velocity-based coloring with alpha blending
-- **Performance**: Real-time at 60 FPS, O(N²) neighbor search
+- **Performance**: O(N²) all-pairs neighbor search
 
 ### 7. Ray Marching: 3D Fractals
 Volumetric rendering of complex 3D fractals using distance fields.
@@ -61,22 +65,22 @@ Volumetric rendering of complex 3D fractals using distance fields.
 - **Quality**: Adjustable steps (32-256) for performance/quality trade-off
 - **Rendering**: Phong lighting, ambient occlusion, fog
 - **Interaction**: Drag to rotate, wheel to zoom, auto-rotation
-- **Performance**: Real-time fragment shader ray marching
+- **Performance**: Real-time fragment-shader ray marching; renders only while visible
 
 ### 8. Boids Flocking Simulation
 Craig Reynolds' emergent flocking behavior with thousands of agents.
 - **Agents**: 100-10,000 boids with adjustable speed
 - **Behaviors**: Separation, alignment, cohesion + special modes
 - **Modes**: Normal flocking, predator/prey, scatter, vortex
-- **Interaction**: Click to attract, right-click to repel
+- **Interaction**: Hold left mouse to attract, right mouse to repel
 - **Visualization**: Triangle agents colored by speed
-- **Performance**: 60 FPS with 10K agents, fully GPU-parallelized
+- **Performance**: O(N²) all-pairs neighbor checks on the GPU
 
 ### 9. Diffusion Limited Aggregation (3D)
 Fractal growth simulation creating dendritic crystal structures.
 - **Grid**: 64³ voxel space (262,144 cells)
-- **Particles**: 5,000 walkers performing random walks
-- **Algorithm**: Particles stick when adjacent to aggregate
+- **Particles**: 5,000 random walkers, each with its own PCG random state
+- **Algorithm**: A walker sticks (with adjustable probability) when next to the aggregate, then retires
 - **Seeds**: Single center, line, circle, or multiple points
 - **Rendering**: Instanced cubes with gradient coloring
 - **Interaction**: Drag to rotate, wheel to zoom, adjustable stickiness
@@ -138,9 +142,11 @@ python3 -m http.server 8000
 ```
 webgpu/
 ├── .github/workflows/                 # CI and GitHub Pages deployment
+├── assets/
+│   └── social-preview.png             # Preview image (README, link previews)
 ├── index.html                          # Main application page
 ├── js/
-│   ├── main.js                        # Application entry point
+│   ├── main.js                        # Entry point; sets up examples as they scroll into view
 │   ├── webgpu-utils.js                # WebGPU helper functions
 │   ├── examples/
 │   │   ├── vector-addition.js         # Example 1: Vector addition
@@ -161,6 +167,9 @@ webgpu/
 │       └── lib.rs                     # Rust/WASM source code
 ├── CHANGELOG.md
 ├── CITATION.cff
+├── CLAUDE.md                          # Notes for AI coding assistants
+├── LICENSE
+├── package.json                       # npm scripts: dev server, WASM build
 └── README.md
 ```
 
@@ -178,6 +187,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 ```
 
 ### Key Concepts
+
+**Uniform layout**: Uniform structs follow WGSL alignment rules (vec2 on 8 bytes, vec3/vec4 on 16), and `u32` fields must be written through a `Uint32Array` view. Writing an integer as a float turns a count like 2,000 into about 1.1 billion, which can hang the GPU.
 
 **Workgroups**: GPUs process data in parallel workgroups. Each workgroup contains multiple threads (invocations).
 
@@ -240,10 +251,13 @@ If you find this project helpful, consider supporting my work:
 - Check that `js/wasm-pkg/` directory exists
 - Ensure wasm-pack installed correctly
 
-### Performance Issues
-- Check GPU utilization in browser DevTools
-- Reduce workgroup size if crashes occur
-- Monitor buffer sizes and memory usage
+### Example Shows Nothing or Runs Slowly
+- Interactive examples wait for **Start**; scroll to the example and press it
+- Lower the particle/agent count or ray-marching quality on weaker GPUs
+- Open DevTools: WebGPU validation errors are logged to the console
+
+### Linux
+- Chrome and Edge keep WebGPU behind `chrome://flags/#enable-unsafe-webgpu` on most Linux hardware
 
 ## License
 

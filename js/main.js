@@ -20,20 +20,22 @@ async function init() {
 
         if (!isSupported) {
             statusDiv.className = 'status not-supported';
-            statusDiv.innerHTML = '❌ WebGPU is not supported in this browser. Please use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac).';
+            statusDiv.textContent = 'WebGPU not available — use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac)';
             disableAllButtons();
             return;
         }
 
         gpuDevice = await getGPUDevice();
         statusDiv.className = 'status supported';
-        statusDiv.innerHTML = `✅ WebGPU is supported! Using adapter: ${gpuDevice.adapter.name || 'Unknown'}`;
+        const info = gpuDevice.adapter.info || {};
+        const adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ') || info.description;
+        statusDiv.textContent = adapterName ? `WebGPU ready · ${adapterName}` : 'WebGPU ready';
 
         setupEventListeners();
         initInteractiveExamplesOnVisible();
     } catch (error) {
         statusDiv.className = 'status not-supported';
-        statusDiv.innerHTML = `❌ Error initializing WebGPU: ${error.message}`;
+        statusDiv.textContent = `WebGPU failed to initialize: ${error.message}`;
         disableAllButtons();
     }
 }
