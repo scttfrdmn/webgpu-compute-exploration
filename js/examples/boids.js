@@ -680,3 +680,6 @@ export function wgslModules() {
         { name: 'render', code: RENDER_SHADER },
     ];
 }
+
+// Exported for the CPU tests in test/boids.test.mjs.
+export { BoidsSimulation };

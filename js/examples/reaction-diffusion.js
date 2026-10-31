@@ -580,6 +580,8 @@ export async function initReactionDiffusion(gpuDevice) {
     return simulation;
 }
 
+export { ReactionDiffusion, PRESETS };   // for test/reaction-diffusion.test.mjs
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

@@ -1532,7 +1532,7 @@ export async function initPathTracer(gpuDevice) {
 }
 
 // Exported for the CPU reference port used in testing
-export { SCENES, SceneBuilder, intersectScene, cameraBasis };
+export { SCENES, SceneBuilder, intersectScene, cameraBasis, PathTracer };
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

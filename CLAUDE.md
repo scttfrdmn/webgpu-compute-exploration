@@ -8,8 +8,9 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 - WASM: `./wasm/build.sh` → `js/wasm-pkg/` (gitignored). Needs a `rustc` with `wasm32-unknown-unknown`;
   on this machine Homebrew's `rustc` shadows rustup's, so run with `PATH=~/.cargo/bin:$PATH`.
 - Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done`, the WASM build, and
-  `npm run validate:wgsl` (set `NAGA=/path/to/naga` if it is not on PATH).
-- There are no automated tests; examples must be verified in a browser.
+  `npm run validate:wgsl` (set `NAGA=/path/to/naga` if it is not on PATH), and `npm test` (`node --test 'test/*.test.mjs'`).
+- `test/` is CPU-only: it runs the examples' exported JS and CPU replicas of the shader algorithms. Rendering
+  and GPU behaviour still have to be verified in a browser. Never run tests on the GPU or in a headless browser.
 - WGSL is validated without a GPU by `tools/validate-wgsl.mjs`: it imports each example's `wgslModules()` and runs
   `naga` (naga-cli 30.0.1, pinned in `.github/workflows/ci.yml`) on every module. It catches the same errors
   Chrome's compiler reports. Examples must not touch browser globals at import time.
@@ -42,7 +43,11 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 2. Target 60 FPS (30 minimum for heavy rendering); offer size/quality controls, presets, and a performance readout.
 3. Comment the shader with the algorithm. Export `wgslModules()` returning `[{ name, code }]` with every module
    passed to `createShaderModule` (each variant, if code is built at runtime); CI fails examples without it.
-4. Add it to the README feature list and project structure, and to `CHANGELOG.md` under Unreleased.
+4. Add `test/<name>.test.mjs` (`node:test` and `node:assert` only): run the example's exported pure JS
+   directly, check each uniform writer's bytes against its WGSL struct (`test/helpers/wgsl-layout.mjs` and a
+   `test/helpers/mock-gpu.mjs` device), and compare a labeled CPU replica of the shader algorithm to a
+   straightforward reference with a documented tolerance, printing the measured numbers.
+5. Add it to the README feature list and project structure, and to `CHANGELOG.md` under Unreleased.
 
 ## Project tracking
 Work lives in GitHub issues, milestones (v0.1.0–v0.4.0) and project board #85 — not in local files.

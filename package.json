@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "python3 -m http.server 8000",
     "build-wasm": "cd wasm && chmod +x build.sh && ./build.sh",
-    "validate:wgsl": "node tools/validate-wgsl.mjs"
+    "validate:wgsl": "node tools/validate-wgsl.mjs",
+    "test": "node --test 'test/*.test.mjs'"
   },
   "keywords": [
     "webgpu",

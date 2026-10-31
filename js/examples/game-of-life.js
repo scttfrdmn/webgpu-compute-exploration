@@ -529,3 +529,6 @@ export function wgslModules() {
         { name: 'render', code: renderShader },
     ];
 }
+
+// Exported for the CPU tests in test/game-of-life.test.mjs.
+export { GameOfLife, SEED_PATTERNS };

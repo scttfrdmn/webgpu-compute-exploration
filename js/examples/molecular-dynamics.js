@@ -869,3 +869,6 @@ export function wgslModules() {
         { name: 'box', code: boxShader },
     ];
 }
+
+// Exported for the CPU tests in test/ (no behavior change)
+export { Mat4, Camera, MolecularDynamics };

@@ -798,6 +798,9 @@ export async function initMNISTTrain(gpuDevice) {
     return trainer;
 }
 
+// Exported for the CPU tests in test/ (no behavior change)
+export { MNISTTrainer };
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() { return [{ name: 'filters', code: filterShader }]; }

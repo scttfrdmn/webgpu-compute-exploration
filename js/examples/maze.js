@@ -1011,6 +1011,8 @@ export async function initMaze(gpuDevice) {
     return maze;
 }
 
+export { MazeSolver };   // for test/maze.test.mjs
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

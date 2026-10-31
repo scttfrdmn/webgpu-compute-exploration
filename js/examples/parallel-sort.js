@@ -1179,6 +1179,7 @@ export const sortInternals = {
     WORKGROUP_SIZE, BITONIC_BLOCK, RADIX_TILE, RADIX_ROUNDS, RADIX_BUCKETS, RADIX_PASSES, RADIX_MAX_KEYS,
     PAD_KEY, SCAN_MAX_CHUNK,
 };
+export { ParallelSort };   // for the CPU tests in test/ (uniform writers via a mock device)
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

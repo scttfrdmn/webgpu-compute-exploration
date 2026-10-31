@@ -2220,6 +2220,9 @@ ${reverb.message ? `\n${reverb.message}\n` : ''}
     return reverb;
 }
 
+// Exported for the CPU tests (test/convolution-reverb.test.mjs): the View uniform writer.
+export { ConvolutionReverb };
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

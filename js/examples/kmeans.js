@@ -936,6 +936,9 @@ class KMeans {
     }
 }
 
+// For the CPU tests in test/ (data generator, seeding, uniform writers via a mock device)
+export { KMeans, generatePoints, initCentroids, mulberry32, MAX_K, TILE, ASSIGN_WG, UPDATE_WG, MAX_GROUPS, TRAIL_LEN, ASPECT };
+
 export async function initKMeans(gpuDevice) {
     const { device } = gpuDevice;
     const canvas = document.getElementById('canvas-kmeans');
