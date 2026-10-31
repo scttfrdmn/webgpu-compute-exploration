@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-31
+
 ### Added
 - Example 23, N-body gravity: 4,096 to 262,144 bodies integrated with
   kick-drift-kick leapfrog, with a brute-force O(N²) solver (workgroup-shared
@@ -179,7 +181,8 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/releases/tag/v0.1.0
