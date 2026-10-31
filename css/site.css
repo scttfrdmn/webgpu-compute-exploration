@@ -206,7 +206,9 @@ footer {
 .understand pre code { background: none; padding: 0; }
 .understand table { border-collapse: collapse; margin: 12px 0; font-size: 0.92rem; }
 .understand th, .understand td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
-.understand math[display="block"] { display: block; margin: 14px 0; overflow-x: auto; font-size: 1.1em; }
+/* MathML needs a math font for stretchy delimiters, fraction bars and big operators */
+.understand math { font-family: math, "STIX Two Math", "Latin Modern Math", "Cambria Math", serif; font-size: 1.05em; }
+.understand math[display="block"] { display: block; margin: 14px 0; overflow-x: auto; font-size: 1.15em; }
 .callout { border-left: 3px solid var(--border); background: var(--surface-2); padding: 10px 14px;
     margin: 14px 0; border-radius: 0 8px 8px 0; }
 .callout > :first-child { margin-top: 0; }

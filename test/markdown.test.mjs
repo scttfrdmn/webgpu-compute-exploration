@@ -352,3 +352,17 @@ test('sample: an Understand-style document', () => {
     assert.deepEqual(lintMarkdown(src), []);
     assertInert(html);
 });
+
+// Regression: math that starts with a number used to be taken for a price and left as raw TeX
+// (seen on the N-body Understand page: "$2.7 \times 10^{8}$", "$0 \dots N-2$").
+test('inline math starting with a number renders when its content is TeX', () => {
+    for (const src of ['$2.7 \\times 10^{8}$', '$0 \\dots N-2$', '$8.8 \\times 10^{-7}$', '$2 = x$', '$3 x_i$']) {
+        const html = renderMarkdown(`about ${src} here`);
+        assert.match(html, /<math /, src);
+        assert.doesNotMatch(html.replace(/<math[\s\S]*?<\/math>/g, ''), /\$/, `${src}: no literal $ left`);
+    }
+    // prices still stay literal
+    for (const src of ['It costs $5 each.', 'Pay $1,000. Then $20 more.', 'between $3 and $4 ']) {
+        assert.doesNotMatch(renderMarkdown(src), /<math /, src);
+    }
+});

@@ -14,7 +14,8 @@
 // Inline math rule (so prices don't turn into math):
 //   - an opening $ must be followed by a non-space character;
 //   - an opening $ followed by a number and then a space, punctuation or the end ("$5 each", "$1,000.")
-//     is a literal dollar sign;
+//     is a literal dollar sign — unless the span up to its closing $ contains TeX syntax (a \command,
+//     ^, _, braces or =), so math that starts with a number ("$2.7 \times 10^{8}$") still renders;
 //   - the closing $ must be preceded by a non-space character and not followed by a digit;
 //   - \$ is always a literal dollar; nothing inside `code` is math. $$…$$ inside a line is display math.
 //   If no valid closing $ exists, the $ is literal.
@@ -105,6 +106,7 @@ function splitRow(line) {
 // Code spans and math delimiters are precomputed once per string (linear time), so scanning stays
 // near-linear even on pathological input such as thousands of unmatched backticks or dollars.
 const PRICE_RE = /\d[\d,]*(?:\.\d+)?/y;
+const TEX_SYNTAX_RE = /\\[A-Za-z]|[\^_{}=]/;
 const HARD_BREAK_RE = / {2,}\n/y;
 const isSpace = (c) => c === ' ' || c === '\n' || c === '\t';
 
@@ -173,14 +175,15 @@ class Scan {
         }
         const next = s[i + 1];
         if (next === undefined || /\s/.test(next)) return null;
-        // "$5 each", "$1,000.", "$3)" — a price, not math.
+        const j = this.closer[i + 2];
+        // "$5 each", "$1,000.", "$3)" — a price, not math, unless what follows up to the closer is TeX
         PRICE_RE.lastIndex = i + 1;
         const price = PRICE_RE.exec(s);
         if (price) {
             const after = s[i + 1 + price[0].length];
-            if (after === undefined || /[\s.,;:!?)\]]/.test(after)) return null;
+            const looksPrice = after === undefined || /[\s.,;:!?)\]]/.test(after);
+            if (looksPrice && (j < 0 || !TEX_SYNTAX_RE.test(s.slice(i + 1, j)))) return null;
         }
-        const j = this.closer[i + 2];
         if (j < 0) return null;
         return { end: j + 1, tex: s.slice(i + 1, j), display: false };
     }
