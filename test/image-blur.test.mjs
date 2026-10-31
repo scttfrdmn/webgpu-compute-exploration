@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { runImageBlur, wgslModules } from '../js/examples/image-blur.js';
 import { mockDevice } from './helpers/mock-gpu.mjs';
 import { typeLayout } from './helpers/wgsl-layout.mjs';
+import { separableBlurPixel } from './helpers/basic-refs.mjs';
 
 const SIGMA = 4.0;
 const KERNEL = 25;
@@ -34,29 +35,8 @@ function replicaPixel(img, w, h, x, y) {
     return sum.map(s => Math.fround(s / wsum));
 }
 
-// Independent reference: separable float64 blur (horizontal 1-D pass, then vertical) with per-axis
-// renormalization. Because the clipped window is a rectangle, the 2-D renormalized Gaussian factors
-// exactly into two 1-D renormalized passes.
-function separablePixel(img, w, h, x, y) {
-    const g = k => Math.exp(-(k * k) / (2 * SIGMA * SIGMA));
-    const out = [0, 0, 0, 0];
-    let wy = 0;
-    for (let ky = -HALF; ky <= HALF; ky++) {
-        const sy = y + ky;
-        if (sy < 0 || sy >= h) continue;
-        const row = [0, 0, 0, 0];
-        let wx = 0;
-        for (let kx = -HALF; kx <= HALF; kx++) {
-            const sx = x + kx;
-            if (sx < 0 || sx >= w) continue;
-            for (let c = 0; c < 4; c++) row[c] += img[(sy * w + sx) * 4 + c] * g(kx);
-            wx += g(kx);
-        }
-        for (let c = 0; c < 4; c++) out[c] += (row[c] / wx) * g(ky);
-        wy += g(ky);
-    }
-    return out.map(v => v / wy);
-}
+// Independent reference: separable float64 blur with per-axis renormalization (shared with test/gpu/).
+const separablePixel = (img, w, h, x, y) => separableBlurPixel(img, w, h, x, y, SIGMA, HALF);
 
 let captured;
 before(async () => {

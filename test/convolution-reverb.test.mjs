@@ -19,26 +19,13 @@ import assert from 'node:assert/strict';
 import { installGPUGlobals, mockDevice } from './helpers/mock-gpu.mjs';
 import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mjs';
 import * as rv from '../js/examples/convolution-reverb.js';
+// mulberry32, float64 direct convolution and the noise IR, shared with test/gpu/.
+import { mulberry32, convolve, noiseIR } from './helpers/convolution-reverb-refs.mjs';
 
 const computeCode = moduleCode(rv, 'compute');
 const PARAMS = structLayout(computeCode, 'Params');
 const MAX_PARTITIONS = Number(/const MAX_PARTITIONS: u32 = (\d+)u/.exec(computeCode)[1]);
 const WORKGROUP = Number(/@workgroup_size\((\d+)\)/.exec(computeCode)[1]);
-
-function mulberry32(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6D2B79F5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-// ---------------------------------------------------------------------------------------------
-// Emulating device: buffers hold real bytes; submit() runs the replica kernels.
-// ---------------------------------------------------------------------------------------------
 
 function reverseBits32(i) {
     let r = 0;
@@ -198,23 +185,6 @@ function emulatingDevice() {
         },
     };
     return device;
-}
-
-// Independent reference: full linear convolution in float64, y[n] = sum_i x[i]·h[n - i].
-function convolve(x, h, length) {
-    const y = new Float64Array(length);
-    for (let i = 0; i < x.length; i++) {
-        const xi = x[i];
-        if (xi === 0) continue;
-        for (let k = 0; k < h.length && i + k < length; k++) y[i + k] += xi * h[k];
-    }
-    return y;
-}
-
-function noiseIR(length, seed, decaySamples) {
-    const rand = mulberry32(seed);
-    const make = () => Float32Array.from({ length }, (_, i) => (rand() * 2 - 1) * Math.exp(-i / decaySamples));
-    return [make(), make()];
 }
 
 // ---------------------------------------------------------------------------------------------

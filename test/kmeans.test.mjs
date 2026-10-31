@@ -18,6 +18,7 @@ import {
 } from '../js/examples/kmeans.js';
 import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mjs';
 import { mockDevice } from './helpers/mock-gpu.mjs';
+import { lloyd64Step } from './helpers/kmeans-refs.mjs';
 
 const f = Math.fround;
 const PPT = TILE / ASSIGN_WG;
@@ -97,24 +98,7 @@ function gpuIteration(points, n, k, labels, centroids, trail) {
     return { changed, inertia, empty, counts };
 }
 
-// ---- Independent float64 Lloyd's ----
-function lloyd64Step(points, n, k, cent) {
-    const labels = new Uint32Array(n);
-    const sx = new Float64Array(k), sy = new Float64Array(k), cnt = new Float64Array(k);
-    let inertia = 0;
-    for (let i = 0; i < n; i++) {
-        const x = points[2 * i], y = points[2 * i + 1];
-        let best = 0, bestD = Infinity;
-        for (let j = 0; j < k; j++) {
-            const d = (x - cent[2 * j]) ** 2 + (y - cent[2 * j + 1]) ** 2;
-            if (d < bestD) { bestD = d; best = j; }
-        }
-        labels[i] = best; sx[best] += x; sy[best] += y; cnt[best]++; inertia += bestD;
-    }
-    const next = Float64Array.from(cent);
-    for (let j = 0; j < k; j++) if (cnt[j] > 0) { next[2 * j] = sx[j] / cnt[j]; next[2 * j + 1] = sy[j] / cnt[j]; }
-    return { labels, next, inertia, counts: cnt };
-}
+// Independent float64 Lloyd's step: lloyd64Step in test/helpers/kmeans-refs.mjs (shared with test/gpu/).
 
 function runBoth(n, k, blobs, seed, method) {
     const points = generatePoints(n, blobs, 0.05, seed);

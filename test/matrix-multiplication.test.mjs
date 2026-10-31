@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { runMatrixMultiplication, wgslModules } from '../js/examples/matrix-multiplication.js';
 import { mockDevice } from './helpers/mock-gpu.mjs';
 import { typeLayout } from './helpers/wgsl-layout.mjs';
+import { matmulF64 } from './helpers/basic-refs.mjs';
 
 // Replica of main(): global_id.x = row, global_id.y = col over an 8x8 workgroup grid of
 // ceil(M/8) x ceil(K/8); A is MxN row-major, B is NxK row-major, result is MxK row-major.
@@ -28,16 +29,8 @@ function replica(A, B, M, N, K) {
     return { out, writes };
 }
 
-// Independent reference: textbook triple loop in float64, i-k-j order.
-function reference(A, B, M, N, K) {
-    const C = new Float64Array(M * K);
-    for (let i = 0; i < M; i++)
-        for (let k = 0; k < N; k++) {
-            const a = A[i * N + k];
-            for (let j = 0; j < K; j++) C[i * K + j] += a * B[k * K + j];
-        }
-    return C;
-}
+// Independent reference: textbook triple loop in float64, i-k-j order (shared with test/gpu/).
+const reference = matmulF64;
 
 function lcg(seed) {
     let s = seed >>> 0;

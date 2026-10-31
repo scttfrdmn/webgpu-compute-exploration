@@ -17,6 +17,17 @@ All notable changes to this project are documented here. The format follows
   CPU replicas of the shader algorithms against straightforward references (naive DFT, CPU sort,
   brute-force Voronoi, direct N-body sum, direct convolution, queue BFS, finite-difference gradients,
   energy and stability checks), printing the measured errors. A new `test` CI job runs it.
+- Shipped WGSL is now executed in CI (#51): a new `gpu-software` job runs `test/gpu/` through Dawn's Node
+  bindings (`webgpu` npm package, pinned) on Mesa lavapipe, a CPU-only Vulkan driver, dispatching the exact
+  `wgslModules()` code and comparing the read-back buffers with the CPU references: vector addition,
+  matrix multiplication and blur vs float64; the FFT (window, butterflies, magnitudes, bands) vs a naive
+  DFT; bitonic (global and shared-memory) and radix sort, including f32 keys, vs the CPU sort; JFA and
+  JFA+1 vs brute-force Voronoi; maze BFS vs queue BFS; k-means Lloyd iterations vs float64;
+  reaction-diffusion and wave-equation steps vs their CPU kernels; one reverb block (the shipped
+  `GPUConvolver`) vs direct convolution; the MNIST forward pass, backward pass and SGD steps vs
+  `tools/train-mnist.mjs`; and the N-body bounds, Morton codes, radix sort, tree build, Barnes-Hut and
+  brute-force forces vs the direct sum. CPU references used by both suites moved to `test/helpers/`.
+  The harness refuses to run unless `CI=true` on Linux with a software adapter, so it never touches a real GPU.
 
 ### Changed
 - package.json description and keywords, the CITATION abstract, and the GitHub
