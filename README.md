@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Eleven interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Fourteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, and procedural Perlin/simplex noise. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -94,7 +94,36 @@ Two virtual chemicals diffuse and react, producing Turing patterns like coral, s
 - **Visualization**: Full-screen fragment shader maps V through an Ocean, Magma or Mono color ramp
 - **Performance**: Measured FPS and simulation steps per second; no CPU readback
 
-### 11. WASM Integration (Mandelbrot Set)
+### 11. Wave Equation
+Water ripples from the 2D wave equation: drop ripples, draw walls, and watch them reflect and interfere.
+- **Grid**: 512×384 cells, one height per cell in two storage buffers (u(t) and u(t−1)) plus a per-cell wall mask
+- **Algorithm**: Damped wave equation u_tt + γu_t = c²∇²u, centered (leapfrog) differences and a 5-point Laplacian; Courant number C = 0.1-0.7 (stable up to 1/√2), default 0.5; 1-16 steps per frame, one dispatch each
+- **Boundaries**: Walls and the grid edge are fixed at u = 0 and reflect waves; optional absorbing sponge layer at the edges
+- **Presets**: Open water, Double slit (plane-wave source, interference fringes), Ellipse (a drop at one focus refocuses at the other)
+- **Interaction**: Click or hold to drop ripples, shift-drag to draw walls, Rain toggle with drops placed by a GPU hash
+- **Rendering**: Full-screen fragment shader computes surface normals from height differences, diffuse + specular lighting over a blue/teal height ramp
+- **Performance**: Measured FPS and simulation steps per second; no CPU readback
+
+### 12. Falling Sand
+A sandbox cellular automaton with interacting materials.
+- **Grid**: 320×240 cells, one u32 each (material, color shade, fire life or liquid flow direction), updated in place in one storage buffer
+- **Algorithm**: Margolus neighborhood: each step one invocation owns a 2×2 block (offset alternating between (0,0) and (1,1)), applies reactions, then moves cells only by swapping; randomness from a PCG hash of block and step
+- **Materials**: Sand, water, stone, oil, fire, plant, acid; density order fire < air < oil < water < acid < sand; fire burns oil and plants where there is air, water puts it out, acid dissolves stone, sand and plants, plants grow into water
+- **Interaction**: Left mouse paints the selected material, right mouse erases (also while paused); brush size and 1-8 steps per frame; Sandbox scene and Clear
+- **Visualization**: Full-screen fragment shader with per-grain shading, flickering fire and a fire glow
+- **Performance**: Measured FPS and simulation steps per second; no CPU readback
+
+### 13. Procedural Noise
+3D gradient (Perlin) and simplex noise, summed as fractal Brownian motion, for terrain and texture generation.
+- **Compute**: One dispatch evaluates the noise for every pixel of a 1024×768 field into a storage buffer (one f32 per pixel)
+- **Algorithms**: Improved Perlin noise (quintic fade, 12 edge gradients) and simplex noise, with a PCG integer hash instead of a permutation table; time is the third coordinate
+- **fBm**: 1-8 octaves, lacunarity, persistence, optional ridged mode, and domain warping (fBm of fBm)
+- **Presets**: Terrain, Mountains, Clouds, Marble, Warped
+- **Interaction**: Drag to pan, wheel to zoom; Animate moves through time, and while paused any change re-runs one compute + render
+- **Visualization**: Full-screen fragment shader colors the field as hillshaded terrain bands, clouds, veined marble or grayscale
+- **Performance**: Measured FPS and noise evaluations per frame; no CPU readback
+
+### 14. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -168,7 +197,10 @@ webgpu/
 │   │   ├── boids.js                   # Example 8: Boids flocking
 │   │   ├── dla-3d.js                  # Example 9: 3D DLA
 │   │   ├── reaction-diffusion.js      # Example 10: Gray-Scott reaction-diffusion
-│   │   └── wasm-mandelbrot.js         # Example 11: WASM integration
+│   │   ├── wave-equation.js           # Example 11: 2D wave equation (water ripples)
+│   │   ├── falling-sand.js            # Example 12: Falling sand (Margolus automaton)
+│   │   ├── noise.js                   # Example 13: Perlin/simplex noise and fBm
+│   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
@@ -241,7 +273,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (wave equation, falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 
