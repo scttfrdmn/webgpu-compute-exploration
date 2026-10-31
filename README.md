@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Nineteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving). A Rust/WebAssembly example shows WASM coordinating GPU work.
+Twenty-three interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving). A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -170,7 +170,7 @@ Which graph algorithms parallelize: mazes are carved on the CPU and solved by a 
 - **Visualization**: Flood colored by distance with the wavefront highlighted, shortest path in yellow
 - **Performance**: Measured FPS, generation time, BFS levels, cells visited, path length
 
-### 19. WASM Integration (Mandelbrot Set)
+### 23. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -252,7 +252,7 @@ webgpu/
 │   │   ├── kmeans.js                  # Example 16: K-means clustering (Lloyd's algorithm)
 │   │   ├── voronoi-jfa.js             # Example 17: Voronoi diagrams via jump flooding
 │   │   ├── maze.js                    # Example 18: Maze generation and GPU BFS solving
-│   │   └── wasm-mandelbrot.js         # Example 19: WASM integration
+│   │   └── wasm-mandelbrot.js         # Example 23: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
