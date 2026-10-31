@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Nineteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Twenty-three interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, cloth simulation, a Monte Carlo path tracer, an MNIST CNN trained and run in the browser, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="WebGPU Compute Shader Examples">
-    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, FFT audio, GPU sorting, k-means, Voronoi, mazes, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, FFT audio, GPU sorting, k-means, Voronoi, mazes, cloth, path tracing, MNIST, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
     <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
     <meta property="og:image:width" content="1280">
@@ -192,7 +192,7 @@
     <header class="hero">
         <div class="inner">
             <h1>WebGPU <span>Compute</span> Exploration</h1>
-            <p>Nineteen interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            <p>Twenty-three interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
             set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
             <div class="hero-links">
@@ -223,7 +223,11 @@
             <li><a href="#kmeans">16 K-means</a></li>
             <li><a href="#voronoi">17 Voronoi</a></li>
             <li><a href="#maze">18 Maze</a></li>
-            <li><a href="#wasm-mandelbrot">19 WASM</a></li>
+            <li><a href="#cloth">19 Cloth</a></li>
+            <li><a href="#path-tracer">20 Path tracing</a></li>
+            <li><a href="#mnist-train">21 Train</a></li>
+            <li><a href="#mnist-recognize">22 Digits</a></li>
+            <li><a href="#wasm-mandelbrot">23 WASM</a></li>
         </ul>
     </nav>
 
@@ -770,11 +774,178 @@
         <div id="output-maze" class="output"></div>
     </section>
 
+    <h2 class="group-title">Advanced</h2>
+
+    <section class="example" id="cloth">
+        <h3><span class="num">19</span>Cloth Simulation</h3>
+        <p>A fabric of up to 128×128 particles held together by structural, shear and bend links, simulated with position-based dynamics: Verlet integration, then a constraint solver whose links are split into 12 independent color sets so each compute dispatch is race-free, then sphere and floor collisions with friction. Wind, pins, tearing and per-vertex normals all run on the GPU.</p>
+        <div class="controls">
+            <button id="btn-cloth-start" class="primary">▶ Start</button>
+            <button id="btn-cloth-pause">⏸ Pause</button>
+            <button id="btn-cloth-reset">Reset</button>
+            <label for="cloth-grid">Grid</label>
+            <select id="cloth-grid">
+                <option value="32">32 × 32</option>
+                <option value="48">48 × 48</option>
+                <option value="64" selected>64 × 64</option>
+                <option value="96">96 × 96</option>
+                <option value="128">128 × 128</option>
+            </select>
+            <label for="cloth-iterations">Iterations</label>
+            <input type="range" id="cloth-iterations" min="1" max="30" step="1" value="8">
+            <span id="cloth-iterations-value">8</span>
+            <label for="cloth-stiffness">Stiffness</label>
+            <input type="range" id="cloth-stiffness" min="0.05" max="1" step="0.05" value="1">
+            <span id="cloth-stiffness-value">1.00</span>
+        </div>
+        <div class="controls">
+            <label for="cloth-wind">Wind</label>
+            <input type="range" id="cloth-wind" min="0" max="20" step="0.5" value="0">
+            <span id="cloth-wind-value">0.0 m/s</span>
+            <label for="cloth-gravity">Gravity</label>
+            <input type="range" id="cloth-gravity" min="0" max="20" step="0.1" value="9.8">
+            <span id="cloth-gravity-value">9.8 m/s²</span>
+            <label for="cloth-tear">Tearing</label>
+            <input type="checkbox" id="cloth-tear">
+            <label for="cloth-tear-threshold">Tear at</label>
+            <input type="range" id="cloth-tear-threshold" min="1.1" max="4" step="0.05" value="1.8">
+            <span id="cloth-tear-threshold-value">1.80×</span>
+            <label for="cloth-wireframe">Wireframe</label>
+            <input type="checkbox" id="cloth-wireframe">
+            <label for="cloth-particles">Particles</label>
+            <input type="checkbox" id="cloth-particles">
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="cloth-preset" data-preset="corners">Hang from two corners</button>
+            <button class="cloth-preset" data-preset="edge">Hang from top edge</button>
+            <button class="cloth-preset" data-preset="curtain">Curtain</button>
+            <button class="cloth-preset" data-preset="drape">Drop on sphere</button>
+            <button class="cloth-preset" data-preset="flag">Flag</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom · shift-drag to grab the cloth and pull it. Turn on Tearing and pull hard to rip it; links break when stretched past the threshold. Presets and the grid size reset the cloth; Wind is set by each preset and can be changed.</p>
+        <canvas id="canvas-cloth" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-cloth" class="output"></div>
+    </section>
+
+    <section class="example" id="path-tracer">
+        <h3><span class="num">20</span>Path Tracer</h3>
+        <p>A compute shader traces one Monte Carlo light path per pixel per frame through spheres, quads, boxes and planes with diffuse, metal, glass and emissive materials, and adds it to a running average. Light sampling with multiple importance sampling makes it converge faster; noise falls as more samples arrive, and the run stops on its own at the target sample count.</p>
+        <div class="controls">
+            <button id="btn-pt-start" class="primary">▶ Start</button>
+            <button id="btn-pt-reset">Reset accumulation</button>
+            <label for="pt-resolution">Resolution</label>
+            <select id="pt-resolution">
+                <option value="0">100% (800 × 600)</option>
+                <option value="1">75% (600 × 450)</option>
+                <option value="2">50% (400 × 300)</option>
+            </select>
+            <label for="pt-target">Target spp</label>
+            <input type="range" id="pt-target" min="0" max="6" step="1" value="4">
+            <span id="pt-target-value">1024</span>
+            <label for="pt-bounces">Max bounces</label>
+            <input type="range" id="pt-bounces" min="1" max="8" step="1" value="5">
+            <span id="pt-bounces-value">5</span>
+        </div>
+        <div class="controls">
+            <label for="pt-nee">Light sampling</label>
+            <input type="checkbox" id="pt-nee" checked>
+            <label for="pt-exposure">Exposure</label>
+            <input type="range" id="pt-exposure" min="-3" max="3" step="0.1" value="0">
+            <span id="pt-exposure-value">0.0 EV</span>
+            <label for="pt-tonemap">Tone map</label>
+            <select id="pt-tonemap">
+                <option value="0">ACES</option>
+                <option value="1">Reinhard</option>
+            </select>
+            <label for="pt-clamp">Firefly clamp</label>
+            <input type="range" id="pt-clamp" min="0" max="100" step="1" value="0">
+            <span id="pt-clamp-value">off</span>
+        </div>
+        <div class="controls">
+            <label for="pt-fov">Field of view</label>
+            <input type="range" id="pt-fov" min="15" max="90" step="1" value="40">
+            <span id="pt-fov-value">40°</span>
+            <label for="pt-dof">Depth of field</label>
+            <input type="checkbox" id="pt-dof">
+            <label for="pt-aperture">Aperture</label>
+            <input type="range" id="pt-aperture" min="0.005" max="0.3" step="0.005" value="0.03">
+            <span id="pt-aperture-value">0.030</span>
+            <label for="pt-focus">Focus</label>
+            <input type="range" id="pt-focus" min="0.1" max="30" step="0.05" value="3.5">
+            <span id="pt-focus-value">3.50</span>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Scenes</span>
+            <button class="pt-scene" data-scene="cornell">Cornell box</button>
+            <button class="pt-scene" data-scene="spheres">Spheres</button>
+            <button class="pt-scene" data-scene="caustics">Caustics</button>
+            <button class="pt-scene" data-scene="materials">Materials</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom · click to focus on the point under the cursor (with depth of field on). Every camera or setting change restarts the accumulation; exposure and tone mapping do not. Caustics take many samples: the bright speckles are light focused through glass, and the firefly clamp hides them at the cost of a slightly darker image.</p>
+        <canvas id="canvas-pt" class="interactive" width="800" height="600"></canvas>
+        <div id="output-pt" class="output"></div>
+    </section>
+
+    <section class="example" id="mnist-train">
+        <h3><span class="num">21</span>MNIST: Train</h3>
+        <p>A small convolutional network (two 5×5 convolutions with ReLU and max-pooling, then a dense layer; 5,994 weights) learns handwritten digits from 10,000 MNIST images, entirely in compute shaders: batch assembly, forward pass, softmax cross-entropy, backpropagation through every layer and SGD with momentum. After each epoch it is tested on 2,000 images it has never seen.</p>
+        <div class="controls">
+            <button id="btn-mnist-train-start" class="primary">▶ Start</button>
+            <button id="btn-mnist-train-pause">⏸ Pause</button>
+            <button id="btn-mnist-train-reset">Reset</button>
+            <button id="btn-mnist-export">Export weights</button>
+            <button id="btn-mnist-use">Use in Recognize</button>
+        </div>
+        <div class="controls">
+            <label for="mnist-lr">Learning rate</label>
+            <input type="range" id="mnist-lr" min="0" max="7" step="1" value="5">
+            <span id="mnist-lr-value">0.04</span>
+            <label for="mnist-batch">Batch</label>
+            <select id="mnist-batch">
+                <option value="32">32</option>
+                <option value="64" selected>64</option>
+                <option value="128">128</option>
+            </select>
+            <label for="mnist-epochs">Epochs</label>
+            <input type="range" id="mnist-epochs" min="1" max="30" step="1" value="15">
+            <span id="mnist-epochs-value">15</span>
+            <label for="mnist-speed">Batches / frame</label>
+            <input type="range" id="mnist-speed" min="1" max="16" step="1" value="4">
+            <span id="mnist-speed-value">4</span>
+            <label for="mnist-augment">Random shifts</label>
+            <input type="checkbox" id="mnist-augment" checked>
+        </div>
+        <p class="hint"><strong>Controls:</strong> Start loads the data (1.6 MB) on first use and trains; Pause keeps the weights, Reset re-initializes them with the next seed. The default settings and first seed repeat the CPU run that produced the cached weights of example 22. Learning rate, batch size and shifts apply from the next mini-batch. Export weights downloads a .bin in the same format as <code>data/mnist/weights.bin</code>; Use in Recognize hands the current weights to example 22. Hover the charts for values. MNIST data: CC BY-SA 3.0, see <code>data/mnist/LICENSE.md</code>.</p>
+        <canvas id="canvas-mnist-train" width="960" height="320"></canvas>
+        <p class="hint">First-layer filters (8 × 5×5, blue positive, orange negative, each scaled to its largest weight), drawn from the GPU weights buffer every frame:</p>
+        <canvas id="canvas-mnist-filters" width="460" height="61"></canvas>
+        <div id="output-mnist-train" class="output"></div>
+    </section>
+
+    <section class="example" id="mnist-recognize">
+        <h3><span class="num">22</span>MNIST: Recognize</h3>
+        <p>Draw a digit and the same network classifies it on the GPU, using weights trained on the CPU with the same algorithm and cached in the repository, or the weights you just trained in example 21. The drawing is preprocessed like MNIST (fit into 20×20, centered by its center of mass in 28×28); below are the input the network actually sees and the activation maps of both convolution layers.</p>
+        <div class="controls">
+            <button id="btn-mnist-clear" class="primary">Clear</button>
+            <button id="btn-mnist-random">Random test digit</button>
+            <button id="btn-mnist-cached">Use cached weights</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> draw with the mouse, a pen or a finger in the black square; the prediction updates while you draw and when you lift. Random test digit shows one of the 2,000 test images with its true label. MNIST data and the cached weights: CC BY-SA 3.0, see <code>data/mnist/LICENSE.md</code>.</p>
+        <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start;">
+            <canvas id="canvas-mnist-draw" class="interactive" width="280" height="280"></canvas>
+            <div id="mnist-bars" style="flex: 1 1 260px;"></div>
+        </div>
+        <p class="hint">Network input (28×28) · conv1 ReLU maps (8 × 24×24) · conv2 ReLU maps (16 × 8×8), each map scaled to its own maximum:</p>
+        <canvas id="canvas-mnist-maps" width="570" height="232"></canvas>
+        <div id="output-mnist-recognize" class="output"></div>
+    </section>
+
     <h2 class="group-title">WebAssembly</h2>
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">19</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">23</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>

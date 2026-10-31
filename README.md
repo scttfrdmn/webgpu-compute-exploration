@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Nineteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving). A Rust/WebAssembly example shows WASM coordinating GPU work.
+Twenty-three interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, and an MNIST CNN that is trained and run entirely in compute shaders. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -170,7 +170,49 @@ Which graph algorithms parallelize: mazes are carved on the CPU and solved by a 
 - **Visualization**: Flood colored by distance with the wavefront highlighted, shortest path in yellow
 - **Performance**: Measured FPS, generation time, BFS levels, cells visited, path length
 
-### 19. WASM Integration (Mandelbrot Set)
+### 19. Cloth Simulation
+A hanging, draping and tearing fabric simulated with position-based dynamics (PBD).
+- **Cloth**: 32×32 to 128×128 particles (xyz + inverse mass, previous position for Verlet) joined by structural, shear and bend distance constraints, up to 97,026 links
+- **Solver**: Fixed 1/240 s substeps: Verlet integration (gravity, gusty wind and air drag along the per-vertex normals), long-range tethers to the nearest pins, 1-30 Gauss-Seidel iterations, then collisions. The links are split by graph coloring into 12 sets in which no two links share a particle, one dispatch per color, so the parallel projections never race; each dispatch picks its range through a dynamic uniform offset
+- **Collisions**: Sphere and floor with Coulomb friction (static and kinetic), so a draped cloth stays put
+- **Tearing**: Optional; a structural or shear link stretched past the threshold (1.1-4×) is flagged as broken and skipped, bend links break with the links they span, and the mesh omits triangles with a broken edge
+- **Presets**: Hang from two corners, Hang from top edge, Curtain (gathered on a rod, wind, a sphere behind it), Drop on sphere, Flag (strong gusty wind)
+- **Interaction**: Orbit, pan and zoom camera; shift-drag grabs the cloth at the particle nearest the mouse ray (one position readback per grab, picked on the CPU) and pulls a small patch around it
+- **Rendering**: Lit two-sided mesh (gingham front, blue back) with normals computed on the GPU, optional wireframe and particles, a sphere and a grid floor, 4× MSAA
+- **Controls**: Start/Pause/Reset, presets, grid size, iterations, stiffness, wind, gravity, tearing toggle and threshold; info panel with particle and link counts, torn links and FPS
+
+### 20. Path Tracer
+Monte Carlo path tracing with progressive accumulation: one path per pixel per frame, averaged until a target sample count.
+- **Scenes**: Cornell box (rotated box, glass and metal spheres), Spheres (checker ground, 61 spheres of mixed materials, sky light), Caustics (glass sphere focusing a small light), Materials (diffuse, mirror, rough gold and two glass spheres on rotated pedestals under an area light and a sphere light)
+- **Geometry**: Spheres, parallelogram quads, boxes rotated about the vertical axis and infinite planes, packed as 96-byte vec4 records in a storage buffer; brute-force closest hit over at most 64 primitives
+- **Materials**: Lambertian diffuse (cosine-weighted sampling), metal with roughness, glass (Schlick Fresnel, Snell refraction, total internal reflection), emissive
+- **Light transport**: Next-event estimation (area sampling for quad lights, cone sampling for sphere lights) combined with BSDF sampling by multiple importance sampling (power heuristic); 1-8 bounces, Russian roulette after the third; PCG random numbers seeded from pixel and sample index
+- **Camera**: Orbit, pan and zoom, field of view, thin-lens depth of field with click-to-focus (one CPU ray against the same scene data)
+- **Display**: Running average in a vec4 storage buffer, exposure, ACES or Reinhard tone mapping, sRGB; optional firefly clamp; 100%, 75% or 50% of 800×600
+- **Performance**: Samples per pixel, FPS and rays per second from a GPU ray counter (4-byte readback twice a second); stops at 64-4096 spp so the GPU idles once converged
+
+### 21. MNIST: Train
+A small CNN learns handwritten digits in the browser, with every step of training in compute shaders.
+- **Network**: 28×28 input → conv 5×5×8 → ReLU → 2×2 max-pool → conv 5×5×16 → ReLU → 2×2 max-pool → dense 256→10 → softmax; 5,994 weights, shared with example 22 through `js/examples/mnist-model.js`
+- **Data**: the first 10,000 MNIST training and 2,000 test images (gzipped, 1.9 MB, loaded on the first Start); shuffled on the CPU every epoch, batches gathered on the GPU by index, each image shifted by a hashed random offset of up to ±2 px
+- **Training (GPU)**: forward pass, log-sum-exp softmax cross-entropy, backprop through the dense layer, both max-pools (gradient to the window's argmax), both ReLUs and both convolutions; per-sample gradients in their own buffer rows, then one invocation per weight sums its batch in order (race-free, no atomics) and applies SGD with momentum, weight decay and a per-epoch learning-rate decay. 14 dispatches per mini-batch, 1-16 mini-batches per frame
+- **Charts**: training loss (log scale) and accuracy curves with hover readout, test accuracy after every epoch, epoch/batch counters and images per second, from a 32-byte readback per frame
+- **Filters**: the 8 first-layer 5×5 kernels drawn from the GPU weights buffer every frame
+- **Controls**: Start/Pause, Reset (next seed), learning rate, batch size (32/64/128), epochs, batches per frame, random shifts; Export weights (.bin) and Use in Recognize
+- **Same algorithm as the cached weights**: `tools/train-mnist.mjs` trains the same network on the CPU (98.00% test accuracy with the default settings); a browser run with the defaults and first seed repeats it
+- **Data license**: MNIST by LeCun, Cortes and Burges, CC BY-SA 3.0 (see `data/mnist/LICENSE.md`)
+
+### 22. MNIST: Recognize
+Draw a digit and classify it on the GPU with the same network.
+- **Weights**: `data/mnist/weights.bin` (trained by `tools/train-mnist.mjs`, 98.00% on the 2,000 test images) by default, or the weights handed over by example 21; the status shows which
+- **Drawing**: 280×280 canvas, mouse, pen or touch (pointer events), Clear
+- **Preprocessing (CPU)**: like MNIST: bounding box scaled to fit 20×20 with area averaging, then shifted so the center of mass sits at the middle of 28×28
+- **Inference (GPU)**: batch-1 forward pass when a stroke ends and every 120 ms while drawing; a 40-byte readback of the probabilities
+- **Visualization**: 10 confidence bars, the 28×28 input the network sees, and the ReLU activation maps of both conv layers (8 × 24×24, 16 × 8×8), drawn from the GPU buffer
+- **Random test digit**: one of the 2,000 test images with its true label and whether the prediction is right
+- **Data license**: the cached weights are derived from MNIST and are CC BY-SA 3.0, like the data
+
+### 23. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -229,6 +271,8 @@ webgpu/
 ├── .github/workflows/                 # CI and GitHub Pages deployment
 ├── assets/
 │   └── social-preview.png             # Preview image (README, link previews)
+├── data/
+│   └── mnist/                         # MNIST subset + cached weights (CC BY-SA 3.0, see LICENSE.md)
 ├── index.html                          # Main application page
 ├── js/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
@@ -252,8 +296,15 @@ webgpu/
 │   │   ├── kmeans.js                  # Example 16: K-means clustering (Lloyd's algorithm)
 │   │   ├── voronoi-jfa.js             # Example 17: Voronoi diagrams via jump flooding
 │   │   ├── maze.js                    # Example 18: Maze generation and GPU BFS solving
-│   │   └── wasm-mandelbrot.js         # Example 19: WASM integration
+│   │   ├── cloth.js                   # Example 19: Cloth simulation (PBD, graph-colored solver, tearing)
+│   │   ├── path-tracer.js             # Example 20: Monte Carlo path tracer
+│   │   ├── mnist-model.js             # Shared CNN for 21/22: WGSL kernels, GPU driver, weights format
+│   │   ├── mnist-train.js             # Example 21: Train a CNN on MNIST in compute shaders
+│   │   ├── mnist-recognize.js         # Example 22: Recognize hand-drawn digits
+│   │   └── wasm-mandelbrot.js         # Example 23: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
+├── tools/
+│   └── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
 │   ├── build.sh                       # WASM build script
@@ -325,7 +376,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (N-body, convolution reverb) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 
@@ -356,6 +407,8 @@ If you find this project helpful, consider supporting my work:
 ## License
 
 [MIT](LICENSE) © 2025-2026 Scott Friedman
+
+The MNIST data subset and the weights derived from it in `data/mnist/` are CC BY-SA 3.0 (MNIST by Yann LeCun, Corinna Cortes and Christopher J.C. Burges); see [data/mnist/LICENSE.md](data/mnist/LICENSE.md).
 
 ## Contributing
 
