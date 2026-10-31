@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Nineteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Nineteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="WebGPU Compute Shader Examples">
-    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, FFT audio, GPU sorting, k-means, Voronoi, mazes, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
     <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
     <meta property="og:image:width" content="1280">
@@ -218,7 +218,12 @@
             <li><a href="#wave-equation">11 Waves</a></li>
             <li><a href="#falling-sand">12 Sand</a></li>
             <li><a href="#noise">13 Noise</a></li>
-            <li><a href="#wasm-mandelbrot">20 WASM</a></li>
+            <li><a href="#fft-audio">14 FFT</a></li>
+            <li><a href="#parallel-sort">15 Sorting</a></li>
+            <li><a href="#kmeans">16 K-means</a></li>
+            <li><a href="#voronoi">17 Voronoi</a></li>
+            <li><a href="#maze">18 Maze</a></li>
+            <li><a href="#wasm-mandelbrot">19 WASM</a></li>
         </ul>
     </nav>
 
@@ -554,11 +559,222 @@
 
     <h2 class="group-title">Algorithms &amp; signal processing</h2>
 
+    <section class="example" id="fft-audio">
+        <h3><span class="num">14</span>FFT Audio Visualizer</h3>
+        <p>A real-time spectrum analyzer: the Web Audio API supplies raw samples, and the GPU applies a Hann window, runs a radix-2 Cooley-Tukey FFT (one compute dispatch per stage), converts to dB, keeps a scrolling spectrogram and detects beats.</p>
+        <div class="controls">
+            <button id="btn-fft-synth" class="primary">▶ Synth demo</button>
+            <button id="btn-fft-mic">Microphone</button>
+            <button id="btn-fft-file">Audio file…</button>
+            <input type="file" id="fft-file" accept="audio/*" hidden>
+            <button id="btn-fft-start">Start</button>
+            <button id="btn-fft-pause">Pause</button>
+            <button id="btn-fft-mute">Mute: off</button>
+        </div>
+        <div class="controls">
+            <label for="fft-mode">View</label>
+            <select id="fft-mode">
+                <option value="0">Bars</option>
+                <option value="1">Waveform</option>
+                <option value="2">Spectrogram</option>
+            </select>
+            <label for="fft-size">FFT size</label>
+            <select id="fft-size">
+                <option value="1024">1024</option>
+                <option value="2048" selected>2048</option>
+                <option value="4096">4096</option>
+            </select>
+            <label for="fft-smoothing">Smoothing</label>
+            <input type="range" id="fft-smoothing" min="0" max="0.95" step="0.05" value="0.6">
+            <span id="fft-smoothing-value">0.60</span>
+            <label for="fft-range">dB range</label>
+            <input type="range" id="fft-range" min="40" max="140" step="5" value="90">
+            <span id="fft-range-value">90 dB</span>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="fft-preset" data-preset="music">Music</button>
+            <button class="fft-preset" data-preset="fast">Fast response</button>
+            <button class="fft-preset" data-preset="detail">Fine detail</button>
+            <button class="fft-preset" data-preset="calm">Smooth</button>
+        </div>
+        <p class="hint"><strong>Audio:</strong> the synth demo needs no permissions and plays quietly (Mute silences the speakers, not the analysis). The microphone is requested only when you press Microphone and is never played back. Files are decoded locally and loop. The disc in the corner flashes on detected beats.</p>
+        <canvas id="canvas-fft" width="1024" height="512"></canvas>
+        <div id="output-fft" class="output"></div>
+    </section>
+
+    <section class="example" id="parallel-sort">
+        <h3><span class="num">15</span>Parallel Sorting</h3>
+        <p>Bitonic sort and LSD radix sort on the GPU. The benchmark sorts up to 4 million keys, checks the result against the CPU's sort and compares timings; the bar chart animates bitonic sort one compare-exchange stage at a time.</p>
+        <div class="controls">
+            <label for="sort-algorithm">Algorithm</label>
+            <select id="sort-algorithm">
+                <option value="bitonic">Bitonic (global)</option>
+                <option value="bitonic-shared">Bitonic (workgroup memory)</option>
+                <option value="radix">Radix (4-bit LSD)</option>
+            </select>
+            <label for="sort-type">Keys</label>
+            <select id="sort-type">
+                <option value="u32">u32</option>
+                <option value="f32">f32</option>
+            </select>
+            <label for="sort-n">N</label>
+            <select id="sort-n">
+                <option value="65536">65,536 (2¹⁶)</option>
+                <option value="262144">262,144 (2¹⁸)</option>
+                <option value="1000000">1,000,000</option>
+                <option value="1048576" selected>1,048,576 (2²⁰)</option>
+                <option value="4194304">4,194,304 (2²²)</option>
+            </select>
+            <button id="btn-sort-bench" class="primary">Run benchmark</button>
+        </div>
+        <div class="controls">
+            <button id="btn-sort-play" class="primary">▶ Play</button>
+            <button id="btn-sort-pause">⏸ Pause</button>
+            <button id="btn-sort-step">Step</button>
+            <button id="btn-sort-shuffle">Shuffle</button>
+            <label for="sort-bars">Bars</label>
+            <select id="sort-bars">
+                <option value="512">512</option>
+                <option value="1000">1000 (padded)</option>
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+            </select>
+            <label for="sort-pattern">Data</label>
+            <select id="sort-pattern">
+                <option value="random">Random</option>
+                <option value="reversed">Reversed</option>
+                <option value="nearly">Nearly sorted</option>
+                <option value="few">Few unique</option>
+            </select>
+            <label for="sort-speed">Stages / s</label>
+            <input type="range" id="sort-speed" min="1" max="60" value="8">
+            <span id="sort-speed-value">8</span>
+        </div>
+        <p class="hint"><strong>Reading the chart:</strong> background blue/purple marks blocks of size k that sort up/down in the next stage; the strip below pairs each orange bar with the cyan bar j places to its right. Gray bars are padding up to a power of two.</p>
+        <canvas id="canvas-sort" width="2048" height="768"></canvas>
+        <div id="output-sort" class="output"></div>
+    </section>
+
+    <section class="example" id="kmeans">
+        <h3><span class="num">16</span>K-Means Clustering</h3>
+        <p>Lloyd's algorithm on up to 500,000 points: each iteration one compute pass assigns every point to its nearest centroid and a two-level workgroup reduction moves each centroid to the mean of its points. Watch the centroids travel, with trails, until no point changes cluster.</p>
+        <div class="controls">
+            <button id="btn-kmeans-start" class="primary">▶ Start</button>
+            <button id="btn-kmeans-pause">⏸ Pause</button>
+            <button id="btn-kmeans-step">Step</button>
+            <button id="btn-kmeans-reset">Reset</button>
+            <button id="btn-kmeans-regenerate">Regenerate data</button>
+            <label for="kmeans-init">Init</label>
+            <select id="kmeans-init">
+                <option value="kmeans++">k-means++</option>
+                <option value="random">Random</option>
+            </select>
+            <label for="kmeans-voronoi">Voronoi</label>
+            <input type="checkbox" id="kmeans-voronoi" checked>
+        </div>
+        <div class="controls">
+            <label for="kmeans-k">K</label>
+            <input type="range" id="kmeans-k" min="2" max="16" step="1" value="5">
+            <span id="kmeans-k-value">5</span>
+            <label for="kmeans-n">Points</label>
+            <input type="range" id="kmeans-n" min="10000" max="500000" step="10000" value="100000">
+            <span id="kmeans-n-value">100k</span>
+            <label for="kmeans-blobs">True clusters</label>
+            <input type="range" id="kmeans-blobs" min="1" max="16" step="1" value="5">
+            <span id="kmeans-blobs-value">5</span>
+            <label for="kmeans-noise">Noise</label>
+            <input type="range" id="kmeans-noise" min="0" max="50" step="1" value="5">
+            <span id="kmeans-noise-value">5%</span>
+            <label for="kmeans-speed">Iterations / s</label>
+            <input type="range" id="kmeans-speed" min="1" max="60" step="1" value="5">
+            <span id="kmeans-speed-value">5</span>
+        </div>
+        <p class="hint"><strong>Controls:</strong> Start iterates until no point changes cluster, Step runs one iteration, Reset picks new initial centroids for the same points, Regenerate draws a new point cloud. Changing K re-initializes; changing the data sliders regenerates.</p>
+        <canvas id="canvas-kmeans" width="1024" height="768"></canvas>
+        <div id="output-kmeans" class="output"></div>
+    </section>
+
+    <section class="example" id="voronoi">
+        <h3><span class="num">17</span>Voronoi (Jump Flooding)</h3>
+        <p>The Jump Flooding Algorithm builds a Voronoi diagram and distance field for up to 1024 seeds on a 1024×768 grid in about log2(1024) = 10 compute passes, under Euclidean, Manhattan or Chebyshev distance.</p>
+        <div class="controls">
+            <button id="btn-voronoi-animate" class="primary">▶ Animate</button>
+            <button id="btn-voronoi-random">Random seeds</button>
+            <button id="btn-voronoi-clear">Clear</button>
+            <label for="voronoi-count">Seeds</label>
+            <input type="range" id="voronoi-count" min="2" max="1024" step="1" value="64">
+            <span id="voronoi-count-value">64</span>
+        </div>
+        <div class="controls">
+            <label for="voronoi-metric">Metric</label>
+            <select id="voronoi-metric">
+                <option value="0">Euclidean</option>
+                <option value="1">Manhattan</option>
+                <option value="2">Chebyshev</option>
+            </select>
+            <label for="voronoi-view">View</label>
+            <select id="voronoi-view">
+                <option value="0">Cells</option>
+                <option value="1">Distance field</option>
+                <option value="2">Combined</option>
+            </select>
+            <label for="voronoi-jfa1">JFA+1</label>
+            <input type="checkbox" id="voronoi-jfa1">
+            <button id="btn-voronoi-check">Exact check</button>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Layouts</span>
+            <button class="voronoi-layout" data-layout="random">Random</button>
+            <button class="voronoi-layout" data-layout="grid">Jittered grid</button>
+            <button class="voronoi-layout" data-layout="sunflower">Sunflower</button>
+            <button class="voronoi-layout" data-layout="clusters">Clusters</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> click to add a seed · drag a seed to move it · right-click or shift-click to remove the nearest seed. Animate lets the seeds drift and recomputes the diagram every frame; Exact check counts the pixels where JFA differs from brute force.</p>
+        <canvas id="canvas-voronoi" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-voronoi" class="output"></div>
+    </section>
+
+    <section class="example" id="maze">
+        <h3><span class="num">18</span>Maze Generation &amp; Solving</h3>
+        <p>Mazes of up to 1023×767 cells are carved on the CPU, because the recursive backtracker, Kruskal's and Prim's algorithms each depend on every earlier step. A GPU then solves them with a breadth-first wavefront: one compute dispatch per distance level, one thread per cell. The flood is colored by distance, and the shortest path is traced back from the goal.</p>
+        <div class="controls">
+            <button id="btn-maze-solve" class="primary">▶ Solve</button>
+            <button id="btn-maze-pause">⏸ Pause</button>
+            <button id="btn-maze-clear">Clear solution</button>
+            <label for="maze-speed">Steps / frame</label>
+            <input type="range" id="maze-speed" min="0" max="9" step="1" value="4">
+            <span id="maze-speed-value">16</span>
+        </div>
+        <div class="controls">
+            <button id="btn-maze-generate">Generate</button>
+            <label for="maze-algorithm">Algorithm</label>
+            <select id="maze-algorithm">
+                <option value="dfs">Recursive backtracker</option>
+                <option value="kruskal">Kruskal's</option>
+                <option value="prim">Prim's</option>
+            </select>
+            <label for="maze-size">Size</label>
+            <select id="maze-size">
+                <option value="small">63 × 47</option>
+                <option value="medium">255 × 191</option>
+                <option value="large">511 × 383</option>
+                <option value="huge">1023 × 767</option>
+            </select>
+            <label for="maze-braid">Loops</label>
+            <input type="range" id="maze-braid" min="0" max="30" step="1" value="0">
+            <span id="maze-braid-value">0%</span>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> click to move the start (green), shift-click or right-click to move the goal (red). Loops removes a share of the walls so there are several routes and BFS has to pick the shortest; Generate builds a new maze with the selected algorithm and size.</p>
+        <canvas id="canvas-maze" class="interactive" width="1022" height="766"></canvas>
+        <div id="output-maze" class="output"></div>
+    </section>
+
     <h2 class="group-title">WebAssembly</h2>
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">20</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">19</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
