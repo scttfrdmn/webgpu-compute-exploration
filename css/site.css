@@ -254,3 +254,7 @@ footer {
 .experiment-table th, .experiment-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: right;
     font-variant-numeric: tabular-nums; }
 .experiment-table th { color: var(--muted); font-weight: 500; }
+.understand .code-block { position: relative; }
+.understand .code-lang { position: absolute; top: 6px; right: 10px; font-size: 0.75rem; color: var(--muted); }
+.understand .table-wrap { overflow-x: auto; }
+.callout-label { color: var(--text); margin-right: 4px; }

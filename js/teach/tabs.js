@@ -137,7 +137,8 @@ async function loadUnderstand(id, panel) {
             fetch(understandPath(id)),
         ]);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const html = renderMarkdown(await response.text(), { resolveLink });
+        // idPrefix keeps heading ids unique across the 25 Understand pages on one page
+        const html = renderMarkdown(await response.text(), { resolveLink, idPrefix: `${id}-` });
         panel.replaceChildren();
         const article = document.createElement('article');
         article.className = 'understand';
