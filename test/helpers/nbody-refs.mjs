@@ -1,32 +1,14 @@
 // N-body CPU references (js/examples/nbody.js), shared by test/nbody.test.mjs and test/gpu/nbody.gpu.test.mjs.
 //
 // Replicas of cs_morton, cs_radix_histogram/scan/scatter, cs_build_tree, cs_init_nodes + cs_bottom_up,
-// cs_bh_force and cs_brute_force, plus the float64 direct-sum reference and relErrors().
+// cs_bh_force and cs_brute_force (test-only), plus the float64 direct-sum reference and relErrors()
+// re-exported from js/refs/nbody.js (deployable, for in-browser comparisons).
 
 import { WG, NONE, STACK_SIZE, MAX_VISITS, MAX_DEPTH, RADIX_PASSES, RADIX_TILE } from '../../js/examples/nbody.js';
 
-const f32 = Math.fround;
+export { directForces, relErrors } from '../../js/refs/nbody.js';
 
-// ---------------------------------------------------------------------------------------------
-// Direct-sum reference (float64)
-export function directForces(pos, n, eps2) {
-    const acc = new Float64Array(3 * n), phi = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-        const xi = pos[4 * i], yi = pos[4 * i + 1], zi = pos[4 * i + 2];
-        let ax = 0, ay = 0, az = 0, p = 0;
-        for (let j = 0; j < n; j++) {
-            if (j === i) continue;
-            const dx = pos[4 * j] - xi, dy = pos[4 * j + 1] - yi, dz = pos[4 * j + 2] - zi;
-            const invR = 1 / Math.sqrt(dx * dx + dy * dy + dz * dz + eps2);
-            const mInvR = pos[4 * j + 3] * invR;
-            p -= mInvR;
-            const s = mInvR * invR * invR;
-            ax += dx * s; ay += dy * s; az += dz * s;
-        }
-        acc[3 * i] = ax; acc[3 * i + 1] = ay; acc[3 * i + 2] = az; phi[i] = p;
-    }
-    return { acc, phi };
-}
+const f32 = Math.fround;
 
 // ---------------------------------------------------------------------------------------------
 // Replica of cs_brute_force: 256-body tiles, zero-mass padding past N, self excluded by index,
@@ -268,14 +250,4 @@ export function buildBH(pos, n) {
     const { children, parents } = buildTreeReplica(sorted.keys);
     const { mass, box, completions } = bottomUpReplica(pos, sorted.vals, children, parents);
     return { keys: sorted.keys, vals: sorted.vals, children, parents, mass, box, completions };
-}
-
-export function relErrors(acc, ref, n) {
-    const e = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
-        const dx = acc[3 * i] - ref[3 * i], dy = acc[3 * i + 1] - ref[3 * i + 1], dz = acc[3 * i + 2] - ref[3 * i + 2];
-        e[i] = Math.hypot(dx, dy, dz) / Math.hypot(ref[3 * i], ref[3 * i + 1], ref[3 * i + 2]);
-    }
-    e.sort();
-    return { median: e[n >> 1], p99: e[Math.floor(0.99 * n)], max: e[n - 1] };
 }

@@ -4,18 +4,20 @@
 // and float64 per-cell arithmetic. stepReference: independent float64 step convolving an explicit
 // 3x3 kernel with modulo-wrapped indices. shippedSeed: the shipped ReactionDiffusion.seed() run on a
 // mock device with a deterministic Math.random. DU, DV, DT and the Laplacian weights are parsed
-// from the shipped WGSL.
+// from the shipped WGSL and passed to the deployable reference in js/refs/reaction-diffusion.js.
 
 import * as rd from '../../js/examples/reaction-diffusion.js';
 import { moduleCode } from './wgsl-layout.mjs';
 import { mockDevice } from './mock-gpu.mjs';
+import { W_CENTER, laplacianKernel, stepReference as stepReference64 } from '../../js/refs/reaction-diffusion.js';
 
 export const CODE = moduleCode(rd, 'compute');
 export const constF32 = name => Number(new RegExp(`const ${name}: f32 = ([\\d.]+);`).exec(CODE)[1]);
 export const DU = constF32('DU'), DV = constF32('DV'), DT = constF32('DT');
 export const lapMatch = /let lap = -c \+ ([\d.]+) \* edges \+ ([\d.]+) \* corners;/.exec(CODE);
 if (!lapMatch) throw new Error('Laplacian line not found in the WGSL');
-export const W_EDGE = Number(lapMatch[1]), W_CORNER = Number(lapMatch[2]), W_CENTER = -1;
+export const W_EDGE = Number(lapMatch[1]), W_CORNER = Number(lapMatch[2]);
+export { W_CENTER };
 
 // ---- replica of cs_main (simulate = 1, brush off) ----------------------------------------------
 export function stepReplica(cin, cout, w, h, feed, kill) {
@@ -46,24 +48,10 @@ export function simulate(state, w, h, steps, feed, kill) {
     return a;
 }
 
-// ---- independent float64 reference ----------------------------------------------------------
-export const KERNEL = [[W_CORNER, W_EDGE, W_CORNER], [W_EDGE, W_CENTER, W_EDGE], [W_CORNER, W_EDGE, W_CORNER]];
-export function stepReference(U, V, w, h, F, k) {
-    const U2 = new Float64Array(U.length), V2 = new Float64Array(V.length);
-    const mod = (a, n) => ((a % n) + n) % n;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        let lu = 0, lv = 0;
-        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-            const n = mod(y + j, h) * w + mod(x + i, w);
-            lu += KERNEL[j + 1][i + 1] * U[n];
-            lv += KERNEL[j + 1][i + 1] * V[n];
-        }
-        const c = y * w + x, r = U[c] * V[c] * V[c];
-        U2[c] = Math.min(1, Math.max(0, U[c] + DT * (DU * lu - r + F * (1 - U[c]))));
-        V2[c] = Math.min(1, Math.max(0, V[c] + DT * (DV * lv + r - (F + k) * V[c])));
-    }
-    return [U2, V2];
-}
+// ---- independent float64 reference (js/refs/reaction-diffusion.js), bound to the WGSL constants --
+export const KERNEL = laplacianKernel(W_EDGE, W_CORNER);
+export const MODEL = { DU, DV, DT, W_EDGE, W_CORNER };
+export const stepReference = (U, V, w, h, F, k) => stepReference64(U, V, w, h, F, k, MODEL);
 
 // Runs the shipped seed() with a deterministic Math.random; returns the uploaded cell data
 export function shippedSeed(w, h, seed) {

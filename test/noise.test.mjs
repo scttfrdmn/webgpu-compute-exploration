@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import * as noise from '../js/examples/noise.js';
 import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mjs';
 import { mockDevice } from './helpers/mock-gpu.mjs';
+import { hashCorner, grad, fade, perlinRef, simplexRef as simplexRef64 } from '../js/refs/noise.js';
 
 const CODE = moduleCode(noise, 'compute');
 const constF32 = name => {
@@ -30,28 +31,7 @@ const FALLOFF = Number(/let t = ([\d.]+) - dot\(d, d\);/.exec(CODE)[1]);   // 0.
 const MAX_OCTAVES = Number(/const MAX_OCTAVES: u32 = (\d+)u;/.exec(CODE)[1]);
 
 // ---- replica ---------------------------------------------------------------------------------
-function pcg3d(x, y, z) {
-    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
-    y = (Math.imul(y, 1664525) + 1013904223) >>> 0;
-    z = (Math.imul(z, 1664525) + 1013904223) >>> 0;
-    x = (x + Math.imul(y, z)) >>> 0;
-    y = (y + Math.imul(z, x)) >>> 0;
-    z = (z + Math.imul(x, y)) >>> 0;
-    x = (x ^ (x >>> 16)) >>> 0; y = (y ^ (y >>> 16)) >>> 0; z = (z ^ (z >>> 16)) >>> 0;
-    x = (x + Math.imul(y, z)) >>> 0;
-    y = (y + Math.imul(z, x)) >>> 0;
-    z = (z + Math.imul(x, y)) >>> 0;
-    return [x, y, z];
-}
-const hashCorner = (i, j, k) => pcg3d(i >>> 0, j >>> 0, k >>> 0)[0];   // bitcast<vec3<u32>>(vec3<i32>)
-
-function grad(h, dx, dy, dz) {
-    const g = h >>> 28;
-    const u = g < 8 ? dx : dy;
-    const v = g < 4 ? dy : (g === 12 || g === 14 ? dx : dz);
-    return ((g & 1) === 0 ? u : -u) + ((g & 2) === 0 ? v : -v);
-}
-const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
+// pcg3d / hashCorner, grad and fade are shared with the independent references (js/refs/noise.js).
 const mix = (a, b, t) => a + (b - a) * t;
 
 function perlin3(x, y, z) {
@@ -115,29 +95,11 @@ function warpedFbm(p, P) {
     return fbm([p[0] + P.warp * qx, p[1] + P.warp * qy, p[2]], P);
 }
 
-// ---- independent references ------------------------------------------------------------------
-// Perlin: sum over the 8 corners, each weighted by the separable falloff w(t) = 1 - fade(|t|)
-function perlinRef(x, y, z) {
-    const cx = Math.floor(x), cy = Math.floor(y), cz = Math.floor(z);
-    let sum = 0;
-    for (let a = 0; a <= 1; a++) for (let b = 0; b <= 1; b++) for (let c = 0; c <= 1; c++) {
-        const dx = x - (cx + a), dy = y - (cy + b), dz = z - (cz + c);
-        const w = (1 - fade(Math.abs(dx))) * (1 - fade(Math.abs(dy))) * (1 - fade(Math.abs(dz)));
-        sum += w * grad(hashCorner(cx + a, cy + b, cz + c), dx, dy, dz);
-    }
-    return sum;
-}
-// Simplex: brute force over every skewed-lattice point in a 5x5x5 block around p
-function simplexRef(x, y, z) {
-    const s = (x + y + z) / 3;
-    const bx = Math.floor(x + s), by = Math.floor(y + s), bz = Math.floor(z + s);
-    let sum = 0;
-    for (let i = bx - 2; i <= bx + 2; i++) for (let j = by - 2; j <= by + 2; j++) for (let k = bz - 2; k <= bz + 2; k++) {
-        const t = (i + j + k) / 6;   // unskew the lattice point
-        sum += simplexCorner(hashCorner(i, j, k), x - (i - t), y - (j - t), z - (k - t));
-    }
-    return SIMPLEX_SCALE * sum;
-}
+// ---- independent references (js/refs/noise.js) ------------------------------------------------
+// Perlin: sum over the 8 corners, each weighted by the separable falloff w(t) = 1 - fade(|t|).
+// Simplex: brute force over every skewed-lattice point in a 5x5x5 block around p, with the
+// shader's output scale and kernel radius² parsed above.
+const simplexRef = (x, y, z) => simplexRef64(x, y, z, SIMPLEX_SCALE, FALLOFF);
 
 function lcg(seed) {
     let s = seed >>> 0;
