@@ -12,6 +12,11 @@ import { initReactionDiffusion } from './examples/reaction-diffusion.js';
 import { initWaveEquation } from './examples/wave-equation.js';
 import { initFallingSand } from './examples/falling-sand.js';
 import { initNoise } from './examples/noise.js';
+import { initFFTAudio } from './examples/fft-audio.js';
+import { initParallelSort } from './examples/parallel-sort.js';
+import { initKMeans } from './examples/kmeans.js';
+import { initVoronoiJFA } from './examples/voronoi-jfa.js';
+import { initMaze } from './examples/maze.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -115,6 +120,11 @@ function initInteractiveExamplesOnVisible() {
         'canvas-wave': initWaveEquation,
         'canvas-sand': initFallingSand,
         'canvas-noise': initNoise,
+        'canvas-fft': initFFTAudio,
+        'canvas-sort': initParallelSort,
+        'canvas-kmeans': initKMeans,
+        'canvas-voronoi': initVoronoiJFA,
+        'canvas-maze': initMaze,
     };
     const instances = new Map();
 

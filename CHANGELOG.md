@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The WASM Mandelbrot example is now number 19.
+- Example 14, FFT audio visualizer: Web Audio samples from a built-in synth
+  demo, the microphone or an audio file are windowed (Hann) and transformed on
+  the GPU by a radix-2 Cooley-Tukey FFT (bit reversal, then one dispatch per
+  butterfly stage) of size 1024, 2048 or 4096; dB magnitudes, a log-frequency
+  spectrogram ring buffer and beat detection also run on the GPU. Bars,
+  Waveform and Spectrogram views, smoothing and dB range sliders, presets, a
+  beat flash, Mute, and an FPS readout.
+- Example 15, parallel sorting: bitonic sort (global passes, or workgroup
+  memory for j ≤ 256) and 4-bit LSD radix sort benchmarked on 65,536 to
+  4,194,304 u32 or f32 keys, verified against the CPU sort and timed against
+  `TypedArray.prototype.sort`, plus an animated bar chart of bitonic sort with
+  Play / Pause / Step / Shuffle, data patterns, a stages-per-second slider and
+  the current k and j.
+- Example 16, K-means clustering: Lloyd's algorithm on 10k-500k 2D points
+  (Gaussian blobs plus uniform noise) with K = 2-16, one GPU iteration per step:
+  nearest-centroid assignment, a two-level workgroup reduction for the cluster
+  means (empty clusters keep their centroid), and a changed-points counter that
+  stops the run at convergence. Random or k-means++ initialization, centroid
+  trails, an optional Voronoi overlay, Start/Pause/Step/Reset/Regenerate,
+  iteration speed, and iteration, changed points, inertia and FPS readouts.
+- Example 17, Voronoi diagrams with the Jump Flooding Algorithm: up to 1024
+  seeds on a 1024×768 grid, a seed pass plus log2(N) flood passes (optional
+  JFA+1), Euclidean / Manhattan / Chebyshev metrics, cell / distance-field /
+  combined views, click to add, drag to move and right-click to remove seeds,
+  Random / Jittered grid / Sunflower / Clusters layouts, an Animate mode with
+  drifting seeds, a GPU brute-force exact check, and an FPS readout.
+- Example 18, maze generation and solving: recursive backtracker, Kruskal's and
+  Prim's mazes (63×47 up to 1023×767 cells) generated on the CPU with a Loops
+  slider that adds alternative routes, solved on the GPU by a breadth-first
+  wavefront (one dispatch per distance level, 1-512 per frame), with the flood
+  colored by distance, the shortest path traced back from the goal, click /
+  shift-click to move start and goal, and generation time, BFS levels, cells
+  visited, path length and FPS readouts.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

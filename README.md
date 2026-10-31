@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Fourteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, and procedural Perlin/simplex noise. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Nineteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving). A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -123,7 +123,54 @@ A sandbox cellular automaton with interacting materials.
 - **Visualization**: Full-screen fragment shader colors the field as hillshaded terrain bands, clouds, veined marble or grayscale
 - **Performance**: Measured FPS and noise evaluations per frame; no CPU readback
 
-### 14. WASM Integration (Mandelbrot Set)
+### 14. FFT Audio Visualizer
+A real-time spectrum analyzer with the FFT computed on the GPU instead of by the browser's AnalyserNode.
+- **Input**: Web Audio API time-domain samples from a built-in synth demo (chord, exponential sweep, 120 BPM kick; no permissions), the microphone, or a looping audio file
+- **Algorithm**: Hann window and bit-reversal permutation in one dispatch, then log2(N) radix-2 Cooley-Tukey butterfly stages, one dispatch each, ping-ponging two complex vec2<f32> buffers; stage index via a dynamic uniform offset; precomputed twiddle table; N = 1024, 2048 or 4096
+- **Analysis**: Magnitudes in dBFS with adjustable smoothing, resampled onto 256 log-spaced rows (20 Hz-20 kHz); spectrogram history in a 512-column GPU ring buffer; beat detection (40-150 Hz energy rising above 1.6× its running average) on the GPU
+- **Views**: Bars (64 log-frequency bands colored from bass to treble), triggered Waveform, scrolling Spectrogram with a heat color map; a beat flash indicator
+- **Controls**: Source buttons, Start/Pause (also suspends the audio), Mute, view, FFT size, smoothing and dB range, presets
+- **Performance**: Measured FPS and dispatches per frame; only N samples are uploaded per frame, no CPU readback
+
+### 15. Parallel Sorting
+GPU sorting algorithms with a correctness-checked benchmark and an animated bar chart.
+- **Algorithms**: Bitonic sort as one global compare-exchange dispatch per (k, j) stage, or with workgroup memory for the stages with j ≤ 256; LSD radix sort with 4-bit digits (8 passes of per-workgroup histogram, single-workgroup exclusive scan, stable scatter)
+- **Benchmark**: 65,536 to 4,194,304 u32 or f32 keys (f32 via the order-preserving bit flip); non-power-of-two sizes are padded with 0xFFFFFFFF for bitonic; the result is read back once and compared element by element with the CPU sort of the same input
+- **Performance**: GPU time (best of 3, submit to `onSubmittedWorkDone`) next to `Uint32Array`/`Float32Array.prototype.sort`, keys per second and dispatch count
+- **Visualization**: 512-2048 bars sorted by bitonic sort one stage per tick (Play, Pause, Step, Shuffle, 1-60 stages per second) with Random, Reversed, Nearly sorted and Few unique data; the background and a strip under the bars show the next stage's block size k and compare distance j
+- **Rendering**: Full-screen fragment shader reads the sorted storage buffer directly; no CPU readback during the animation
+
+### 16. K-Means Clustering
+Lloyd's algorithm on a 2D point cloud, one iteration at a time so you can watch it converge.
+- **Data**: 10k-500k points from 1-16 anisotropic Gaussian blobs plus 0-50% uniform noise, generated on the CPU from a seed
+- **Assignment**: One invocation per 4 points finds the nearest of K = 2-16 centroids and counts label changes with an atomic counter
+- **Update**: Two-level reduction: each workgroup tree-reduces per-cluster (sum x, sum y, count, squared distance) for its 1,024 points in workgroup memory, then one workgroup sums the partials; empty clusters keep their old centroid
+- **Initialization**: Random data points or k-means++ (on the CPU, from up to 20,000 sampled points)
+- **Convergence**: Stops when no point changes cluster; iteration, changed points, inertia and cluster sizes in the info panel from an 80-byte readback per iteration
+- **Rendering**: Instanced point quads colored by cluster, centroid markers with trails of their last 23 moves, optional Voronoi overlay (full-screen fragment shader, nearest centroid per pixel, with cell borders)
+- **Controls**: Start/Pause, Step, Reset, Regenerate, K, point count, true cluster count, noise, iterations per second, init method, Voronoi toggle; FPS readout
+
+### 17. Voronoi (Jump Flooding)
+Voronoi diagrams and distance fields for up to 1024 seeds with the Jump Flooding Algorithm (Rong & Tan 2006).
+- **Grid**: 1024×768 pixels, one u32 seed index each in two ping-pong storage buffers; seeds (position + color) in a storage buffer
+- **Algorithm**: A seed pass writes each seed's index into its pixel (atomicMin), then 10 flood passes with steps 512, 256, …, 1; each pixel checks itself and its 8 neighbors at ±step and keeps the closest seed. Optional JFA+1 adds a final step-1 pass. One dispatch per pass, each with its own dynamic-offset uniform slot
+- **Metrics**: Euclidean, Manhattan, Chebyshev
+- **Interaction**: Click to add a seed, drag to move one, right-click or shift-click to remove the nearest; Random seeds (2-1024), Clear, and Random / Jittered grid / Sunflower / Clusters layouts; Animate lets the seeds drift and bounce, and while paused every edit recomputes once
+- **Visualization**: Colored cells with dark borders, a grayscale distance field with iso-distance lines, or both combined; seeds drawn as dots
+- **Accuracy**: Exact check brute-forces the nearest seed for every pixel on the GPU and reads back the number of pixels where JFA is wrong
+- **Performance**: Measured FPS, dispatches and pixel updates per frame; no CPU readback except the exact check
+
+### 18. Maze Generation & Solving
+Which graph algorithms parallelize: mazes are carved on the CPU and solved by a breadth-first wavefront on the GPU.
+- **Mazes**: 63×47, 255×191, 511×383 or 1023×767 cells, one u32 per cell with open-passage bits, drawn as the (2w+1)×(2h+1) wall lattice
+- **Generation (CPU)**: Recursive backtracker (DFS), Kruskal's (shuffled walls + union-find) and randomized Prim's, all sequential by nature; a Loops slider removes 0-30% of the remaining walls so several routes exist
+- **Solving (GPU)**: One compute dispatch per BFS level, one invocation per cell: an unreached cell next to a cell at distance d takes d+1. Writes only touch the invocation's own cell, so the result is order-independent and equals a queue-based BFS; 1-512 levels per frame through dynamic uniform offsets
+- **Termination**: A 12-byte readback (cells reached, largest distance, goal distance) every 4 frames; then one distance-field readback and a CPU walk from the goal to a neighbor one step closer gives a shortest path
+- **Interaction**: Click to set the start, shift-click or right-click to set the goal; Solve, Pause, Clear solution, steps per frame
+- **Visualization**: Flood colored by distance with the wavefront highlighted, shortest path in yellow
+- **Performance**: Measured FPS, generation time, BFS levels, cells visited, path length
+
+### 19. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -200,7 +247,12 @@ webgpu/
 │   │   ├── wave-equation.js           # Example 11: 2D wave equation (water ripples)
 │   │   ├── falling-sand.js            # Example 12: Falling sand (Margolus automaton)
 │   │   ├── noise.js                   # Example 13: Perlin/simplex noise and fBm
-│   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
+│   │   ├── fft-audio.js               # Example 14: GPU FFT audio visualizer
+│   │   ├── parallel-sort.js           # Example 15: Bitonic and radix sort, sorting visualization
+│   │   ├── kmeans.js                  # Example 16: K-means clustering (Lloyd's algorithm)
+│   │   ├── voronoi-jfa.js             # Example 17: Voronoi diagrams via jump flooding
+│   │   ├── maze.js                    # Example 18: Maze generation and GPU BFS solving
+│   │   └── wasm-mandelbrot.js         # Example 19: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
@@ -273,7 +325,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 
