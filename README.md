@@ -10,6 +10,22 @@ Twenty-five interactive **WebGPU compute shader** examples that run in the brows
 
 Open the page in a WebGPU browser and scroll: each interactive example is set up when it comes into view and starts when you press **Start**, so only what you are looking at uses the GPU. Ray marching renders while it is on screen.
 
+## Explore, Understand, Measure
+
+Every example has three tabs, aimed at two audiences: people learning **GPU programming** (buffers, workgroups,
+synchronization, transfers) and people learning **computational science** (stability, convergence, accuracy,
+scaling).
+
+- **Explore** — the interactive demo.
+- **Understand** — how the algorithm works, how it maps to the GPU and why it maps well or poorly, its numerical
+  behaviour, things to try, and references (Markdown with MathML equations, `content/understand/<id>.md`).
+- **Measure** — experiments you start on your own GPU (e.g. Barnes-Hut opening angle vs force error, scaling
+  against brute force), checked against CPU references in the browser and charted. Each experiment uses fixed,
+  capped problem sizes and a time budget, and its results are added to the device report.
+
+Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`. Content is being written example
+by example; tabs without content yet say so.
+
 ## Features
 
 ### 1. Vector Addition
@@ -359,11 +375,17 @@ webgpu/
 │   └── ISSUE_TEMPLATE/device-report.md # Issue template for shared device reports
 ├── assets/
 │   └── social-preview.png             # Preview image (README, link previews)
+├── content/
+│   └── understand/                    # Understand pages (Markdown + TeX math), one per example
+├── css/
+│   └── site.css                       # Shared styles (index.html, learn.html)
 ├── data/
 │   └── mnist/                         # MNIST subset + cached weights (CC BY-SA 3.0, see LICENSE.md)
 ├── index.html                          # Main application page
 ├── js/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
+│   ├── teach/                         # Tabs, Markdown/MathML renderer, Measure runner + charts, experiments
+│   ├── refs/                          # CPU references shared by the tests and the Measure tab
 │   ├── webgpu-utils.js                # WebGPU helper functions
 │   ├── device-report.js               # Builds the opt-in Markdown device report
 │   ├── gpu-timer.js                   # GPU pass timing with timestamp queries

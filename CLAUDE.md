@@ -15,7 +15,9 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   in the `gpu-software` CI job) on Mesa lavapipe and compares with the CPU references. It is **CI-only**: never run
   it, `npm install webgpu`, or any other WebGPU runtime on a developer's machine from automation — iterate by pushing
   a branch and reading the CI log. `test/gpu/harness.mjs` aborts unless `CI=true`, Linux, and a software adapter;
-  keep that guard. `npm test` must never import `test/gpu/`; shared references go in `test/helpers/`.
+  keep that guard. `npm test` must never import `test/gpu/`. Pure CPU references (float64 DFT, CPU sort, direct
+  N-body sum, …) live in `js/refs/` so the in-browser Measure tab can use them too (no `node:` imports, no DOM,
+  no test mocks); test-only helpers (mocks, layout parser, kernel replicas) stay in `test/helpers/`.
 - WGSL is validated without a GPU by `tools/validate-wgsl.mjs`: it imports each example's `wgslModules()` and runs
   `naga` (naga-cli 30.0.1, pinned in `.github/workflows/ci.yml`) on every module. It catches the same errors
   Chrome's compiler reports. Examples must not touch browser globals at import time.
@@ -39,7 +41,13 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 - `js/examples/<name>.js` — one self-contained example per file; WGSL shaders are inline template strings.
   One-shot benchmarks export `run*(gpuDevice)` returning HTML; interactive ones export `init*(gpuDevice)`.
   Every `start()` must return early if already running, or repeated clicks stack render loops.
-- `index.html` — all styling is inline in `<style>` (CSS variables at `:root`). Each example is a
+- `css/site.css` — all styling, shared by `index.html` and `learn.html` (CSS variables at `:root`).
+- `js/teach/` — the teaching layer: `tabs.js` adds Explore / Understand / Measure tabs to every example (deep
+  links `#<id>/understand`, `#<id>/measure`; leaving Explore stops the example via its own Pause/Stop button),
+  `markdown.js` + `tex-mathml.js` render `content/understand/<id>.md` (escaped Markdown, `$…$` TeX subset → MathML),
+  `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
+  examples have content, `app-state.js` shares the device and instances with `main.js`.
+- `index.html` — page structure. Each example is a
   `<section class="example" id="…">` with an `<h3>`, listed in the sticky `nav.toc`; `.controls`, `.seed-buttons`,
   `.hint` and `.output` (hidden while empty) are the shared building blocks. Canvases are CSS-scaled, so pointer
   handlers must convert client coordinates with `canvas.width / rect.width`.
@@ -59,7 +67,13 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
    `test/helpers/mock-gpu.mjs` device), and compare a labeled CPU replica of the shader algorithm to a
    straightforward reference with a documented tolerance, printing the measured numbers.
 5. Add it to the README feature list and project structure, and to `CHANGELOG.md` under Unreleased.
+6. Teaching content (see `content/understand/nbody.md` and `js/teach/experiments/nbody.js` as the template):
+   an Understand page with the outline in `test/teach-content.test.mjs` (`REQUIRED_SECTIONS`), and 1–3 Measure
+   experiments (interface at the top of `js/teach/measure.js`) that use fixed parameter lists with hard caps, a
+   `budgetMs` ≤ 20 s, `await ctx.step()` between steps, and a CPU reference from `js/refs/`. GPU work for
+   experiments goes through a small compute-only export of the example (no canvas), covered by a CPU test and a
+   `test/gpu/` test. List the example in `js/teach/registry.js`; `npm test` lints all registered content.
 
 ## Project tracking
-Work lives in GitHub issues, milestones (v0.1.0–v0.4.0) and project board #85 — not in local files.
+Work lives in GitHub issues, milestones (v0.1.0 onward) and project board #85 — not in local files.
 Labels: `type: *`, `priority: *`, `area: *`. Stay on 0.x versions.
