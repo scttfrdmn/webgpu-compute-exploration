@@ -1,6 +1,6 @@
 {
   "name": "webgpu-compute-exploration",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interactive WebGPU compute shader examples in WGSL: SPH fluid, molecular dynamics, boids, Game of Life, ray-marched fractals, 3D DLA, and Rust/WASM integration",
   "type": "module",
   "scripts": {
