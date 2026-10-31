@@ -26,6 +26,8 @@ import { initNBody } from './examples/nbody.js';
 import { initConvolutionReverb } from './examples/convolution-reverb.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 import { buildDeviceReport } from './device-report.js';
+import { setupTabs } from './teach/tabs.js';
+import { setGPUDevice, setExampleInstance, markDeviceLost, experimentResults } from './teach/app-state.js';
 
 let gpuDevice = null;
 
@@ -53,6 +55,8 @@ console.error = (...args) => {
 async function init() {
     const statusDiv = document.getElementById('gpu-status');
     setupDeviceReport();
+    // Tabs first: a hidden Explore panel keeps its canvas from being initialized off screen
+    setupTabs();
 
     try {
         const isSupported = await checkWebGPUSupport();
@@ -66,6 +70,7 @@ async function init() {
         }
 
         gpuDevice = await getGPUDevice(handleDeviceLost);
+        setGPUDevice(gpuDevice);
         statusDiv.className = 'status supported';
         const info = gpuDevice.adapter.info || {};
         const adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ') || info.description;
@@ -178,7 +183,10 @@ function initInteractiveExamplesOnVisible() {
                     console.error(`Failed to initialize ${id}:`, error);
                 }));
                 // The device report reads plain fields from resolved instances only
-                instances.get(id).then((instance) => resolvedInstances.set(id, instance ?? null));
+                instances.get(id).then((instance) => {
+                    resolvedInstances.set(id, instance ?? null);
+                    setExampleInstance(id, instance ?? null);
+                });
             }
             if (id === 'canvas-fractal' && instances.has(id)) {
                 instances.get(id).then((renderer) => {
@@ -198,11 +206,13 @@ function initInteractiveExamplesOnVisible() {
 // rebuilding them in place would duplicate handlers. Stop interaction and offer a clean reload.
 function handleDeviceLost(info) {
     deviceLostInfo = { reason: info.reason, message: info.message };
+    markDeviceLost();
     const statusDiv = document.getElementById('gpu-status');
     statusDiv.className = 'status not-supported';
     statusDiv.textContent = info.message ? `GPU device lost: ${info.message}` : 'GPU device lost';
 
-    document.querySelectorAll('.example button, .example input, .example select')
+    // Tabs stay usable so explanations can still be read
+    document.querySelectorAll('.example button:not(.tab), .example input, .example select')
         .forEach(control => control.disabled = true);
 
     if (!document.getElementById('btn-reload')) {
@@ -217,7 +227,7 @@ function handleDeviceLost(info) {
 
 // The device report button stays usable: a report from a browser without WebGPU is still useful.
 function disableAllButtons() {
-    document.querySelectorAll('button:not(#btn-device-report)').forEach(btn => btn.disabled = true);
+    document.querySelectorAll('button:not(#btn-device-report):not(.tab)').forEach(btn => btn.disabled = true);
 }
 
 function currentDeviceReport() {
@@ -228,6 +238,7 @@ function currentDeviceReport() {
         errors: recentWebGPUErrors,
         deviceLost: deviceLostInfo,
         unavailableReason,
+        experiments: experimentResults(),
     });
 }
 
