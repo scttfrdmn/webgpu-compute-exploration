@@ -828,6 +828,9 @@ class VoronoiJFA {
     }
 }
 
+// For the CPU tests in test/ (seed layouts, uniform writers via a mock device)
+export { VoronoiJFA, packColor, MAX_SEEDS };
+
 export async function initVoronoiJFA(gpuDevice) {
     const { device } = gpuDevice;
     const canvas = document.getElementById('canvas-voronoi');

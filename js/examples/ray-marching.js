@@ -491,3 +491,6 @@ export async function initRayMarching(gpuDevice) {
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() { return [{ name: 'render', code: RENDER_SHADER }]; }
+
+// Exported for the CPU tests in test/ray-marching.test.mjs.
+export { RayMarchingRenderer };

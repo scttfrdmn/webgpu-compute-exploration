@@ -984,7 +984,7 @@ export function pickParticle(positions, count, ray, pixelAngle) {
     return fallbackScore < pixelAngle * 30 ? fallback : -1;
 }
 
-class ClothSimulation {
+export class ClothSimulation {
     constructor(device, canvas) {
         this.device = device;
         this.canvas = canvas;

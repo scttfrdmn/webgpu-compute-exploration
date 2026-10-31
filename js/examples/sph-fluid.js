@@ -757,3 +757,6 @@ export function wgslModules() {
         { name: 'render', code: RENDER_SHADER },
     ];
 }
+
+// Exported for the CPU tests in test/sph-fluid.test.mjs.
+export { SPHFluidSimulation };

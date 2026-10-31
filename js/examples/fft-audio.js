@@ -1116,6 +1116,9 @@ ${message ? `\n${message}\n` : ''}
     return viz;
 }
 
+// Exported for the CPU tests (test/fft-audio.test.mjs): uniform writer and twiddle upload.
+export { FFTAudioVisualizer };
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

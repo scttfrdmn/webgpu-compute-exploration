@@ -733,6 +733,8 @@ export async function initNoise(gpuDevice) {
     return noise;
 }
 
+export { NoiseField, PRESETS };   // for test/noise.test.mjs
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

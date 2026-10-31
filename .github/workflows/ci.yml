@@ -47,3 +47,13 @@ jobs:
         run: cargo install naga-cli --version "$NAGA_VERSION" --locked
       - name: Validate WGSL modules
         run: node tools/validate-wgsl.mjs
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: CPU reference tests
+        run: node --test 'test/*.test.mjs'

@@ -776,3 +776,6 @@ export function wgslModules() {
         { name: 'render', code: RENDER_SHADER },
     ];
 }
+
+// Exported for the CPU tests in test/ (no behavior change)
+export { Mat4, Camera, DLA3D };

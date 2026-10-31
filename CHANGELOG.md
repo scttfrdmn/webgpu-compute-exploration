@@ -11,6 +11,12 @@ All notable changes to this project are documented here. The format follows
   `tools/validate-wgsl.mjs` (`npm run validate:wgsl`) validates all 63 modules with naga. A new
   `wgsl` CI job runs it on every push and pull request, and fails if an example creates shader
   modules without exporting them.
+- CPU reference test suite in `test/` (`npm test`, i.e. `node --test 'test/*.test.mjs'`; Node built-ins only, no
+  GPU or browser), one file per example. Tests run the examples' exported JavaScript directly, check
+  every uniform writer's bytes against offsets computed from the example's WGSL struct, and compare
+  CPU replicas of the shader algorithms against straightforward references (naive DFT, CPU sort,
+  brute-force Voronoi, direct N-body sum, direct convolution, queue BFS, finite-difference gradients,
+  energy and stability checks), printing the measured errors. A new `test` CI job runs it.
 
 ### Changed
 - package.json description and keywords, the CITATION abstract, and the GitHub

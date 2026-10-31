@@ -906,6 +906,8 @@ export async function initFallingSand(gpuDevice) {
     return simulation;
 }
 
+export { FallingSand, buildSandbox };   // for test/falling-sand.test.mjs
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

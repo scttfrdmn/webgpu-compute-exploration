@@ -298,6 +298,32 @@ cargo install naga-cli --version 30.0.1 --locked
 npm run validate:wgsl   # or: NAGA=/path/to/naga node tools/validate-wgsl.mjs
 ```
 
+`test/` holds a CPU reference test suite, one `*.test.mjs` per example, using only Node's built-in
+`node:test` and `node:assert` (Node 22+; no npm install, no GPU, no browser). CI runs it on every push:
+
+```bash
+npm test                               # or: node --test 'test/*.test.mjs'
+node --test test/fft-audio.test.mjs    # one example
+```
+
+Each test prints its measured numbers (accuracy, mismatch rates, energy drift, ...) as diagnostics
+and asserts a documented tolerance. There are two kinds of check:
+
+- **Shipped code.** Where an example's logic is JavaScript (maze generators, scene builders, presets,
+  impulse responses, the MNIST weight format and CPU trainer, camera and matrix helpers, uniform
+  writers), the test imports and runs the real code. Uniform writers run against a mock device that
+  records `writeBuffer` bytes; the bytes are decoded with offsets computed from the example's own WGSL
+  struct (`test/helpers/wgsl-layout.mjs` implements WGSL's alignment rules), so a `u32` written as an
+  `f32` or a misaligned `vec2` fails.
+- **CPU replicas.** Where the algorithm lives in WGSL, the test has a JavaScript replica of the
+  shader's math and index arithmetic, compared to an independent straightforward reference (naive
+  DFT, CPU sort, brute-force nearest seed, direct N-body sum, direct convolution, queue BFS, finite
+  differences, ...). A replica validates the algorithm, not the WGSL itself: if the shader and its
+  replica drift apart the test cannot tell. Files that use one say so at the top.
+
+Tests marked `todo` record known bugs the suite found. Each one fails until its example is fixed, but a
+`todo` failure does not fail the run.
+
 ## Project Structure
 
 ```
@@ -339,6 +365,8 @@ webgpu/
 │   │   ├── convolution-reverb.js      # Example 24: Partitioned FFT convolution reverb (AudioWorklet + GPU)
 │   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
+├── test/                              # CPU reference tests (npm test), one per example
+│   └── helpers/                       # WGSL struct layout calculator, mock GPU device
 ├── tools/
 │   ├── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
 │   └── validate-wgsl.mjs              # Validates every example's WGSL modules with naga (CI)

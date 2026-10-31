@@ -823,3 +823,6 @@ export function wgslModules() {
         { name: 'render', code: renderShader },
     ];
 }
+
+// Exported for the CPU tests in test/wave-equation.test.mjs.
+export { WaveEquation, PARAMS_SIZE, SOURCE_PERIOD };
