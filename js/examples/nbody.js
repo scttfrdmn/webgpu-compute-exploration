@@ -116,6 +116,12 @@
 // array<vec2<u32>> and visit counters (N − 1 internal nodes), parents array<u32>, nodeMass
 // array<vec4<f32>> (center of mass, mass) and nodeBox (two vec4 per node: min.xyz + l, max.xyz + δ)
 // for 2N − 1 nodes (internal nodes 0 … N − 2, leaf of sorted body k at N − 1 + k, root 0).
+//
+// Compute-only use (the Measure tab, js/teach/experiments/nbody.js, and test/gpu/): an NBodySimulation
+// with canvas = null creates no render pipelines, render targets or mouse handlers and never draws;
+// loadBodies() fills it. measureForces() times force evaluations (the dispatches of encodeForces) and
+// reads back the accelerations; measureEnergyDrift() runs leapfrog steps (encodeCompute, one step per
+// command buffer) and reads the 16-byte energy sum between chunks. Both reuse the shipped pipelines.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -1447,8 +1453,65 @@ export function spriteStyle(n) {
     };
 }
 
+// Bind group layouts and compute pipelines for every compute shader, created once per device and
+// shared by the interactive simulation and the compute-only instances of the Measure tab
+const computePipelineCache = new WeakMap();
+
+function computePipelines(device) {
+    const cached = computePipelineCache.get(device);
+    if (cached) return cached;
+    const C = GPUShaderStage.COMPUTE;
+    const layout = (types) => device.createBindGroupLayout({
+        entries: types.map((type, binding) => ({ binding, visibility: C, buffer: { type } }))
+    });
+    const S = 'storage', R = 'read-only-storage', UNI = 'uniform';
+    const layouts = {
+        integrate: layout([S, S, R, UNI]),
+        brute: layout([R, S, UNI]),
+        bounds: layout([R, S, UNI]),
+        morton: layout([R, R, S, S, UNI]),
+        radix: device.createBindGroupLayout({
+            entries: [R, R, S, S, S].map((type, binding) => ({ binding, visibility: C, buffer: { type } })).concat([
+                { binding: 5, visibility: C, buffer: { type: UNI, hasDynamicOffset: true, minBindingSize: RADIX_PARAMS_SIZE } }
+            ])
+        }),
+        initNodes: layout([R, R, S, S, UNI]),
+        build: layout([R, S, S, S, UNI]),
+        bottomUp: layout([R, R, S, S, S, UNI]),
+        force: layout([R, R, R, R, R, S, S, UNI]),
+        energy: layout([R, R, R, R, S, UNI]),
+        trail: layout([R, S, UNI]),
+    };
+    const make = (code, layoutName, entries) => {
+        const module = device.createShaderModule({ code });
+        const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layouts[layoutName]] });
+        const out = {};
+        for (const entryPoint of entries) {
+            out[entryPoint] = device.createComputePipeline({ layout: pipelineLayout, compute: { module, entryPoint } });
+        }
+        return out;
+    };
+    const pipelines = {
+        ...make(integrateShader, 'integrate', ['cs_kick_drift', 'cs_kick']),
+        ...make(bruteShader, 'brute', ['cs_brute_force']),
+        ...make(boundsShader, 'bounds', ['cs_bounds_partial', 'cs_bounds_final']),
+        ...make(mortonShader, 'morton', ['cs_morton']),
+        ...make(radixShader, 'radix', ['cs_radix_histogram', 'cs_radix_scan', 'cs_radix_scatter']),
+        ...make(initNodesShader, 'initNodes', ['cs_init_nodes']),
+        ...make(buildShader, 'build', ['cs_build_tree']),
+        ...make(bottomUpShader, 'bottomUp', ['cs_bottom_up']),
+        ...make(forceShader, 'force', ['cs_bh_force']),
+        ...make(energyShader, 'energy', ['cs_energy_partial', 'cs_energy_final']),
+        ...make(trailShader, 'trail', ['cs_trail_record', 'cs_trail_fill']),
+    };
+    const result = { layouts, pipelines };
+    computePipelineCache.set(device, result);
+    return result;
+}
+
 export class NBodySimulation {
-    constructor(device, canvas) {
+    // canvas = null: compute only ("Compute-only use" at the top of the file); load bodies with loadBodies()
+    constructor(device, canvas, { count = 16384 } = {}) {
         this.device = device;
         this.canvas = canvas;
         this.running = false;
@@ -1458,8 +1521,8 @@ export class NBodySimulation {
         this.gpuTimer = new GpuTimer(device, { maxPasses: 32 });
         this.timerConfig = '';
 
-        this.count = 16384;
-        this.mode = 'bh';             // 'bh' | 'brute'
+        this.count = count;
+        this.mode = 'bh';            // 'bh' | 'brute'
         this.presetKey = 'spiral';
         this.theta = 0.5;
         this.softening = 0.05;
@@ -1507,59 +1570,23 @@ export class NBodySimulation {
         this.dummyTrail = device.createBuffer({ size: 16, usage: U.STORAGE });
 
         this.setupPipelines();
-        this.setupTargets();
-        this.setupMouseControls();
-        this.applyPresetCamera();
+        if (canvas) {
+            this.setupTargets();
+            this.setupMouseControls();
+            this.applyPresetCamera();
+        }
         this.allocate();
     }
 
     setupPipelines() {
-        const device = this.device;
-        const C = GPUShaderStage.COMPUTE;
-        const layout = (types) => device.createBindGroupLayout({
-            entries: types.map((type, binding) => ({ binding, visibility: C, buffer: { type } }))
-        });
-        const S = 'storage', R = 'read-only-storage', UNI = 'uniform';
-        this.layouts = {
-            integrate: layout([S, S, R, UNI]),
-            brute: layout([R, S, UNI]),
-            bounds: layout([R, S, UNI]),
-            morton: layout([R, R, S, S, UNI]),
-            radix: device.createBindGroupLayout({
-                entries: [R, R, S, S, S].map((type, binding) => ({ binding, visibility: C, buffer: { type } })).concat([
-                    { binding: 5, visibility: C, buffer: { type: UNI, hasDynamicOffset: true, minBindingSize: RADIX_PARAMS_SIZE } }
-                ])
-            }),
-            initNodes: layout([R, R, S, S, UNI]),
-            build: layout([R, S, S, S, UNI]),
-            bottomUp: layout([R, R, S, S, S, UNI]),
-            force: layout([R, R, R, R, R, S, S, UNI]),
-            energy: layout([R, R, R, R, S, UNI]),
-            trail: layout([R, S, UNI]),
-        };
-        const make = (code, layoutName, entries) => {
-            const module = device.createShaderModule({ code });
-            const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layouts[layoutName]] });
-            const out = {};
-            for (const entryPoint of entries) {
-                out[entryPoint] = device.createComputePipeline({ layout: pipelineLayout, compute: { module, entryPoint } });
-            }
-            return out;
-        };
-        this.pipelines = {
-            ...make(integrateShader, 'integrate', ['cs_kick_drift', 'cs_kick']),
-            ...make(bruteShader, 'brute', ['cs_brute_force']),
-            ...make(boundsShader, 'bounds', ['cs_bounds_partial', 'cs_bounds_final']),
-            ...make(mortonShader, 'morton', ['cs_morton']),
-            ...make(radixShader, 'radix', ['cs_radix_histogram', 'cs_radix_scan', 'cs_radix_scatter']),
-            ...make(initNodesShader, 'initNodes', ['cs_init_nodes']),
-            ...make(buildShader, 'build', ['cs_build_tree']),
-            ...make(bottomUpShader, 'bottomUp', ['cs_bottom_up']),
-            ...make(forceShader, 'force', ['cs_bh_force']),
-            ...make(energyShader, 'energy', ['cs_energy_partial', 'cs_energy_final']),
-            ...make(trailShader, 'trail', ['cs_trail_record', 'cs_trail_fill']),
-        };
+        const { layouts, pipelines } = computePipelines(this.device);
+        this.layouts = layouts;
+        this.pipelines = pipelines;
+        if (this.canvas) this.setupRenderPipelines();
+    }
 
+    setupRenderPipelines() {
+        const device = this.device;
         const VF = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT;
         const V = GPUShaderStage.VERTEX;
         this.renderLayout = device.createBindGroupLayout({
@@ -1626,8 +1653,8 @@ export class NBodySimulation {
         const b = {
             positions: storage(16 * n, U.COPY_DST),
             velocities: storage(16 * n, U.COPY_DST),
-            accel: storage(16 * n),
-            interactions: storage(4 * n),
+            accel: storage(16 * n, U.COPY_SRC),          // COPY_SRC: read back by measureForces()
+            interactions: storage(4 * n, U.COPY_SRC),
             keysA: storage(4 * n), valsA: storage(4 * n),
             keysB: storage(4 * n), valsB: storage(4 * n),
             offsets: storage(4 * 16 * this.sortTiles),
@@ -1674,7 +1701,7 @@ export class NBodySimulation {
             force: group('force', [b.positions, b.valsA, b.nodeMass, b.nodeBox, b.children, b.accel, b.interactions, sim]),
             energy: group('energy', [b.positions, b.velocities, b.accel, b.interactions, b.energy, sim]),
         };
-        this.reset();
+        if (this.canvas) this.reset();   // compute-only instances are filled by loadBodies()
     }
 
     // The trail ring buffer exists only while trails are on (32 MB at the largest N)
@@ -1694,6 +1721,7 @@ export class NBodySimulation {
         } else {
             this.trailGroup = null;
         }
+        if (!this.canvas) return;
         this.renderBindGroup = this.device.createBindGroup({
             layout: this.renderLayout,
             entries: [this.cameraBuffer, b.positions, b.velocities, this.trailBuffer || this.dummyTrail]
@@ -1715,8 +1743,15 @@ export class NBodySimulation {
     // Puts the bodies back to the preset's initial state; renders one frame (which computes the
     // initial forces and measures E₀)
     reset() {
-        this.generation++;
         const { positions, velocities } = generateBodies(this.presetKey, this.count, this.softening, this.seed);
+        this.loadBodies(positions, velocities);
+        this.render();
+    }
+
+    // Uploads bodies (positions xyz + mass, velocities xyz + tag; count × 4 floats each) and clears the
+    // clock and energy baseline; the next step recomputes the forces first
+    loadBodies(positions, velocities) {
+        this.generation++;
         const q = this.device.queue;
         q.writeBuffer(this.buffers.positions, 0, positions);
         q.writeBuffer(this.buffers.velocities, 0, velocities);
@@ -1728,7 +1763,6 @@ export class NBodySimulation {
         this.energy0 = null;
         this.rebaseline = true;
         this.trailFillPending = this.trails;
-        this.render();
     }
 
     applyPresetCamera() {
@@ -2098,14 +2132,165 @@ export class NBodySimulation {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        window.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
-        this.canvas.removeEventListener('wheel', this.onWheel);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            window.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+            this.canvas.removeEventListener('wheel', this.onWheel);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+            this.hdrTexture.destroy();
+        }
         this.destroyBodyBuffers();
-        for (const b of [this.simBuffer, this.radixBuffer, this.cameraBuffer, this.energyReadback,
-            this.dummyTrail, this.hdrTexture]) b.destroy();
+        for (const b of [this.simBuffer, this.radixBuffer, this.cameraBuffer, this.energyReadback, this.dummyTrail]) b.destroy();
+    }
+
+    // ---- Compute-only use (canvas = null): awaitable, one piece of bounded GPU work per call ----
+
+    // One force evaluation a(x), φ(x) of the loaded positions with the current mode, θ and ε: the
+    // dispatches of encodeForces in timed passes ('tree' and 'force' for Barnes-Hut, 'force' for brute
+    // force). Resolves when the GPU is done to { gpuMs (null without timestamp-query), passes, wallMs },
+    // wall = submit → onSubmittedWorkDone.
+    async timeForces() {
+        this.writeSimParams();
+        const timer = this.gpuTimer;
+        timer.beginFrame();
+        const encoder = this.device.createCommandEncoder();
+        let pass = null;
+        const phase = (label) => {
+            pass?.end();
+            return (pass = encoder.beginComputePass(timer.computePassDescriptor(label)));
+        };
+        this.encodeForces(null, phase).end();
+        timer.resolve(encoder);
+        const t0 = performance.now();
+        this.device.queue.submit([encoder.finish()]);
+        const timing = timer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        this.accelDirty = false;
+        return { gpuMs: result ? result.total : null, passes: result ? result.passes : null, wallMs };
+    }
+
+    // `steps` leapfrog steps (one command buffer each, as in frame()), then the energy reduction and
+    // its 16-byte readback. steps = 0 after loadBodies() gives the initial energy.
+    async stepAndSampleEnergy(steps) {
+        this.writeSimParams();
+        const encoder = this.encodeCompute(this.device.createCommandEncoder(), steps, true, false);
+        encoder.copyBufferToBuffer(this.buffers.energy, 0, this.energyReadback, 0, 16);
+        this.device.queue.submit([encoder.finish()]);
+        await this.energyReadback.mapAsync(GPUMapMode.READ);
+        const [K, W, interactions] = new Float32Array(this.energyReadback.getMappedRange().slice(0));
+        this.energyReadback.unmap();
+        this.time += steps * this.dt;
+        this.stepsTotal += steps;
+        return { K, W, E: K + W, interactions, time: this.time };
+    }
+
+    // Copies `size` bytes of a COPY_SRC storage buffer into a temporary MAP_READ buffer
+    async readBack(buffer, size, Type = Float32Array) {
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(buffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Type(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/nbody.js) and test/gpu/ ----
+
+export const MAX_MEASURE_STEPS = 1000;   // leapfrog steps per measureEnergyDrift call
+export const MAX_MEASURE_REPEATS = 10;   // timed force evaluations per measureForces call
+
+// A compute-only simulation of the given bodies, after checking the same caps as the interactive one
+function computeOnly(gpuDevice, n, { mode, theta, softening, dt }) {
+    if (!Number.isInteger(n) || n < 2 || n > MAX_BH) throw new RangeError(`N = ${n} is outside 2 … ${MAX_BH}`);
+    if (mode !== 'bh' && mode !== 'brute') throw new RangeError(`unknown mode ${mode}`);
+    if (mode === 'brute' && n > MAX_BRUTE) throw new RangeError(`brute force is limited to N ≤ ${MAX_BRUTE}`);
+    if (!(theta > 0) || !(softening > 0) || !(dt > 0)) throw new RangeError('θ, ε and dt must be positive');
+    const sim = new NBodySimulation(gpuDevice.device ?? gpuDevice, null, { count: n });
+    Object.assign(sim, { mode, theta, softening, dt });
+    return sim;
+}
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Force evaluation of `positions` (n × 4 floats: xyz, mass) by brute force or Barnes-Hut at θ, with
+// Plummer softening ε: `warmup` untimed evaluations, then `repeats` timed ones. Resolves to
+// { n, mode, theta, dispatches, gpuMs, wallMs, passes: { tree?, force }, interactionsPerBody } (medians
+// over the repeats; GPU times null without timestamp-query). Barnes-Hut's interaction counts are read
+// back (4 bytes per body); with accel = true also the accelerations (n × 4 floats: a.xyz, φ, body order).
+export async function measureForces(gpuDevice, { positions, mode = 'bh', theta = 0.5, softening = 0.05,
+    warmup = 1, repeats = 1, accel = true }) {
+    const n = positions.length / 4;
+    const sim = computeOnly(gpuDevice, n, { mode, theta, softening, dt: 0.01 });
+    try {
+        sim.loadBodies(positions, new Float32Array(4 * n));
+        for (let r = 0; r < Math.min(warmup, MAX_MEASURE_REPEATS); r++) await sim.timeForces();
+        const runs = [];
+        for (let r = 0; r < Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS); r++) runs.push(await sim.timeForces());
+        const labels = sim.effectiveMode() === 'brute' ? ['force'] : ['tree', 'force'];
+        const result = {
+            n, mode, theta,
+            dispatches: sim.dispatchesPerStep() - 2,   // a step minus its two kicks: 1 or 31
+            gpuMs: median(runs.map(r => r.gpuMs)),
+            wallMs: median(runs.map(r => r.wallMs)),
+            passes: Object.fromEntries(labels.map(l => [l, median(runs.map(r => r.passes?.[l]))])),
+            interactionsPerBody: n - 1,
+        };
+        if (mode === 'bh') {
+            const counts = await sim.readBack(sim.buffers.interactions, 4 * n);
+            result.interactionsPerBody = counts.reduce((s, x) => s + x, 0) / n;
+        }
+        if (accel) result.accel = await sim.readBack(sim.buffers.accel, 16 * n);
+        return result;
+    } finally {
+        sim.destroy();
+    }
+}
+
+// Energy over `steps` leapfrog steps of size dt (≤ MAX_MEASURE_STEPS), sampled `samples` times at even
+// intervals after the initial E₀ (16-byte readbacks only). between(), if given, is awaited after each
+// sample: the Measure runner passes ctx.step there, which throws to cancel. Resolves to
+// { E0, samples: [{ step, time, K, W, E, drift }], maxDrift, finalDrift, wallMs } with
+// drift = (E − E₀)/|E₀|.
+export async function measureEnergyDrift(gpuDevice, { positions, velocities, mode = 'brute', theta = 0.5,
+    softening = 0.05, dt = 0.01, steps = 100, samples = 20, between = null }) {
+    const n = positions.length / 4;
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) {
+        throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    }
+    const sim = computeOnly(gpuDevice, n, { mode, theta, softening, dt });
+    try {
+        const t0 = performance.now();
+        sim.loadBodies(positions, velocities);
+        const e0 = await sim.stepAndSampleEnergy(0);
+        const count = Math.min(Math.max(samples, 1), steps);
+        const out = [];
+        let done = 0;
+        for (let s = 1; s <= count; s++) {
+            const target = Math.round(s * steps / count);
+            const e = await sim.stepAndSampleEnergy(target - done);
+            done = target;
+            out.push({ step: done, time: e.time, K: e.K, W: e.W, E: e.E, drift: (e.E - e0.E) / Math.abs(e0.E) });
+            if (between) await between();
+        }
+        return {
+            E0: e0.E, samples: out,
+            maxDrift: Math.max(...out.map(o => Math.abs(o.drift))),
+            finalDrift: out[out.length - 1].drift,
+            wallMs: performance.now() - t0,
+        };
+    } finally {
+        sim.destroy();
     }
 }
 

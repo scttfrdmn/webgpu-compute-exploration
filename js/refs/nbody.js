@@ -6,8 +6,16 @@
 
 // Direct-sum reference (float64): softened acceleration acc (3 per body) and potential phi.
 export function directForces(pos, n, eps2) {
-    const acc = new Float64Array(3 * n), phi = new Float64Array(n);
-    for (let i = 0; i < n; i++) {
+    return directForcesAt(pos, n, eps2, Array.from({ length: n }, (_, i) => i));
+}
+
+// The same direct sum for a subset of target bodies only (O(targets · n)): acc (3 per target, in the
+// order of `targets`) and phi. The Measure tab uses it to check large N without an O(n²) wait.
+export function directForcesAt(pos, n, eps2, targets) {
+    const m = targets.length;
+    const acc = new Float64Array(3 * m), phi = new Float64Array(m);
+    for (let t = 0; t < m; t++) {
+        const i = targets[t];
         const xi = pos[4 * i], yi = pos[4 * i + 1], zi = pos[4 * i + 2];
         let ax = 0, ay = 0, az = 0, p = 0;
         for (let j = 0; j < n; j++) {
@@ -19,7 +27,7 @@ export function directForces(pos, n, eps2) {
             const s = mInvR * invR * invR;
             ax += dx * s; ay += dy * s; az += dz * s;
         }
-        acc[3 * i] = ax; acc[3 * i + 1] = ay; acc[3 * i + 2] = az; phi[i] = p;
+        acc[3 * t] = ax; acc[3 * t + 1] = ay; acc[3 * t + 2] = az; phi[t] = p;
     }
     return { acc, phi };
 }
