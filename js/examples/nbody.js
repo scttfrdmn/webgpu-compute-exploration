@@ -117,6 +117,8 @@
 // array<vec4<f32>> (center of mass, mass) and nodeBox (two vec4 per node: min.xyz + l, max.xyz + δ)
 // for 2N − 1 nodes (internal nodes 0 … N − 2, leaf of sorted body k at N − 1 + k, root 0).
 
+import { GpuTimer } from '../gpu-timer.js';
+
 export const WG = 256;
 export const MAX_BH = 262144;
 export const MAX_BRUTE = 32768;
@@ -1451,6 +1453,10 @@ export class NBodySimulation {
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
+        // Timed frames split each step into integrate / tree / force passes (≤ 3 per step, 4 steps,
+        // plus a first force evaluation and new encoders), then 2 render passes
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 32 });
+        this.timerConfig = '';
 
         this.count = 16384;
         this.mode = 'bh';             // 'bh' | 'brute'
@@ -1863,15 +1869,19 @@ export class NBodySimulation {
         return Math.ceil(this.count / WG);
     }
 
-    // a(x) and φ(x) for the current positions: 1 dispatch (brute force) or 31 (Barnes-Hut)
-    encodeForces(pass) {
+    // a(x) and φ(x) for the current positions: 1 dispatch (brute force) or 31 (Barnes-Hut).
+    // phase(label), on timed frames, ends the current compute pass and returns a new timed one;
+    // returns the pass that is open afterwards.
+    encodeForces(pass, phase = null) {
         const P = this.pipelines;
         const G = this.groups;
         const bodies = this.bodyGroups();
         if (this.effectiveMode() === 'brute') {
+            if (phase) pass = phase('force');
             this.dispatch(pass, P.cs_brute_force, G.brute, bodies);
-            return;
+            return pass;
         }
+        if (phase) pass = phase('tree');
         this.dispatch(pass, P.cs_bounds_partial, G.bounds, this.numPartials);
         this.dispatch(pass, P.cs_bounds_final, G.bounds, 1);
         this.dispatch(pass, P.cs_morton, G.morton, bodies);
@@ -1886,7 +1896,9 @@ export class NBodySimulation {
         this.dispatch(pass, P.cs_init_nodes, G.initNodes, bodies);
         this.dispatch(pass, P.cs_build_tree, G.build, Math.ceil(Math.max(this.count - 1, 1) / WG));
         this.dispatch(pass, P.cs_bottom_up, G.bottomUp, bodies);
+        if (phase) pass = phase('force');
         this.dispatch(pass, P.cs_bh_force, G.force, bodies);
+        return pass;
     }
 
     dispatchesPerStep() {
@@ -1895,13 +1907,21 @@ export class NBodySimulation {
 
     // Leapfrog steps; each step after the first goes into its own command buffer, so no single
     // submission carries more than one step of force work. Returns the encoder of the last one.
-    encodeCompute(encoder, steps, sampleEnergy, recordTrail) {
+    // timed: split the work into separately timed passes (integrate, tree build, force); the
+    // dispatches and their order are unchanged, untimed frames keep one pass per command buffer.
+    encodeCompute(encoder, steps, sampleEnergy, recordTrail, timed = false) {
         const P = this.pipelines;
         const G = this.groups;
         const bodies = this.bodyGroups();
-        let pass = encoder.beginComputePass();
+        const timer = this.gpuTimer;
+        let pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('integrate') : undefined);
+        const phase = timed ? (label) => {
+            pass.end();
+            return (pass = encoder.beginComputePass(timer.computePassDescriptor(label)));
+        } : null;
         if (this.accelDirty) {
-            this.encodeForces(pass);
+            pass = this.encodeForces(pass, phase);
+            if (phase) phase('integrate');
             this.accelDirty = false;
         }
         for (let s = 0; s < steps; s++) {
@@ -1909,10 +1929,11 @@ export class NBodySimulation {
                 pass.end();
                 this.device.queue.submit([encoder.finish()]);
                 encoder = this.device.createCommandEncoder();
-                pass = encoder.beginComputePass();
+                pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('integrate') : undefined);
             }
             this.dispatch(pass, P.cs_kick_drift, G.integrate, bodies);
-            this.encodeForces(pass);
+            pass = this.encodeForces(pass, phase);
+            if (phase) phase('integrate');
             this.dispatch(pass, P.cs_kick, G.integrate, bodies);
         }
         if (this.trailGroup && this.trailFillPending) {
@@ -1944,15 +1965,17 @@ export class NBodySimulation {
         return Math.max(1, Math.min(wanted, Math.floor(WORK_BUDGET / this.interactionsPerStep())));
     }
 
-    encodeRender(encoder) {
-        const hdrPass = encoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(encoder, timed = false) {
+        const hdrDesc = {
             colorAttachments: [{
                 view: this.hdrTexture.createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0, g: 0, b: 0, a: 0 }
             }]
-        });
+        };
+        const hdrPass = encoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(hdrDesc, 'render') : hdrDesc);
         hdrPass.setBindGroup(0, this.renderBindGroup);
         if (this.trailGroup) {
             hdrPass.setPipeline(this.trailPipeline);
@@ -1962,14 +1985,15 @@ export class NBodySimulation {
         hdrPass.draw(6, this.count);
         hdrPass.end();
 
-        const pass = encoder.beginRenderPass({
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0, g: 0, b: 0, a: 1 }
             }]
-        });
+        };
+        const pass = encoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         pass.setPipeline(this.tonemapPipeline);
         pass.setBindGroup(0, this.tonemapBindGroup);
         pass.draw(3);
@@ -1985,10 +2009,19 @@ export class NBodySimulation {
             (forceSample || this.rebaseline || now - this.lastEnergyTime >= ENERGY_INTERVAL_MS);
         this.writeSimParams();
         this.writeCamera();
-        const encoder = this.encodeCompute(this.device.createCommandEncoder(), steps, sampleEnergy, recordTrail);
+        // Averages from another mode or body count would mix two workloads
+        const timerConfig = `${this.effectiveMode()} ${this.count} ${steps}`;
+        if (timerConfig !== this.timerConfig) {
+            this.timerConfig = timerConfig;
+            this.gpuTimer.resetAverages();
+        }
+        const timed = this.gpuTimer.beginFrame();
+        const encoder = this.encodeCompute(this.device.createCommandEncoder(), steps, sampleEnergy, recordTrail, timed);
         if (sampleEnergy) encoder.copyBufferToBuffer(this.buffers.energy, 0, this.energyReadback, 0, 16);
-        this.encodeRender(encoder);
+        this.encodeRender(encoder, timed);
+        this.gpuTimer.resolve(encoder);
         this.device.queue.submit([encoder.finish()]);
+        this.gpuTimer.read();
         this.time += steps * this.dt;
         this.stepsTotal += steps;
         this.lastSteps = steps;
@@ -2064,6 +2097,7 @@ export class NBodySimulation {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         window.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -2228,6 +2262,7 @@ export async function initNBody(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${fps} FPS
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, mode === 'brute' ? ['force', 'integrate', 'render'] : ['tree', 'force', 'integrate', 'render'])} (${simulation.lastSteps} step${simulation.lastSteps === 1 ? '' : 's'}; tree = bounds, Morton codes, radix sort, tree build, bottom-up)
 • Interactions per frame: ${perFrame}
 • Compute dispatches per step: ${simulation.dispatchesPerStep()}${simulation.trails ? ` · trails: ${TRAIL_LEN} positions per body` : ''}
 • Energy drift (E − E₀)/|E₀|: ${energyLine}

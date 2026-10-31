@@ -46,6 +46,9 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 1. Add `js/examples/<name>.js`, a `<section class="example">` (plus a `nav.toc` link) in `index.html`, and register
    its canvas id in `initInteractiveExamplesOnVisible` in `js/main.js` (or wire a button for one-shot examples).
 2. Target 60 FPS (30 minimum for heavy rendering); offer size/quality controls, presets, and a performance readout.
+   Measure GPU time with `js/gpu-timer.js` (`GpuTimer`: pass descriptors get `timestampWrites`, `resolve(encoder)`
+   before `finish()`, `read()` after submit, never awaited in the animation loop) and show it next to wall time
+   ("GPU: x.xx ms · wall: y.yy ms"); it is a no-op when the adapter lacks `timestamp-query`.
 3. Comment the shader with the algorithm. Export `wgslModules()` returning `[{ name, code }]` with every module
    passed to `createShaderModule` (each variant, if code is built at runtime); CI fails examples without it.
 4. Add `test/<name>.test.mjs` (`node:test` and `node:assert` only): run the example's exported pure JS

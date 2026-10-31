@@ -18,6 +18,9 @@
 //   offset 52  (padding to the struct's 8-byte alignment)
 // One copy per FFT stage sits at a dynamic offset of paramsStride bytes, so each butterfly
 // dispatch sees its own `stage` without a CPU round trip; the other passes use slot 0.
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 56;
 const MAX_N = 4096;
 const MAX_LOG2N = 12;
@@ -607,6 +610,7 @@ class AudioEngine {
 class FFTAudioVisualizer {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         // Audio keeps playing after a GPU device loss unless we stop it here; the page offers a reload
         device.lost.then((info) => {
             if (info.reason !== 'destroyed') this.pause();
@@ -820,7 +824,7 @@ class FFTAudioVisualizer {
 
         const n = this.n;
         const commandEncoder = this.device.createCommandEncoder();
-        const pass = commandEncoder.beginComputePass();
+        const pass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('fft'));
         // Bind group 1 has dst = complexBuffers[0], where stage 0 reads
         pass.setPipeline(this.windowPipeline);
         pass.setBindGroup(0, this.computeBindGroups[1], [0]);
@@ -844,20 +848,24 @@ class FFTAudioVisualizer {
         pass.dispatchWorkgroups(1);
         pass.end();
 
-        this.encodeRender(commandEncoder);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
         this.frames++;
     }
 
-    encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.02, g: 0.027, b: 0.055, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroup);
         renderPass.draw(3);
@@ -907,6 +915,7 @@ class FFTAudioVisualizer {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.audio.close();
         this.samplesBuffer.destroy();
         this.complexBuffers.forEach(b => b.destroy());
@@ -1107,6 +1116,7 @@ ${message ? `\n${message}\n` : ''}
 
 <span class="info">Performance:</span>
 • Frame rate: ${viz.running ? viz.fps.toFixed(0) : 0} FPS (one FFT per frame)
+• ${viz.gpuTimer.frameText(viz.running ? viz.fps : 0, ['fft', 'render'])} (fft = window, butterflies, magnitude, bands, beat)
 • Compute dispatches per frame: ${dispatches} (window, ${viz.log2n} stages, magnitude, bands, beat)
 • Work per FFT: ${(n / 2 * viz.log2n).toLocaleString()} butterflies; CPU → GPU: ${n * 4} bytes of samples, no readback`;
     }

@@ -81,6 +81,8 @@
 // and the cell diagonal, its two tether pins and their rest distances, 3 pad), normals
 // array<vec4<f32>>, tornCount atomic<u32>. Seven storage buffers in the compute stage (limit 8).
 
+import { GpuTimer } from '../gpu-timer.js';
+
 export const SUBSTEP_DT = 1 / 240;
 export const MAX_SUBSTEPS = 8;           // per animation frame; slower frames drop simulated time
 export const NUM_COLORS = 12;
@@ -987,6 +989,7 @@ export function pickParticle(positions, count, ray, pixelAngle) {
 export class ClothSimulation {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
@@ -1418,7 +1421,7 @@ export class ClothSimulation {
 
     // Encodes `substeps` substeps (integrate, tethers, iterations × colors, collide), then normals
     encodeCompute(encoder, substeps) {
-        const pass = encoder.beginComputePass();
+        const pass = encoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
         const particleGroups = Math.ceil(this.cloth.count / WORKGROUP);
         pass.setBindGroup(0, this.computeBindGroup);
         for (let s = 0; s < substeps; s++) {
@@ -1446,7 +1449,7 @@ export class ClothSimulation {
     }
 
     encodeRender(encoder) {
-        const pass = encoder.beginRenderPass({
+        const pass = encoder.beginRenderPass(this.gpuTimer.renderPassDescriptor({
             colorAttachments: [{
                 view: this.msaaTexture.createView(),
                 resolveTarget: this.context.getCurrentTexture().createView(),
@@ -1460,7 +1463,7 @@ export class ClothSimulation {
                 depthStoreOp: 'discard',
                 depthClearValue: 1.0
             }
-        });
+        }, 'render'));
         pass.setBindGroup(0, this.renderBindGroup);
         pass.setPipeline(this.floorPipeline);
         pass.draw(6);
@@ -1495,7 +1498,9 @@ export class ClothSimulation {
         if (readTorn) {
             encoder.copyBufferToBuffer(this.counterBuffer, 0, this.counterReadback, 0, 4);
         }
+        this.gpuTimer.resolve(encoder);
         this.device.queue.submit([encoder.finish()]);
+        this.gpuTimer.read();
         if (readTorn) this.readTornCount();
         this.time += substeps * SUBSTEP_DT;
         this.substepsTotal += substeps;
@@ -1556,6 +1561,7 @@ export class ClothSimulation {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         window.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -1684,6 +1690,7 @@ export async function initCloth(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${simulation.running ? simulation.fps.toFixed(0) : 0} FPS (${simulation.lastSubsteps} substeps last frame)
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['sim', 'render'])}
 • Compute dispatches per substep: ${dispatchesPerSubstep}
 • Constraint projections: ${(projections / 1e6).toFixed(1)} M/s at ${substepsPerSecond} substeps/s
 • Readbacks: positions once per grab (CPU pick), 4-byte torn counter while tearing is on`;

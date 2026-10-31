@@ -28,6 +28,17 @@ All notable changes to this project are documented here. The format follows
   `tools/train-mnist.mjs`; and the N-body bounds, Morton codes, radix sort, tree build, Barnes-Hut and
   brute-force forces vs the direct sum. CPU references used by both suites moved to `test/helpers/`.
   The harness refuses to run unless `CI=true` on Linux with a software adapter, so it never touches a real GPU.
+- GPU time from timestamp queries. `getGPUDevice` requests the optional `timestamp-query` feature
+  when the adapter has it, and the new `js/gpu-timer.js` (`GpuTimer`) adds `timestampWrites` to
+  pass descriptors, resolves them into a small pool of readback buffers (a busy pool skips a frame
+  instead of stalling) and keeps per-pass moving averages. Vector addition, matrix multiplication
+  (plus kernel-only GFLOPS), image blur, WASM Mandelbrot, the sort benchmark, N-body (tree build,
+  force, integrate, render), path tracer (ms per sample, Mrays/s), FFT, convolution reverb (ms per
+  block vs the block deadline), MNIST training (ms per mini-batch), cloth, SPH (which also gains an
+  FPS readout), k-means, Voronoi, maze, falling sand, wave equation, reaction-diffusion and noise
+  show "GPU: x.xx ms · wall: y.yy ms"; without the feature they say GPU time is not available. The
+  header status line shows whether timestamps are on, and the README explains GPU vs wall time and
+  Chrome's ~100 µs quantization.
 
 ### Changed
 - package.json description and keywords, the CITATION abstract, and the GitHub

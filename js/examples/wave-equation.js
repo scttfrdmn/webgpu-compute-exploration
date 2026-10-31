@@ -18,6 +18,9 @@
 //   offset 68  (padding to the struct's 8-byte alignment)
 // One copy per substep sits at a dynamic offset of PARAMS_STRIDE bytes, so each substep sees its
 // own `step` (the source phase and rain hash depend on it) without a CPU round trip.
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 72;
 const MAX_SUBSTEPS = 16;
 
@@ -298,6 +301,7 @@ function rippleProfile(px, py, cx, cy, sigma) {
 class WaveEquation {
     constructor(device, canvas, width, height) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.width = width;
         this.height = height;
@@ -596,7 +600,7 @@ class WaveEquation {
 
         const commandEncoder = this.device.createCommandEncoder();
         if (edit || passes > 0) {
-            const computePass = commandEncoder.beginComputePass();
+            const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
             const wgX = Math.ceil(this.width / 8);
             const wgY = Math.ceil(this.height / 8);
             if (edit) {
@@ -615,8 +619,10 @@ class WaveEquation {
             }
             computePass.end();
         }
-        this.encodeRender(commandEncoder);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
 
         this.steps += passes;
         this.dropPending = false;
@@ -633,15 +639,17 @@ class WaveEquation {
         this.frame(this.substeps);
     }
 
-    encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.01, g: 0.04, b: 0.12, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
         renderPass.draw(3);
@@ -688,6 +696,7 @@ class WaveEquation {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         this.canvas.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -805,6 +814,7 @@ export async function initWaveEquation(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${simulation.running ? simulation.fps.toFixed(0) : 0} FPS
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['sim', 'render'])}
 • Simulation steps: ${simulation.steps.toLocaleString()} (${stepsPerSecond.toLocaleString()} / s)
 • Cell updates per frame: ${(width * height * simulation.substeps).toLocaleString()}
 • One compute dispatch per step (plus one for clicks and wall strokes); no CPU readback`;

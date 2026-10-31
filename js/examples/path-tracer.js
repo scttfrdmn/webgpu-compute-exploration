@@ -58,6 +58,8 @@
 // Emissive spheres and quads are sorted to the front: indices < lightCount are the lights that
 // next-event estimation samples.
 
+import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
+
 const MAX_PRIMS = 64;
 const MAX_BOUNCES = 8;
 const MAX_IN_FLIGHT = 2;
@@ -940,6 +942,7 @@ function cameraBasis(cam) {
 class PathTracer {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
@@ -1238,15 +1241,17 @@ class PathTracer {
         this.device.queue.writeBuffer(this.displayBuffer, 0, this.displayData);
     }
 
-    encodeDisplay(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeDisplay(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0, g: 0, b: 0, a: 1 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'display') : desc);
         renderPass.setPipeline(this.displayPipeline);
         renderPass.setBindGroup(0, this.displayBindGroup);
         renderPass.draw(3);
@@ -1276,7 +1281,7 @@ class PathTracer {
 
         const commandEncoder = this.device.createCommandEncoder();
         commandEncoder.clearBuffer(this.counterBuffer);
-        const computePass = commandEncoder.beginComputePass();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('trace'));
         computePass.setPipeline(this.tracePipeline);
         computePass.setBindGroup(0, this.traceBindGroup);
         computePass.dispatchWorkgroups(Math.ceil(this.renderWidth / 8), Math.ceil(this.renderHeight / 8));
@@ -1286,8 +1291,10 @@ class PathTracer {
         const readback = this.readbackWanted && !this.readbackBusy;
         if (readback) commandEncoder.copyBufferToBuffer(this.counterBuffer, 0, this.readbackBuffer, 0, 4);
 
-        this.encodeDisplay(commandEncoder);
+        this.encodeDisplay(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
         this.sampleCount++;
         this.accumTime = performance.now() - this.accumStart;
 
@@ -1352,6 +1359,7 @@ class PathTracer {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         window.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -1494,6 +1502,12 @@ export async function initPathTracer(gpuDevice) {
         const raysPerFrame = tracer.raysLastFrame;
         const raysPerSecond = tracer.running ? raysPerFrame * tracer.fps : 0;
         const seconds = tracer.accumTime / 1000;
+        // One sample per pixel = one trace dispatch, so trace GPU ms is the GPU cost of a sample
+        const traceMs = tracer.gpuTimer.ms('trace');
+        const gpuLine = tracer.gpuTimer.supported
+            ? `GPU: ${formatMs(traceMs)} ms per sample (trace) · ${formatMs(tracer.gpuTimer.ms('display'))} ms display`
+            : GPU_TIME_UNAVAILABLE;
+        const gpuRays = traceMs > 0 && raysPerFrame ? `${(raysPerFrame / traceMs / 1000).toFixed(0)} Mrays/s` : '—';
         const status = tracer.running ? '<span class="success">Accumulating</span>'
             : tracer.converged ? `<span class="success">Converged at ${tracer.targetSpp} spp</span> (GPU idle)`
             : '<span class="info">Paused</span>';
@@ -1513,8 +1527,10 @@ export async function initPathTracer(gpuDevice) {
 • Samples per pixel: ${tracer.sampleCount.toLocaleString()} / ${tracer.targetSpp.toLocaleString()}
 • Frame rate: ${tracer.running ? tracer.fps.toFixed(0) : 0} FPS (1 sample per pixel per frame)
 • Rays in the last measured frame: ${raysPerFrame ? raysPerFrame.toLocaleString() + ` (${(raysPerFrame / pixels).toFixed(2)} per pixel)` : '—'}
-• Rays per second: ${raysPerSecond ? (raysPerSecond / 1e6).toFixed(0) + ' million' : '—'}
-• Accumulation time: ${seconds.toFixed(1)} s
+• Rays per second: ${raysPerSecond ? (raysPerSecond / 1e6).toFixed(0) + ' million' : '—'} (rays per frame × FPS)
+• ${gpuLine}${tracer.running && tracer.fps > 0 ? ` · wall: ${formatMs(1000 / tracer.fps)} ms/frame` : ''}
+${tracer.gpuTimer.supported ? `• Rays per second of GPU trace time: ${gpuRays}
+` : ''}• Accumulation time: ${seconds.toFixed(1)} s
 
 <span class="info">Algorithm:</span>
 • One compute invocation per pixel traces one path: jittered camera ray (thin lens with DoF), brute-force closest hit over ≤ ${MAX_PRIMS} spheres, quads, rotated boxes and planes

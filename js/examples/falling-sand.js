@@ -50,6 +50,9 @@
 //   offset 36  simulate      u32        0 = only apply the brush     -> Uint32 view [9]
 //   offset 40  step          u32        step counter (offset, hash)  -> Uint32 view [10]
 //   offset 44  paintSeed     u32        frame counter for the brush  -> Uint32 view [11]
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 48;
 const PARAMS_STRIDE = 256; // minUniformBufferOffsetAlignment is at most 256
 const MAX_STEPS = 8;
@@ -530,6 +533,7 @@ function buildSandbox(width, height) {
 class FallingSand {
     constructor(device, canvas, width, height) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.width = width;
         this.height = height;
@@ -727,7 +731,7 @@ class FallingSand {
 
         const commandEncoder = this.device.createCommandEncoder();
         if (passes > 0) {
-            const computePass = commandEncoder.beginComputePass();
+            const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
             computePass.setPipeline(this.computePipeline);
             const wgX = Math.ceil((this.width / 2 + 1) / 8);
             const wgY = Math.ceil((this.height / 2 + 1) / 8);
@@ -737,8 +741,10 @@ class FallingSand {
             }
             computePass.end();
         }
-        this.encodeRender(commandEncoder);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
 
         if (simulate) this.steps += passes;
         this.paintSeed = (this.paintSeed + 1) >>> 0;
@@ -749,15 +755,17 @@ class FallingSand {
         this.frame(this.stepsPerFrame);
     }
 
-    encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.035, g: 0.04, b: 0.06, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroup);
         renderPass.draw(3);
@@ -804,6 +812,7 @@ class FallingSand {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         this.canvas.removeEventListener('mousemove', this.onMouseMove);
         this.canvas.removeEventListener('contextmenu', this.onContextMenu);
@@ -897,6 +906,7 @@ export async function initFallingSand(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${simulation.running ? simulation.fps.toFixed(0) : 0} FPS
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['sim', 'render'])}
 • Simulation steps: ${simulation.steps.toLocaleString()} (${stepsPerSecond.toLocaleString()} / s)
 • Blocks per step: ${blocks.toLocaleString()}; one compute dispatch per step, no CPU readback`;
     }

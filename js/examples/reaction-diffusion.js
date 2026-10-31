@@ -10,6 +10,9 @@
 //   offset 36  brushOn     u32        1 while painting        -> Uint32 view [9]
 //   offset 40  simulate    u32        0 = only apply the brush -> Uint32 view [10]
 //   offset 44  palette     u32        color ramp index        -> Uint32 view [11]
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 48;
 
 const paramsStruct = `
@@ -174,6 +177,7 @@ const MAX_SUBSTEPS = 32;
 class ReactionDiffusion {
     constructor(device, canvas, width, height) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.width = width;
         this.height = height;
@@ -382,7 +386,7 @@ class ReactionDiffusion {
 
         const commandEncoder = this.device.createCommandEncoder();
         if (passes > 0) {
-            const computePass = commandEncoder.beginComputePass();
+            const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
             computePass.setPipeline(this.computePipeline);
             const wgX = Math.ceil(this.width / 8);
             const wgY = Math.ceil(this.height / 8);
@@ -393,8 +397,10 @@ class ReactionDiffusion {
             }
             computePass.end();
         }
-        this.encodeRender(commandEncoder);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
 
         if (substeps > 0) this.steps += passes;
         this.brushPrev = this.brushPos.slice();
@@ -404,15 +410,17 @@ class ReactionDiffusion {
         this.frame(this.substeps);
     }
 
-    encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.02, g: 0.027, b: 0.055, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
         renderPass.draw(3);
@@ -459,6 +467,7 @@ class ReactionDiffusion {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         this.canvas.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -570,6 +579,7 @@ export async function initReactionDiffusion(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${simulation.running ? simulation.fps.toFixed(0) : 0} FPS
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['sim', 'render'])}
 • Simulation steps: ${simulation.steps.toLocaleString()} (${stepsPerSecond.toLocaleString()} / s)
 • Cell updates per frame: ${(width * height * simulation.substeps).toLocaleString()}
 • One compute dispatch per substep; no CPU readback`;

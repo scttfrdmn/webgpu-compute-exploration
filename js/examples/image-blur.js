@@ -1,3 +1,5 @@
+import { GpuTimer, GPU_TIME_NOTE } from '../gpu-timer.js';
+
 const shaderCode = `
 @group(0) @binding(0) var<storage, read> input: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
@@ -168,14 +170,17 @@ export async function runImageBlur(gpuDevice) {
         }
     });
 
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
     const commandEncoder = device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
+    const passEncoder = commandEncoder.beginComputePass(timer.computePassDescriptor('blur'));
     passEncoder.setPipeline(computePipeline);
     passEncoder.setBindGroup(0, bindGroup);
     passEncoder.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
     passEncoder.end();
+    timer.resolve(commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
+    const timing = timer.read();
 
     const readBuffer = device.createBuffer({
         size: inputImage.byteLength,
@@ -191,6 +196,8 @@ export async function runImageBlur(gpuDevice) {
     readBuffer.unmap();
 
     const endTime = performance.now();
+    await timing;
+    timer.destroy();
 
     const originalCanvas = document.getElementById('canvas-original');
     const blurredCanvas = document.getElementById('canvas-blurred');
@@ -215,7 +222,8 @@ export async function runImageBlur(gpuDevice) {
 • Workgroup size: 8 × 8
 
 <span class="info">Results:</span>
-• Computation time: ${(endTime - startTime).toFixed(2)}ms
+• Computation time: ${(endTime - startTime).toFixed(2)}ms (wall: setup, upload, kernel and readback)
+• ${timer.summary(endTime - startTime)}
 • Operations per pixel: ${opsPerPixel}
 • Total operations: ${totalOps.toLocaleString()}
 • Throughput: ${(totalPixels / (endTime - startTime)).toFixed(0).toLocaleString()} pixels/ms
@@ -225,7 +233,8 @@ export async function runImageBlur(gpuDevice) {
 • Video filters
 • Anti-aliasing
 • Depth of field effects
-• Noise reduction`;
+• Noise reduction
+${timer.supported ? `<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
 }
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.

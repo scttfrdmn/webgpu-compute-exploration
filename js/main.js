@@ -1,4 +1,5 @@
 import { checkWebGPUSupport, getGPUDevice } from './webgpu-utils.js';
+import { GPU_TIME_NOTE } from './gpu-timer.js';
 import { runVectorAddition } from './examples/vector-addition.js';
 import { runMatrixMultiplication } from './examples/matrix-multiplication.js';
 import { runImageBlur } from './examples/image-blur.js';
@@ -44,7 +45,11 @@ async function init() {
         statusDiv.className = 'status supported';
         const info = gpuDevice.adapter.info || {};
         const adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ') || info.description;
-        statusDiv.textContent = adapterName ? `WebGPU ready · ${adapterName}` : 'WebGPU ready';
+        const timing = gpuDevice.timestamps
+            ? 'GPU timestamps on (may be quantized to ~100 µs)'
+            : 'GPU time not available (timestamp-query unsupported)';
+        statusDiv.textContent = `${adapterName ? `WebGPU ready · ${adapterName}` : 'WebGPU ready'} · ${timing}`;
+        statusDiv.title = GPU_TIME_NOTE;
 
         setupEventListeners();
         initInteractiveExamplesOnVisible();

@@ -1,3 +1,5 @@
+import { GpuTimer, GPU_TIME_NOTE } from '../gpu-timer.js';
+
 const shaderCode = `
 struct Params {
     width: f32,
@@ -138,14 +140,17 @@ export async function runWASMMandelbrot(gpuDevice) {
             }
         });
 
+        const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
         const commandEncoder = device.createCommandEncoder();
-        const passEncoder = commandEncoder.beginComputePass();
+        const passEncoder = commandEncoder.beginComputePass(timer.computePassDescriptor('mandelbrot'));
         passEncoder.setPipeline(computePipeline);
         passEncoder.setBindGroup(0, bindGroup);
         passEncoder.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
         passEncoder.end();
+        timer.resolve(commandEncoder);
 
         device.queue.submit([commandEncoder.finish()]);
+        const timing = timer.read();
 
         const readBuffer = device.createBuffer({
             size: outputSize,
@@ -161,6 +166,8 @@ export async function runWASMMandelbrot(gpuDevice) {
         readBuffer.unmap();
 
         const gpuTime = performance.now();
+        await timing;
+        timer.destroy();
 
         render_to_canvas(canvas, result, config);
 
@@ -180,7 +187,8 @@ export async function runWASMMandelbrot(gpuDevice) {
 • Zoom: ${config.get_shader_params()[3].toFixed(2)}x
 
 <span class="info">Performance:</span>
-• GPU computation: ${(gpuTime - startTime).toFixed(2)}ms
+• GPU computation: ${(gpuTime - startTime).toFixed(2)}ms (wall: setup, kernel and readback)
+• ${timer.summary(gpuTime - startTime)}
 • WASM rendering: ${(endTime - gpuTime).toFixed(2)}ms
 • Total time: ${(endTime - startTime).toFixed(2)}ms
 • Pixels per ms: ${(totalPixels / (endTime - startTime)).toFixed(0).toLocaleString()}
@@ -195,7 +203,8 @@ export async function runWASMMandelbrot(gpuDevice) {
 • Complex logic in Rust (memory safe)
 • Heavy computation on GPU
 • Optimal performance for each task
-• Reusable across platforms`;
+• Reusable across platforms
+${timer.supported ? `<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
 
     } catch (error) {
         if (error.message.includes('WASM module not found')) {

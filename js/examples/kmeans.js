@@ -33,6 +33,8 @@
 // Stats (storage, 80 bytes, cleared with clearBuffer before every iteration):
 //   offset  0 changed atomic<u32> · 4 inertia f32 · 8 empty u32 · 12 pad · 16 counts array<u32, 16>
 
+import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
+
 const MAX_K = 16;
 const MAX_N = 500000;
 const ASSIGN_WG = 256;                    // invocations per assign workgroup
@@ -570,6 +572,7 @@ function initCentroids(data, n, k, method, rng) {
 class KMeans {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
@@ -798,7 +801,7 @@ class KMeans {
     encodeIteration(commandEncoder) {
         this.writeComputeParams();
         commandEncoder.clearBuffer(this.statsBuffer);
-        const pass = commandEncoder.beginComputePass();
+        const pass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('iterate'));
         pass.setBindGroup(0, this.computeBindGroup);
         pass.setPipeline(this.assignPipeline);
         pass.dispatchWorkgroups(this.numGroups);
@@ -845,8 +848,10 @@ class KMeans {
             this.iteration++;
             this.encodeIteration(commandEncoder);
         }
-        this.encodeRender(commandEncoder);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
         if (iterate) this.readStats();
     }
 
@@ -856,16 +861,18 @@ class KMeans {
         if (this.onStats) this.onStats();
     }
 
-    encodeRender(commandEncoder) {
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeRender(commandEncoder, timed = false) {
         this.writeRenderParams();
-        const pass = commandEncoder.beginRenderPass({
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.035, g: 0.04, b: 0.06, a: 1.0 }
             }]
-        });
+        };
+        const pass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         pass.setBindGroup(0, this.renderBindGroup);
         if (this.voronoi) {
             pass.setPipeline(this.voronoiPipeline);
@@ -930,6 +937,7 @@ class KMeans {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         [this.pointBuffer, this.labelBuffer, this.centroidBuffer, this.partialBuffer, this.statsBuffer,
          this.trailBuffer, this.readbackBuffer, this.computeParamsBuffer, this.renderParamsBuffer]
             .forEach(b => b.destroy());
@@ -1062,6 +1070,9 @@ export async function initKMeans(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${kmeans.running ? kmeans.fps.toFixed(0) : 0} FPS
+• ${kmeans.gpuTimer.supported
+        ? `GPU: ${formatMs(kmeans.gpuTimer.ms('iterate'))} ms per iteration · ${formatMs(kmeans.gpuTimer.ms('render'))} ms per draw`
+        : GPU_TIME_UNAVAILABLE}${kmeans.running && kmeans.fps > 0 ? ` · wall: ${formatMs(1000 / kmeans.fps)} ms/frame` : ''}
 • Per iteration: ${kmeans.numGroups + 1} workgroups in 2 dispatches, ${(kmeans.n * kmeans.k).toLocaleString()} distance evaluations
 • Readback: 80 bytes of statistics per iteration (changed count, inertia, cluster sizes); points and labels stay on the GPU`;
     }

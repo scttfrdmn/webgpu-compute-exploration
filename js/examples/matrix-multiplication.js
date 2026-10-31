@@ -1,4 +1,5 @@
 import { createBuffer, readBuffer } from '../webgpu-utils.js';
+import { GpuTimer, GPU_TIME_NOTE } from '../gpu-timer.js';
 
 const shaderCode = `
 @group(0) @binding(0) var<storage, read> matrixA: array<f32>;
@@ -122,18 +123,23 @@ export async function runMatrixMultiplication(gpuDevice) {
         }
     });
 
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
     const commandEncoder = device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
+    const passEncoder = commandEncoder.beginComputePass(timer.computePassDescriptor('matmul'));
     passEncoder.setPipeline(computePipeline);
     passEncoder.setBindGroup(0, bindGroup);
     passEncoder.dispatchWorkgroups(Math.ceil(M / 8), Math.ceil(K / 8));
     passEncoder.end();
+    timer.resolve(commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
+    const timing = timer.read();
 
     const result = await readBuffer(device, resultBuffer, resultSize);
 
     const endTime = performance.now();
+    const gpuMs = (await timing)?.total ?? null;
+    timer.destroy();
 
     function cpuMatrixMultiply(a, b, m, n, k, sampleRow, sampleCol) {
         let sum = 0;
@@ -156,6 +162,8 @@ export async function runMatrixMultiplication(gpuDevice) {
 
     const totalOps = 2 * M * N * K;
     const gflops = (totalOps / (endTime - startTime) / 1e6).toFixed(2);
+    // Kernel-only throughput; with ~100 µs quantization a sub-ms kernel can read as 0 ms, so show "—" then.
+    const gpuGflops = gpuMs > 0 ? `${(totalOps / gpuMs / 1e6).toFixed(2)} GFLOPS (kernel only, GPU time)` : '—';
 
     return `<span class="success">✓ Matrix Multiplication Complete</span>
 
@@ -167,10 +175,12 @@ export async function runMatrixMultiplication(gpuDevice) {
 • Total workgroups: ${Math.ceil(M / 8)} × ${Math.ceil(K / 8)}
 
 <span class="info">Results:</span>
-• Computation time: ${(endTime - startTime).toFixed(2)}ms
+• Computation time: ${(endTime - startTime).toFixed(2)}ms (wall: setup, upload, kernel and readback)
+• ${timer.summary(endTime - startTime)}
 • Total operations: ${totalOps.toLocaleString()}
-• Performance: ${gflops} GFLOPS
-• Verification: ${isCorrect ? '<span class="success">PASSED</span>' : '<span class="error">FAILED</span>'}
+• Performance: ${gflops} GFLOPS (wall time)
+${timer.supported ? `• Performance: ${gpuGflops}
+` : ''}• Verification: ${isCorrect ? '<span class="success">PASSED</span>' : '<span class="error">FAILED</span>'}
 
 <span class="info">Sample verification:</span>
 • CPU result[0,0]: ${cpuResult.toFixed(6)}
@@ -182,7 +192,8 @@ Matrix multiplication is fundamental for:
 • Neural network inference
 • 3D transformations
 • Scientific computing
-• Linear algebra operations`;
+• Linear algebra operations
+${timer.supported ? `<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
 }
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.

@@ -352,6 +352,7 @@ webgpu/
 ├── js/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
 │   ├── webgpu-utils.js                # WebGPU helper functions
+│   ├── gpu-timer.js                   # GPU pass timing with timestamp queries
 │   ├── examples/
 │   │   ├── vector-addition.js         # Example 1: Vector addition
 │   │   ├── matrix-multiplication.js   # Example 2: Matrix multiply
@@ -436,6 +437,23 @@ This architecture is ideal for:
 - Game engines (logic in WASM, rendering in WebGPU)
 - Scientific computing (algorithms in Rust, computation on GPU)
 - ML inference (model management in WASM, matrix ops on GPU)
+
+## Measuring performance
+
+Examples that report performance show two numbers, e.g. `GPU: 1.23 ms · wall: 16.67 ms`:
+
+- **GPU** time comes from the optional `timestamp-query` feature (`js/gpu-timer.js`): the GPU records a
+  timestamp at the start and end of each timed pass, so it is pure execution time. Interactive
+  examples show a moving average per frame (broken down by pass), one-shot benchmarks the single run.
+  The feature is requested only when the adapter offers it; otherwise the readout says
+  "GPU time: not available (timestamp-query unsupported)". The page header shows which applies.
+- **Wall** time is measured with `performance.now()` on the CPU: end to end for one-shot examples
+  (setup, upload, kernel, readback), submit → done for the sort benchmark, and the frame interval
+  (1000 / FPS) for animations. It includes JavaScript, driver and queue latency, and vsync.
+
+Chrome quantizes timestamp-query results to ~100 µs to limit timing attacks unless WebGPU developer
+features are enabled (`chrome://flags/#enable-webgpu-developer-features`), so very short passes read as
+0 or 0.1 ms; long passes and averages over many frames are still meaningful.
 
 ## Performance Tips
 
