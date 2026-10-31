@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Eleven interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Fourteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
@@ -192,7 +192,7 @@
     <header class="hero">
         <div class="inner">
             <h1>WebGPU <span>Compute</span> Exploration</h1>
-            <p>Eleven interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            <p>Fourteen interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
             set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
             <div class="hero-links">
@@ -215,7 +215,7 @@
             <li><a href="#boids">8 Boids</a></li>
             <li><a href="#dla">9 DLA</a></li>
             <li><a href="#reaction-diffusion">10 Turing</a></li>
-            <li><a href="#wasm-mandelbrot">11 WASM</a></li>
+            <li><a href="#wasm-mandelbrot">14 WASM</a></li>
         </ul>
     </nav>
 
@@ -441,7 +441,7 @@
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">11</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">14</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>

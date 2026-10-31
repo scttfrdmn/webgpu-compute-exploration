@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Eleven interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Fourteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -94,7 +94,7 @@ Two virtual chemicals diffuse and react, producing Turing patterns like coral, s
 - **Visualization**: Full-screen fragment shader maps V through an Ocean, Magma or Mono color ramp
 - **Performance**: Measured FPS and simulation steps per second; no CPU readback
 
-### 11. WASM Integration (Mandelbrot Set)
+### 14. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -168,7 +168,7 @@ webgpu/
 │   │   ├── boids.js                   # Example 8: Boids flocking
 │   │   ├── dla-3d.js                  # Example 9: 3D DLA
 │   │   ├── reaction-diffusion.js      # Example 10: Gray-Scott reaction-diffusion
-│   │   └── wasm-mandelbrot.js         # Example 11: WASM integration
+│   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
