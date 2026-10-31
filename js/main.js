@@ -25,11 +25,34 @@ import { initMNISTRecognize } from './examples/mnist-recognize.js';
 import { initNBody } from './examples/nbody.js';
 import { initConvolutionReverb } from './examples/convolution-reverb.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
+import { buildDeviceReport } from './device-report.js';
 
 let gpuDevice = null;
 
+// State for the opt-in device report. Nothing here leaves the page unless the user copies it.
+const resolvedInstances = new Map();   // canvas id -> example instance (null if init failed)
+let deviceLostInfo = null;
+let unavailableReason = '';
+const recentWebGPUErrors = [];
+
+// Keep the last 20 WebGPU-related console errors for the report; still log them as usual.
+const originalConsoleError = console.error.bind(console);
+console.error = (...args) => {
+    originalConsoleError(...args);
+    try {
+        const text = args.map(a => (a instanceof Error ? `${a.name}: ${a.message}` : String(a))).join(' ');
+        if (text.startsWith('[WebGPU]') || text.includes('WebGPU')) {
+            recentWebGPUErrors.push(text);
+            if (recentWebGPUErrors.length > 20) recentWebGPUErrors.shift();
+        }
+    } catch {
+        // never let report bookkeeping break logging
+    }
+};
+
 async function init() {
     const statusDiv = document.getElementById('gpu-status');
+    setupDeviceReport();
 
     try {
         const isSupported = await checkWebGPUSupport();
@@ -37,6 +60,7 @@ async function init() {
         if (!isSupported) {
             statusDiv.className = 'status not-supported';
             statusDiv.textContent = 'WebGPU not available — use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac)';
+            unavailableReason = 'navigator.gpu is not available.';
             disableAllButtons();
             return;
         }
@@ -56,6 +80,7 @@ async function init() {
     } catch (error) {
         statusDiv.className = 'status not-supported';
         statusDiv.textContent = `WebGPU failed to initialize: ${error.message}`;
+        unavailableReason = `WebGPU failed to initialize: ${error.message}`;
         disableAllButtons();
     }
 }
@@ -152,6 +177,8 @@ function initInteractiveExamplesOnVisible() {
                 instances.set(id, examples[id](gpuDevice).catch((error) => {
                     console.error(`Failed to initialize ${id}:`, error);
                 }));
+                // The device report reads plain fields from resolved instances only
+                instances.get(id).then((instance) => resolvedInstances.set(id, instance ?? null));
             }
             if (id === 'canvas-fractal' && instances.has(id)) {
                 instances.get(id).then((renderer) => {
@@ -170,6 +197,7 @@ function initInteractiveExamplesOnVisible() {
 // Examples hold references to the old device and have already bound their DOM listeners, so
 // rebuilding them in place would duplicate handlers. Stop interaction and offer a clean reload.
 function handleDeviceLost(info) {
+    deviceLostInfo = { reason: info.reason, message: info.message };
     const statusDiv = document.getElementById('gpu-status');
     statusDiv.className = 'status not-supported';
     statusDiv.textContent = info.message ? `GPU device lost: ${info.message}` : 'GPU device lost';
@@ -187,8 +215,68 @@ function handleDeviceLost(info) {
     }
 }
 
+// The device report button stays usable: a report from a browser without WebGPU is still useful.
 function disableAllButtons() {
-    document.querySelectorAll('button').forEach(btn => btn.disabled = true);
+    document.querySelectorAll('button:not(#btn-device-report)').forEach(btn => btn.disabled = true);
+}
+
+function currentDeviceReport() {
+    return buildDeviceReport({
+        adapter: gpuDevice?.adapter ?? null,
+        device: gpuDevice?.device ?? null,
+        instances: resolvedInstances,
+        errors: recentWebGPUErrors,
+        deviceLost: deviceLostInfo,
+        unavailableReason,
+    });
+}
+
+// "Copy device report": builds the Markdown on demand, shows it in the <details> preview and
+// copies it to the clipboard. If the clipboard API is unavailable or refused, the preview is
+// opened with its text selected so the user can copy it by hand.
+function setupDeviceReport() {
+    const button = document.getElementById('btn-device-report');
+    const details = document.getElementById('device-report-details');
+    const preview = document.getElementById('device-report-preview');
+    const feedback = document.getElementById('device-report-feedback');
+    let feedbackTimer = 0;
+    let skipToggleRefresh = false;   // opening the preview ourselves must not replace (and deselect) it
+
+    const refreshPreview = async () => {
+        try {
+            preview.textContent = await currentDeviceReport();
+        } catch (error) {
+            preview.textContent = `Could not build the device report: ${error.message}`;
+        }
+        return preview.textContent;
+    };
+
+    const showFeedback = (text) => {
+        feedback.textContent = text;
+        clearTimeout(feedbackTimer);
+        feedbackTimer = setTimeout(() => { feedback.textContent = ''; }, 2500);
+    };
+
+    details.addEventListener('toggle', () => {
+        if (skipToggleRefresh) { skipToggleRefresh = false; return; }
+        if (details.open) refreshPreview();
+    });
+
+    button.addEventListener('click', async () => {
+        const text = await refreshPreview();
+        try {
+            await navigator.clipboard.writeText(text);
+            showFeedback('Copied');
+        } catch {
+            if (!details.open) { skipToggleRefresh = true; details.open = true; }
+            const range = document.createRange();
+            range.selectNodeContents(preview);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            showFeedback('Clipboard unavailable — report selected, press Ctrl/Cmd+C');
+        }
+    });
 }
 
 init();

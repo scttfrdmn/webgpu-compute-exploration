@@ -39,6 +39,12 @@ All notable changes to this project are documented here. The format follows
   show "GPU: x.xx ms · wall: y.yy ms"; without the feature they say GPU time is not available. The
   header status line shows whether timestamps are on, and the README explains GPU vs wall time and
   Chrome's ~100 µs quantization.
+- "Copy device report" button in the page header: builds a Markdown report of the browser,
+  GPU adapter info, features and limits (beside the default device limits), preferred canvas
+  format, WGSL language features, per-example FPS and counters from this session, one-shot
+  results, and recent WebGPU errors or device loss, and copies it to the clipboard. A preview
+  shows the exact text; nothing is sent automatically. A new `device-report` issue template
+  collects shared reports (#53).
 
 ### Changed
 - package.json description and keywords, the CITATION abstract, and the GitHub
