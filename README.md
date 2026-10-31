@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Fourteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, and procedural Perlin/simplex noise. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Nineteen interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, and procedural Perlin/simplex noise. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -123,7 +123,7 @@ A sandbox cellular automaton with interacting materials.
 - **Visualization**: Full-screen fragment shader colors the field as hillshaded terrain bands, clouds, veined marble or grayscale
 - **Performance**: Measured FPS and noise evaluations per frame; no CPU readback
 
-### 14. WASM Integration (Mandelbrot Set)
+### 20. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -200,7 +200,7 @@ webgpu/
 │   │   ├── wave-equation.js           # Example 11: 2D wave equation (water ripples)
 │   │   ├── falling-sand.js            # Example 12: Falling sand (Margolus automaton)
 │   │   ├── noise.js                   # Example 13: Perlin/simplex noise and fBm
-│   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
+│   │   └── wasm-mandelbrot.js         # Example 20: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
