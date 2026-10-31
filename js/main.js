@@ -10,6 +10,7 @@ import { initBoids } from './examples/boids.js';
 import { initDLA3D } from './examples/dla-3d.js';
 import { initReactionDiffusion } from './examples/reaction-diffusion.js';
 import { initWaveEquation } from './examples/wave-equation.js';
+import { initFallingSand } from './examples/falling-sand.js';
 import { initNoise } from './examples/noise.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
@@ -112,6 +113,7 @@ function initInteractiveExamplesOnVisible() {
         'canvas-dla': initDLA3D,
         'canvas-rd': initReactionDiffusion,
         'canvas-wave': initWaveEquation,
+        'canvas-sand': initFallingSand,
         'canvas-noise': initNoise,
     };
     const instances = new Map();

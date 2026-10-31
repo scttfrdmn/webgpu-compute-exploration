@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Fourteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Fourteen interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="WebGPU Compute Shader Examples">
-    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
     <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
     <meta property="og:image:width" content="1280">
@@ -216,6 +216,7 @@
             <li><a href="#dla">9 DLA</a></li>
             <li><a href="#reaction-diffusion">10 Turing</a></li>
             <li><a href="#wave-equation">11 Waves</a></li>
+            <li><a href="#falling-sand">12 Sand</a></li>
             <li><a href="#noise">13 Noise</a></li>
             <li><a href="#wasm-mandelbrot">14 WASM</a></li>
         </ul>
@@ -467,6 +468,37 @@
         <p class="hint"><strong>Interaction:</strong> click to drop a ripple, hold to keep dropping them · shift-drag to draw walls. Reset clears the water and keeps the walls; a preset replaces both.</p>
         <canvas id="canvas-wave" class="interactive" width="1024" height="768"></canvas>
         <div id="output-wave" class="output"></div>
+    </section>
+
+    <section class="example" id="falling-sand">
+        <h3><span class="num">12</span>Falling Sand</h3>
+        <p>Sand, water, oil, fire, plants and acid on a 320×240 grid. Every step, one GPU thread per 2×2 block moves and reacts its four cells (the Margolus neighborhood), so grains never collide.</p>
+        <div class="controls">
+            <button id="btn-sand-start" class="primary">▶ Start</button>
+            <button id="btn-sand-pause">⏸ Pause</button>
+            <button id="btn-sand-clear">Clear</button>
+            <button id="btn-sand-sandbox">Sandbox</button>
+            <label for="sand-brush">Brush</label>
+            <input type="range" id="sand-brush" min="1" max="30" value="6">
+            <span id="sand-brush-value">6</span>
+            <label for="sand-speed">Steps / frame</label>
+            <input type="range" id="sand-speed" min="1" max="8" value="3">
+            <span id="sand-speed-value">3</span>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Material</span>
+            <button class="sand-material" data-material="2">Sand</button>
+            <button class="sand-material" data-material="3">Water</button>
+            <button class="sand-material" data-material="1">Stone</button>
+            <button class="sand-material" data-material="4">Oil</button>
+            <button class="sand-material" data-material="5">Fire</button>
+            <button class="sand-material" data-material="6">Plant</button>
+            <button class="sand-material" data-material="7">Acid</button>
+            <button class="sand-material" data-material="0">Eraser</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> hold the left mouse button to paint the selected material, the right button to erase; painting also works while paused. Try fire on the oil, or acid on stone.</p>
+        <canvas id="canvas-sand" class="interactive" width="960" height="720" style="image-rendering: pixelated;"></canvas>
+        <div id="output-sand" class="output"></div>
     </section>
 
     <section class="example" id="noise">

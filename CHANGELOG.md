@@ -16,6 +16,10 @@ All notable changes to this project are documented here. The format follows
   presets, click-to-drop ripples, shift-drag walls, rain, an absorbing-edge
   toggle, wave speed / damping / steps-per-frame sliders, lit water shading, and
   an FPS readout.
+- Example 12, Falling Sand: sand, water, stone, oil, fire, plant and acid on a
+  320×240 grid updated with the Margolus neighborhood (2×2 blocks, alternating
+  offsets, swap-only movement), mouse painting and erasing, brush size and
+  steps-per-frame sliders, a Sandbox scene, and an FPS readout.
 - Example 13, procedural noise: a compute shader evaluates 3D Perlin or simplex
   noise (PCG hash, no permutation table) as fBm with 1-8 octaves, lacunarity,
   persistence, ridged mode and domain warping for a 1024×768 field, colored as
