@@ -163,9 +163,8 @@ test('Params and Uniforms layouts: updateParams()/updateUniforms() bytes decode 
 // The JS packs 8 floats (32 bytes) per particle — "pos(2) + vel(2) + density(1) + pressure(1) +
 // padding(2)" — but the WGSL Particle struct has no padding member, so array<Particle> has a
 // 24-byte stride. The GPU therefore reads the initial upload and spawned blocks misaligned.
-// Marked todo so the suite stays green until the example is fixed (add `_pad: vec2<f32>` to every
-// Particle struct, or pack 6 floats).
-test('Particle stride: JS packing matches array<Particle> stride in every module', { todo: 'JS uses 32-byte particles, WGSL stride is 24' }, t => {
+// This suite found a 24-byte WGSL stride against 32-byte JS packing; fixed in #63 by padding Particle.
+test('Particle stride: JS packing matches array<Particle> stride in every module', t => {
     const jsStride = 8 * 4;
     for (const { name, code } of sph.wgslModules()) {
         const structs = parseStructs(code);

@@ -319,10 +319,12 @@ function makeRandom(seed) {
 
 // Opens the passage between neighboring cells a and b (b = a+1 or a+w)
 function carve(cells, w, a, b) {
-    if (b === a + 1) {
+    // Same row means a horizontal neighbor; checking rows (not just b - a) keeps w = 1 correct
+    const sameRow = Math.floor(a / w) === Math.floor(b / w);
+    if (sameRow && b === a + 1) {
         cells[a] |= OPEN_E;
         cells[b] |= OPEN_W;
-    } else if (b === a - 1) {
+    } else if (sameRow && b === a - 1) {
         cells[a] |= OPEN_W;
         cells[b] |= OPEN_E;
     } else if (b === a + w) {

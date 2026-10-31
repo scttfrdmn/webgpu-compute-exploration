@@ -419,6 +419,7 @@ class DLA3D {
         this.grid = new Uint32Array(totalCells);
 
         const center = Math.floor(this.gridSize / 2);
+        this.aggregatedCount = 0;
 
         switch (seedType) {
             case 'center':
