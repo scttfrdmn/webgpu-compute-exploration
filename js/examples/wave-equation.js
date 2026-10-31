@@ -814,3 +814,12 @@ export async function initWaveEquation(gpuDevice) {
     updateOutput();
     return simulation;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'compute', code: computeShader },
+        { name: 'render', code: renderShader },
+    ];
+}

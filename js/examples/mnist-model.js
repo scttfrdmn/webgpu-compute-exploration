@@ -910,3 +910,14 @@ export class MNISTGPU {
             .forEach(b => b.destroy());
     }
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+// buildComputeShader(maxBatch) varies only in constants and buffer offsets; these are the two variants
+// the UI builds: Recognize uses MNISTGPU(device, 1, 1), Train uses MNISTGPU(device, MAX_BATCH, ...).
+export function wgslModules() {
+    return [
+        { name: 'compute-batch1', code: buildComputeShader(1) },
+        { name: `compute-batch${MAX_BATCH}`, code: buildComputeShader(MAX_BATCH) },
+    ];
+}

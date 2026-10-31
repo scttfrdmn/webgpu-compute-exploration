@@ -252,6 +252,8 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f
 }
 `;
 
+const RENDER_SHADER = FULLSCREEN_VERTEX + '\n' + RAY_MARCH_SHADER;
+
 class RayMarchingRenderer {
     constructor(device, canvas) {
         this.device = device;
@@ -315,9 +317,7 @@ class RayMarchingRenderer {
             format: 'bgra8unorm'
         });
 
-        const shaderModule = this.device.createShaderModule({
-            code: FULLSCREEN_VERTEX + '\n' + RAY_MARCH_SHADER
-        });
+        const shaderModule = this.device.createShaderModule({ code: RENDER_SHADER });
 
         this.uniformBuffer = this.device.createBuffer({
             size: 64,
@@ -487,3 +487,7 @@ export async function initRayMarching(gpuDevice) {
     updateOutput();
     return renderer;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() { return [{ name: 'render', code: RENDER_SHADER }]; }

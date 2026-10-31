@@ -246,6 +246,8 @@ fn fs_main(
 }
 `;
 
+const RENDER_SHADER = RENDER_VERTEX_SHADER + '\n' + RENDER_FRAGMENT_SHADER;
+
 // Matrix utilities (reusing from molecular-dynamics)
 class Mat4 {
     static perspective(fov, aspect, near, far) {
@@ -526,9 +528,7 @@ class DLA3D {
             format: 'bgra8unorm'
         });
 
-        const shaderModule = this.device.createShaderModule({
-            code: RENDER_VERTEX_SHADER + '\n' + RENDER_FRAGMENT_SHADER
-        });
+        const shaderModule = this.device.createShaderModule({ code: RENDER_SHADER });
 
         const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -766,4 +766,13 @@ export async function initDLA3D(gpuDevice) {
 
     updateOutput();
     return simulation;
+}
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'particle', code: PARTICLE_UPDATE_SHADER },
+        { name: 'render', code: RENDER_SHADER },
+    ];
 }

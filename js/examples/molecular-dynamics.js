@@ -181,6 +181,8 @@ fn fs_main(
 }
 `;
 
+const renderShader = vertexShader + '\n' + fragmentShader;
+
 // Simulation box: faint glass faces plus glowing edges drawn as screen-space quads
 // (WebGPU lines are always 1px wide, so edges are expanded to camera-facing strips)
 const boxShader = `
@@ -537,9 +539,7 @@ class MolecularDynamics {
             alphaMode: 'opaque'
         });
 
-        const shaderModule = this.device.createShaderModule({
-            code: vertexShader + '\n' + fragmentShader
-        });
+        const shaderModule = this.device.createShaderModule({ code: renderShader });
 
         const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -858,4 +858,14 @@ export async function initMolecularDynamics(gpuDevice) {
 
     updateOutput();
     return simulation;
+}
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'compute', code: computeShader },
+        { name: 'render', code: renderShader },
+        { name: 'box', code: boxShader },
+    ];
 }

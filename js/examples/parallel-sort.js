@@ -1179,3 +1179,14 @@ export const sortInternals = {
     WORKGROUP_SIZE, BITONIC_BLOCK, RADIX_TILE, RADIX_ROUNDS, RADIX_BUCKETS, RADIX_PASSES, RADIX_MAX_KEYS,
     PAD_KEY, SCAN_MAX_CHUNK,
 };
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'bitonic', code: bitonicShader },
+        { name: 'radix', code: radixShader },
+        { name: 'convert', code: convertShader },
+        { name: 'render', code: renderShader },
+    ];
+}
