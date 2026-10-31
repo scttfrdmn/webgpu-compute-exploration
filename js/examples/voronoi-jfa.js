@@ -20,6 +20,9 @@
 //   offset  0  pos    vec2<f32>  position in pixels                   -> Float32 view [4i], [4i+1]
 //   offset  8  color  u32        RGBA8, unpacked with unpack4x8unorm   -> Uint32 view [4i+2]
 //   offset 12  pad    u32        unused                                -> Uint32 view [4i+3]
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 32;
 const SEED_SIZE = 16;
 const MAX_SEEDS = 1024;
@@ -306,6 +309,7 @@ function packColor(h, s, l) {
 class VoronoiJFA {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.width = canvas.width;
         this.height = canvas.height;
@@ -679,15 +683,16 @@ class VoronoiJFA {
         if (n > 0) this.device.queue.writeBuffer(this.seedBuffer, 0, this.seedData, 0, n * SEED_SIZE);
     }
 
-    // Seed pass + all flood passes; afterwards idBuffers[currentBuffer] holds the diagram
-    encodeCompute(commandEncoder) {
+    // Seed pass + all flood passes; afterwards idBuffers[currentBuffer] holds the diagram.
+    // timed: add timestamp writes (only frame() resolves the timer)
+    encodeCompute(commandEncoder, timed = false) {
         const steps = this.steps();
         this.writeParams(steps);
         this.writeSeeds();
 
         const wgX = Math.ceil(this.width / 8);
         const wgY = Math.ceil(this.height / 8);
-        const pass = commandEncoder.beginComputePass();
+        const pass = commandEncoder.beginComputePass(timed ? this.gpuTimer.computePassDescriptor('jfa') : undefined);
         pass.setPipeline(this.clearPipeline);
         pass.setBindGroup(0, this.seedBindGroup, [0]);
         pass.dispatchWorkgroups(wgX, wgY);
@@ -705,15 +710,16 @@ class VoronoiJFA {
         pass.end();
     }
 
-    encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+    encodeRender(commandEncoder, timed = false) {
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.04, g: 0.05, b: 0.08, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
         renderPass.draw(3);
@@ -722,9 +728,11 @@ class VoronoiJFA {
 
     frame() {
         const commandEncoder = this.device.createCommandEncoder();
-        this.encodeCompute(commandEncoder);
-        this.encodeRender(commandEncoder);
+        this.encodeCompute(commandEncoder, true);
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
     }
 
     // Recomputes the diagram, then brute-forces the nearest seed for every pixel on the GPU and
@@ -816,6 +824,7 @@ class VoronoiJFA {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         this.canvas.removeEventListener('contextmenu', this.onContextMenu);
         window.removeEventListener('mousemove', this.onMouseMove);
@@ -963,6 +972,7 @@ ${describeCheck()}
 
 <span class="info">Performance:</span>
 • Frame rate: ${voronoi.running ? voronoi.fps.toFixed(0) : 0} FPS
+• ${voronoi.gpuTimer.frameText(voronoi.running ? voronoi.fps : 0, ['jfa', 'render'])}
 • Dispatches per frame: ${n > 0 ? passes + 2 : 1} (clear, seed, ${passes} flood) + 1 draw
 • Pixel updates per frame: ${(width * height * passes).toLocaleString()} (${(9 * width * height * passes).toLocaleString()} neighbor lookups)`;
     }

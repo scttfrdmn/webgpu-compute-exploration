@@ -19,6 +19,7 @@
 // Readbacks: the 32-byte Stats struct, at most one in flight (if the previous one has not landed,
 // the GPU keeps accumulating and the next copy picks it up), and the 24 KB weights on Export or
 // Use in Recognize. The first-layer filters are drawn straight from the weights buffer.
+import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
 import {
     MNISTGPU, DEFAULTS, MAX_BATCH, NUM_PARAMS, STATS_SIZE, loadDataset, initWeights, epochOrder,
     augmentSeed, serializeWeights, sharedWeights,
@@ -83,6 +84,10 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 class MNISTTrainer {
     constructor(device, plotCanvas, filterCanvas) {
         this.device = device;
+        // Times each frame's compute pass (its mini-batches); see onGpuTime
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 1, onResult: (result) => this.onGpuTime(result) });
+        this.batchGpuMs = null;     // moving average of GPU ms per training mini-batch
+        this.batchGpuSize = 0;      // batch size that average belongs to
         this.plotCanvas = plotCanvas;
         this.filterCanvas = filterCanvas;
         this.gpu = new MNISTGPU(device, MAX_BATCH, MAX_STEPS_PER_FRAME);
@@ -267,7 +272,7 @@ class MNISTTrainer {
         if (steps.length) {
             this.gpu.writeSlots(steps);
             const bindGroup = steps[0].mode === 0 ? this.trainData.bindGroup : this.testData.bindGroup;
-            const pass = commandEncoder.beginComputePass();
+            const pass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor(steps[0].mode === 0 ? 'train' : 'eval'));
             steps.forEach((step, i) => this.gpu.encodeBatch(pass, bindGroup, i, step));
             pass.end();
             this.statsDirty = true;
@@ -279,8 +284,23 @@ class MNISTTrainer {
             commandEncoder.clearBuffer(this.gpu.statsBuffer);
             this.statsDirty = false;
         }
+        this.gpuTimer.resolve(commandEncoder, { mode: steps[0]?.mode, batches: steps.length, batch: this.batch });
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
         if (copy) this.readStats();
+    }
+
+    // GPU ms per training mini-batch: the timed train pass of a frame divided by its batch count
+    onGpuTime(result) {
+        const meta = result.meta;
+        if (!meta || meta.mode !== 0 || meta.batches === 0 || result.passes.train === undefined) return;
+        const ms = result.passes.train / meta.batches;
+        if (meta.batch !== this.batchGpuSize || this.batchGpuMs === null) {
+            this.batchGpuSize = meta.batch;
+            this.batchGpuMs = ms;
+        } else {
+            this.batchGpuMs += 0.1 * (ms - this.batchGpuMs);
+        }
     }
 
     // Stats layout: trainLoss f32, trainCorrect u32, trainCount u32, pad, testLoss f32, testCorrect u32,
@@ -420,6 +440,7 @@ class MNISTTrainer {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.gpu.destroy();
         if (this.trainData) this.trainData.destroy();
         if (this.testData) this.testData.destroy();
@@ -774,6 +795,9 @@ export async function initMNISTTrain(gpuDevice) {
 <span class="info">Progress:</span>
 • Epoch: ${Math.min(t.epoch + (t.pos > 0 || t.phase === 'eval' ? 1 : 0), t.epochs)} / ${t.epochs} · batch ${Math.ceil(t.pos / t.batch)} / ${batchesPerEpoch} · ${t.batchesDone.toLocaleString()} mini-batches in total
 • Images trained on: ${t.examplesConfirmed.toLocaleString()} (${t.running ? Math.round(t.rate).toLocaleString() : 0} images / s)
+• ${t.gpuTimer.supported
+        ? `GPU: ${formatMs(t.batchGpuSize === t.batch ? t.batchGpuMs : null)} ms per mini-batch of ${t.batch}`
+        : GPU_TIME_UNAVAILABLE}${t.running && t.rate > 0 ? ` · wall: ${formatMs(t.batch / t.rate * 1000)} ms per mini-batch (from images / s)` : ''}
 • Training loss: ${t.lastLoss !== null ? t.lastLoss.toFixed(4) : '–'} · training accuracy: ${t.lastAccuracy !== null ? `${(100 * t.lastAccuracy).toFixed(1)}%` : '–'} (last ${PLOT_WINDOW} images)
 • Test accuracy by epoch (2,000 images): ${testList}${last ? ` · test loss ${last.loss.toFixed(4)}` : ''}
 

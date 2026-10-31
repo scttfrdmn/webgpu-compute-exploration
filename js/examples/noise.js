@@ -15,6 +15,9 @@
 //   offset 44  noiseType     u32        0 = Perlin, 1 = simplex               -> Uint32 view [11]
 //   offset 48  ridged        u32        1 = ridged fBm                        -> Uint32 view [12]
 //   offset 52  colorMode     u32        0 terrain, 1 clouds, 2 marble, 3 gray -> Uint32 view [13]
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 56;
 const MAX_OCTAVES = 8;
 
@@ -338,6 +341,7 @@ const TIME_SPEED = 0.15;   // noise units of the time axis per second
 class NoiseField {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.width = canvas.width;
         this.height = canvas.height;
@@ -532,26 +536,28 @@ class NoiseField {
         this.writeParams();
         const commandEncoder = this.device.createCommandEncoder();
 
-        const computePass = commandEncoder.beginComputePass();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('noise'));
         computePass.setPipeline(this.computePipeline);
         computePass.setBindGroup(0, this.computeBindGroup);
         computePass.dispatchWorkgroups(Math.ceil(this.width / 8), Math.ceil(this.height / 8));
         computePass.end();
 
-        const renderPass = commandEncoder.beginRenderPass({
+        const renderPass = commandEncoder.beginRenderPass(this.gpuTimer.renderPassDescriptor({
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0, g: 0, b: 0, a: 1 }
             }]
-        });
+        }, 'render'));
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroup);
         renderPass.draw(3);
         renderPass.end();
+        this.gpuTimer.resolve(commandEncoder);
 
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
     }
 
     // Noise evaluations per pixel: one fBm, or three with domain warping
@@ -596,6 +602,7 @@ class NoiseField {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         window.removeEventListener('mousemove', this.onMouseMove);
         window.removeEventListener('mouseup', this.onMouseUp);
@@ -722,6 +729,7 @@ export async function initNoise(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${noise.running ? noise.fps.toFixed(0) : 0} FPS
+• ${noise.gpuTimer.frameText(noise.running ? noise.fps : 0, ['noise', 'render'])}
 • Noise evaluations per frame: ${calls.toLocaleString()} (${noise.noiseCallsPerPixel()} per pixel)
 • Per second: ${noise.running ? (callsPerSecond / 1e6).toFixed(0) + ' million' : '—'}
 • One compute dispatch + one draw per frame; no CPU readback`;

@@ -1,4 +1,5 @@
 import { createBuffer, readBuffer } from '../webgpu-utils.js';
+import { GpuTimer, GPU_TIME_NOTE } from '../gpu-timer.js';
 
 const shaderCode = `
 @group(0) @binding(0) var<storage, read> input1: array<f32>;
@@ -87,18 +88,23 @@ export async function runVectorAddition(gpuDevice) {
         }
     });
 
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
     const commandEncoder = device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
+    const passEncoder = commandEncoder.beginComputePass(timer.computePassDescriptor('add'));
     passEncoder.setPipeline(computePipeline);
     passEncoder.setBindGroup(0, bindGroup);
     passEncoder.dispatchWorkgroups(Math.ceil(size / 64));
     passEncoder.end();
+    timer.resolve(commandEncoder);
 
     device.queue.submit([commandEncoder.finish()]);
+    const timing = timer.read();
 
     const result = await readBuffer(device, outputBuffer, input1.byteLength);
 
     const endTime = performance.now();
+    await timing;
+    timer.destroy();
 
     let isCorrect = true;
     for (let i = 0; i < Math.min(100, size); i++) {
@@ -120,7 +126,8 @@ export async function runVectorAddition(gpuDevice) {
 • Total workgroups: ${Math.ceil(size / 64).toLocaleString()}
 
 <span class="info">Results:</span>
-• Computation time: ${(endTime - startTime).toFixed(2)}ms
+• Computation time: ${(endTime - startTime).toFixed(2)}ms (wall: setup, upload, kernel and readback)
+• ${timer.summary(endTime - startTime)}
 • Verification: ${isCorrect ? '<span class="success">PASSED</span>' : '<span class="error">FAILED</span>'}
 • Sample results:
   input1[0] + input2[0] = ${input1[0]} + ${input2[0]} = ${result[0]}
@@ -129,7 +136,8 @@ export async function runVectorAddition(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Elements per ms: ${(size / (endTime - startTime)).toFixed(0).toLocaleString()}
-• Throughput: ${((size * 4) / (endTime - startTime) / 1024).toFixed(2)} MB/ms`;
+• Throughput: ${((size * 4) / (endTime - startTime) / 1024).toFixed(2)} MB/ms
+${timer.supported ? `<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
 }
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.

@@ -51,6 +51,8 @@
 // Every slot written for a submit carries the same values except `stage`. Each block (and the IR
 // preparation) is its own writeBuffer + submit pair, so queue order keeps their params apart.
 
+import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
+
 const BLOCK_SIZES = [1024, 2048];
 const MAX_IR_SECONDS = 6;
 const MAX_IR_FRAMES = 576000;            // 6 s at 96 kHz; longer IRs are truncated
@@ -753,6 +755,8 @@ export class GPUConvolver {
         this.irVersion = 0;
         this.blockIndex = 0;
         this.chain = Promise.resolve();
+        // GPU time of each streamed block's compute pass (no-op without 'timestamp-query')
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 1, poolSize: 4 });
         this.setupBuffers();
         this.setupPipelines();
     }
@@ -941,8 +945,8 @@ export class GPUConvolver {
     }
 
     // Uploads one input block and encodes its convolution; the wet block is copied to `target`
-    // (a mappable buffer) unless it is null
-    submitBlock(left, right, target, targetOffset) {
+    // (a mappable buffer) unless it is null. timed: measure the pass with the GPU timer.
+    submitBlock(left, right, target, targetOffset, timed = false) {
         const B = this.blockSize;
         const head = this.blockIndex % this.ring;
         this.blockIndex++;
@@ -959,7 +963,7 @@ export class GPUConvolver {
         this.writeParams(this.log2n, 1, head);
 
         const encoder = this.device.createCommandEncoder();
-        const pass = encoder.beginComputePass();
+        const pass = encoder.beginComputePass(timed ? this.gpuTimer.computePassDescriptor('block') : undefined);
         const g = this.streamGroups;
         const p = this.pipelines;
         pass.setPipeline(p.packBlock);
@@ -978,7 +982,9 @@ export class GPUConvolver {
         pass.dispatchWorkgroups(this.workgroups(B));
         pass.end();
         if (target) encoder.copyBufferToBuffer(this.wetBuffer, 0, target, targetOffset, B * 8);
+        if (timed) this.gpuTimer.resolve(encoder);
         this.device.queue.submit([encoder.finish()]);
+        if (timed) this.gpuTimer.read();
         return head;
     }
 
@@ -992,7 +998,7 @@ export class GPUConvolver {
         if (!staging) return Promise.reject(new Error('No free readback buffer'));
         const index = this.blockIndex;
         const B = this.blockSize;
-        this.submitBlock(left, right, staging, 0);
+        this.submitBlock(left, right, staging, 0, true);
         return staging.mapAsync(GPUMapMode.READ, 0, B * 8).then(() => {
             const data = new Float32Array(staging.getMappedRange(0, B * 8));
             const outL = new Float32Array(B);
@@ -1072,6 +1078,7 @@ export class GPUConvolver {
     }
 
     destroy() {
+        this.gpuTimer.destroy();
         [this.windowBuffer, this.irTimeBuffer, ...this.complexBuffers, this.twiddleBuffer, this.spectraBuffer,
          this.filterBuffer, this.dummyBuffer, this.wetBuffer, this.paramsBuffer, ...this.allStaging,
          this.testStaging].forEach(b => b.destroy());
@@ -2205,6 +2212,7 @@ ${reverb.message ? `\n${reverb.message}\n` : ''}
 <span class="info">Performance:</span>
 • Self-test throughput: ${speed}
 • Stream: ${s ? s.processed : 0} blocks · round trip avg ${rtAvg} ms, max ${rtMax} ms (deadline ${ms(reverb.depth * B)} ms) · backlog max ${s ? s.maxQueue : 0}
+• ${c.gpuTimer.supported ? `GPU: ${formatMs(c.gpuTimer.ms('block'))} ms per block` : GPU_TIME_UNAVAILABLE} (block period ${ms(B)} ms, round-trip deadline ${ms(reverb.depth * B)} ms) · wall: round trip avg ${rtAvg} ms
 • Underruns: ${st ? st.underruns : 0} blocks played as silence (${st ? st.late : 0} arrived late)
 • GPU work per block: ${(2 * B).toLocaleString()}-point FFT + inverse, ${macs.toLocaleString()} bins × 2 channels of complex multiply-add, ${4 + 2 * c.log2n} dispatches; ${(B * 8 / 1024).toFixed(0)} KB up, ${(B * 8 / 1024).toFixed(0)} KB read back
 

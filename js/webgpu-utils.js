@@ -16,7 +16,10 @@ export async function getGPUDevice(onLost) {
         throw new Error('Failed to get GPU adapter');
     }
 
-    const device = await adapter.requestDevice();
+    // Timestamp queries let examples report GPU execution time (see gpu-timer.js). Request the feature
+    // only when the adapter has it; limits stay at their defaults.
+    const timestamps = adapter.features.has('timestamp-query');
+    const device = await adapter.requestDevice(timestamps ? { requiredFeatures: ['timestamp-query'] } : undefined);
 
     device.lost.then((info) => {
         console.error(`WebGPU device was lost (${info.reason}): ${info.message}`);
@@ -30,7 +33,7 @@ export async function getGPUDevice(onLost) {
         console.error(`[WebGPU] ${event.error.constructor.name}: ${event.error.message}`);
     });
 
-    return { device, adapter };
+    return { device, adapter, timestamps: device.features.has('timestamp-query') };
 }
 
 export function createBuffer(device, data, usage) {

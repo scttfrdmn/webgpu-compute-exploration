@@ -34,6 +34,9 @@
 // One copy per BFS dispatch sits at a dynamic offset of paramsStride bytes: all writeBuffer calls
 // land before the submitted dispatches run, so each dispatch needs its own slot for its bfsStep.
 // The render pass binds slot 0 (non-dynamic); only the per-dispatch bfsStep differs between slots.
+
+import { GpuTimer } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 32;
 const MAX_STEPS_PER_FRAME = 512;
 const READBACK_INTERVAL = 4;   // frames between termination checks while solving
@@ -516,6 +519,7 @@ export function extractPath(cells, dist, w, h, startCell, goalCell) {
 class MazeSolver {
     constructor(device, canvas) {
         this.device = device;
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
@@ -751,7 +755,7 @@ class MazeSolver {
         this.writeParams(Math.max(passes, 1));
         const commandEncoder = this.device.createCommandEncoder();
         if (passes > 0) {
-            const computePass = commandEncoder.beginComputePass();
+            const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('bfs'));
             computePass.setPipeline(this.bfsPipeline);
             const wgX = Math.ceil(this.width / 8);   // at most 128 x 96 workgroups
             const wgY = Math.ceil(this.height / 8);
@@ -762,19 +766,21 @@ class MazeSolver {
             computePass.end();
         }
         this.encodeRender(commandEncoder);
+        this.gpuTimer.resolve(commandEncoder);
         this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
         this.dispatched += passes;
     }
 
     encodeRender(commandEncoder) {
-        const renderPass = commandEncoder.beginRenderPass({
+        const renderPass = commandEncoder.beginRenderPass(this.gpuTimer.renderPassDescriptor({
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.06, g: 0.07, b: 0.10, a: 1.0 }
             }]
-        });
+        }, 'render'));
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroup);
         renderPass.draw(3);
@@ -899,6 +905,7 @@ class MazeSolver {
     destroy() {
         this.running = false;
         this.destroyed = true;
+        this.gpuTimer.destroy();
         this.canvas.removeEventListener('mousedown', this.onMouseDown);
         this.canvas.removeEventListener('contextmenu', this.onContextMenu);
         this.wallBuffer.destroy();
@@ -1006,6 +1013,7 @@ export async function initMaze(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame rate: ${maze.running ? maze.fps.toFixed(0) : 0} FPS
+• ${maze.gpuTimer.frameText(maze.running ? maze.fps : 0, ['bfs', 'render'])}
 • Termination: 12-byte readback (visited count, max distance, goal distance) every ${READBACK_INTERVAL} frames`;
     }
 

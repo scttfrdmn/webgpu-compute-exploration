@@ -32,6 +32,9 @@
 //
 // Per-dispatch values (k, j, shift) never share one uniform slot: writeBuffer runs before the
 // whole submit, so each dispatch gets its own 256-byte-aligned slot and a dynamic offset.
+
+import { GpuTimer, GPU_TIME_NOTE, GPU_TIME_UNAVAILABLE } from '../gpu-timer.js';
+
 const PARAMS_SIZE = 16;
 const CHART_PARAMS_SIZE = 32;
 
@@ -863,6 +866,8 @@ class ParallelSort {
         this.benchRunning = true;
         const device = this.device;
         const buffers = [];
+        // Times the sort pass of each run with timestamp queries (no-op without 'timestamp-query')
+        const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
         const makeBuffer = (size, usage) => {
             const buffer = device.createBuffer({ size, usage });
             buffers.push(buffer);
@@ -984,6 +989,7 @@ class ParallelSort {
 
             const padding = padded > n ? new Uint32Array(padded - n).fill(PAD_KEY) : null;
             const gpuTimes = [];
+            const kernelTimes = [];
             for (let run = 0; run < BENCH_RUNS; run++) {
                 device.queue.writeBuffer(keysA, 0, inputBits);
                 if (padding) device.queue.writeBuffer(keysA, n * 4, padding);
@@ -991,7 +997,7 @@ class ParallelSort {
 
                 const start = performance.now();
                 const commandEncoder = device.createCommandEncoder();
-                const pass = commandEncoder.beginComputePass();
+                const pass = commandEncoder.beginComputePass(timer.computePassDescriptor('sort'));
                 if (dataType === 'f32') {
                     pass.setPipeline(this.encodePipeline);
                     pass.setBindGroup(0, convertBindGroup);
@@ -1004,9 +1010,13 @@ class ParallelSort {
                     pass.dispatchWorkgroups(convertGrid[0], convertGrid[1]);
                 }
                 pass.end();
+                timer.resolve(commandEncoder);
                 device.queue.submit([commandEncoder.finish()]);
+                const timing = timer.read();
                 await device.queue.onSubmittedWorkDone();
                 gpuTimes.push(performance.now() - start);
+                const result = await timing;
+                if (result) kernelTimes.push(result.total);
             }
 
             // One readback of the last run
@@ -1032,10 +1042,13 @@ class ParallelSort {
             this.benchResult = {
                 algorithm, n, padded, dataType, dispatches, cpuMs, readMs, mismatches, inversions,
                 gpuTimes, bestMs: Math.min(...gpuTimes),
+                timestamps: timer.supported, kernelTimes,
+                bestKernelMs: kernelTimes.length ? Math.min(...kernelTimes) : null,
             };
             return this.benchResult;
         } finally {
             buffers.forEach(b => b.destroy());
+            timer.destroy();
             this.benchRunning = false;
         }
     }
@@ -1132,13 +1145,20 @@ export async function initParallelSort(gpuDevice) {
             ? '<span class="success">✓ Sorted, and identical to the CPU sort (same keys, same order)</span>'
             : `<span class="error">✗ ${r.mismatches.toLocaleString()} positions differ from the CPU sort, ${r.inversions.toLocaleString()} out-of-order neighbors</span>`;
         const speedup = r.cpuMs / r.bestMs;
+        const faster = (x) => x >= 1 ? `${x.toFixed(1)}× faster` : `${(1 / x).toFixed(1)}× slower`;
+        const kernelLine = !r.timestamps
+            ? `• ${GPU_TIME_UNAVAILABLE}`
+            : r.bestKernelMs === null
+                ? '• GPU (timestamp queries): no result'
+                : `• GPU (timestamp queries): ${r.bestKernelMs.toFixed(2)} ms best of ${r.kernelTimes.length} (${r.kernelTimes.map(t => t.toFixed(2)).join(', ')} ms)${r.bestKernelMs > 0 ? ` · ${(r.n / r.bestKernelMs / 1000).toFixed(1)} M keys/s · ${faster(r.cpuMs / r.bestKernelMs)} than the CPU sort` : ''}`;
         return `<span class="info">Benchmark: ${ALGORITHMS[r.algorithm].name}, ${r.n.toLocaleString()} ${r.dataType} keys</span>
 ${verdict}
-• GPU sort: ${r.bestMs.toFixed(2)} ms best of ${r.gpuTimes.length} (${r.gpuTimes.map(t => t.toFixed(2)).join(', ')} ms) · ${(r.n / r.bestMs / 1000).toFixed(1)} M keys/s
-• CPU ${r.dataType === 'f32' ? 'Float32Array' : 'Uint32Array'}.prototype.sort: ${r.cpuMs.toFixed(2)} ms (GPU is ${speedup >= 1 ? `${speedup.toFixed(1)}× faster` : `${(1 / speedup).toFixed(1)}× slower`})
+${kernelLine}
+• Wall (submit → done): ${r.bestMs.toFixed(2)} ms best of ${r.gpuTimes.length} (${r.gpuTimes.map(t => t.toFixed(2)).join(', ')} ms) · ${(r.n / r.bestMs / 1000).toFixed(1)} M keys/s
+• CPU ${r.dataType === 'f32' ? 'Float32Array' : 'Uint32Array'}.prototype.sort: ${r.cpuMs.toFixed(2)} ms (GPU wall time is ${faster(speedup)})
 • Dispatches per sort: ${r.dispatches}${r.padded !== r.n ? ` · padded to ${r.padded.toLocaleString()} with 0xFFFFFFFF` : ''}${r.dataType === 'f32' ? ' · includes f32 → u32 key encode and decode' : ''}
 • Readback (once, not timed above): ${r.readMs.toFixed(2)} ms
-• GPU time = submit → onSubmittedWorkDone, so it includes queue latency; the first run may include warm-up`;
+• Wall time = submit → onSubmittedWorkDone, so it includes queue latency; GPU time is the sort pass alone; the first run may include warm-up${r.timestamps ? `\n<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
     }
 
     function updateOutput() {

@@ -1,6 +1,8 @@
 // SPH (Smoothed Particle Hydrodynamics) Fluid Simulation
 // Based on "Particle-Based Fluid Simulation for Interactive Applications" by Müller et al.
 
+import { GpuTimer } from '../gpu-timer.js';
+
 const COMPUTE_DENSITY_SHADER = `
 struct Particle {
     position: vec2<f32>,
@@ -291,6 +293,9 @@ fn fragmentMain(@location(0) color: vec3<f32>) -> @location(0) vec4<f32> {
 class SPHFluidSimulation {
     constructor(device, canvas, numParticles) {
         this.device = device;
+        // 3 compute passes per substep (6 substeps) + the draw
+        this.gpuTimer = new GpuTimer(device, { maxPasses: 24 });
+        this.fps = 0;
         this.canvas = canvas;
         this.initialParticles = numParticles;
         this.numParticles = numParticles;
@@ -578,19 +583,19 @@ class SPHFluidSimulation {
         const commandEncoder = this.device.createCommandEncoder();
         const workgroups = Math.ceil(this.numParticles / 64);
         for (let i = 0; i < this.substeps; i++) {
-            const densityPass = commandEncoder.beginComputePass();
+            const densityPass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('density'));
             densityPass.setPipeline(this.densityPipeline);
             densityPass.setBindGroup(0, this.densityBindGroups[0]);
             densityPass.dispatchWorkgroups(workgroups);
             densityPass.end();
 
-            const forcePass = commandEncoder.beginComputePass();
+            const forcePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('forces'));
             forcePass.setPipeline(this.forcePipeline);
             forcePass.setBindGroup(0, this.forceBindGroups[0]);
             forcePass.dispatchWorkgroups(workgroups);
             forcePass.end();
 
-            const integratePass = commandEncoder.beginComputePass();
+            const integratePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('integrate'));
             integratePass.setPipeline(this.integratePipeline);
             integratePass.setBindGroup(0, this.integrateBindGroups[0]);
             integratePass.dispatchWorkgroups(workgroups);
@@ -602,35 +607,42 @@ class SPHFluidSimulation {
         this.frameCount++;
     }
 
-    render() {
+    // timed: add timestamp writes and resolve the frame's timer (animate() only, after step())
+    render(timed = false) {
         this.updateUniforms();
 
         const commandEncoder = this.device.createCommandEncoder();
-        const renderPass = commandEncoder.beginRenderPass({
+        const desc = {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: 'clear',
                 storeOp: 'store',
                 clearValue: { r: 0.04, g: 0.04, b: 0.1, a: 1.0 }
             }]
-        });
+        };
+        const renderPass = commandEncoder.beginRenderPass(timed ? this.gpuTimer.renderPassDescriptor(desc, 'render') : desc);
 
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[0]);
         renderPass.draw(6, this.numParticles);
         renderPass.end();
+        if (timed) this.gpuTimer.resolve(commandEncoder);
 
         this.device.queue.submit([commandEncoder.finish()]);
+        if (timed) this.gpuTimer.read();
     }
 
     start() {
         if (this.running) return;
         this.running = true;
+        this.framesSinceSample = 0;
+        this.lastSampleTime = performance.now();
         this.animate();
     }
 
     pause() {
         this.running = false;
+        this.fps = 0;
     }
 
     reset() {
@@ -662,14 +674,25 @@ class SPHFluidSimulation {
     animate() {
         if (!this.running) return;
 
+        // step() and render() are separate submits; the timer resolves in the second
         this.step();
-        this.render();
+        this.render(true);
+
+        this.framesSinceSample++;
+        const now = performance.now();
+        if (now - this.lastSampleTime >= 500) {
+            this.fps = this.framesSinceSample * 1000 / (now - this.lastSampleTime);
+            this.framesSinceSample = 0;
+            this.lastSampleTime = now;
+            if (this.onStats) this.onStats();
+        }
 
         requestAnimationFrame(() => this.animate());
     }
 
     destroy() {
         this.running = false;
+        this.gpuTimer.destroy();
         this.particleBuffers.forEach(b => b.destroy());
         this.forcesBuffer.destroy();
         this.paramsBuffer.destroy();
@@ -684,6 +707,7 @@ export async function initSPHFluid(gpuDevice) {
 
     let simulation = new SPHFluidSimulation(device, canvas, 2000);
     simulation.render();
+    simulation.onStats = () => updateOutput();
 
     document.getElementById('btn-sph-start').addEventListener('click', () => {
         simulation.start();
@@ -736,7 +760,8 @@ export async function initSPHFluid(gpuDevice) {
 • Integration: Explicit Euler
 
 <span class="info">Performance:</span>
-• Frame: ${simulation.frameCount}
+• Frame: ${simulation.frameCount}${simulation.running ? ` · ${simulation.fps.toFixed(0)} FPS` : ''}
+• ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['density', 'forces', 'integrate', 'render'])}
 • Compute passes: 3 per frame (density, forces, integrate)
 • Neighbor search: O(N²) brute force
 • Note: Spatial hashing would improve performance significantly
