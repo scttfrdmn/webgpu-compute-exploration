@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 ### Added
 - Molecular dynamics shows the periodic simulation box as faint glass faces with
   glowing edges; the default camera now frames the whole box.
@@ -60,4 +62,5 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/commits/main
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/releases/tag/v0.1.0
