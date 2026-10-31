@@ -9,28 +9,6 @@ All notable changes to this project are documented here. The format follows
 ## [0.4.0] - 2026-10-31
 
 ### Added
-- Example 23, N-body gravity: 4,096 to 262,144 bodies integrated with
-  kick-drift-kick leapfrog, with a brute-force O(N²) solver (workgroup-shared
-  tiles, up to 32,768 bodies) and Barnes-Hut with the tree rebuilt on the GPU
-  every step (bounding-box reduction, Morton codes, radix sort, Karras radix
-  tree, bottom-up centers of mass with atomic visit counters, stack-based
-  traversal with a θ slider). Spiral galaxy, galaxy collision, Plummer sphere
-  and cold collapse presets; glowing additive sprites colored by speed or
-  origin, optional trails, orbit camera; FPS, interactions per frame and an
-  energy-drift readout from a once-per-second GPU reduction.
-- Example 24, convolution reverb: uniformly partitioned overlap-save FFT
-  convolution on the GPU (frequency-domain delay line, one multiply-accumulate
-  dispatch over up to 563 partitions, stereo packed into one complex FFT) of
-  a live signal streamed through an AudioWorklet, with a fixed latency of
-  (1 + D) blocks and an underrun counter. Procedural Small room, Concert hall,
-  Cathedral, Plate and Reverse impulse responses (frequency-dependent decay,
-  early reflections, pre-delay) or an uploaded WAV; synth, microphone and file
-  sources; decay, pre-delay, mix, output gain, Bypass and an A/B switch to the
-  browser's ConvolverNode. Shows the IR waveform, spectrogram, Schroeder decay
-  and RT60, an input/wet scope and level meters, plus a GPU-vs-CPU accuracy
-  self-test and realtime throughput.
-
-### Added
 - Example 19, cloth simulation: a 32×32 to 128×128 particle fabric with
   structural, shear and bend links, solved with position-based dynamics on the
   GPU (Verlet integration, long-range tethers to the pins, Gauss-Seidel
@@ -59,6 +37,26 @@ All notable changes to this project are documented here. The format follows
   weights or those from example 21; confidence bars, the 28×28 network input,
   activation maps of both conv layers, and random test digits with their true
   labels. MNIST data and derived weights are CC BY-SA 3.0 (`data/mnist/`).
+- Example 23, N-body gravity: 4,096 to 262,144 bodies integrated with
+  kick-drift-kick leapfrog, with a brute-force O(N²) solver (workgroup-shared
+  tiles, up to 32,768 bodies) and Barnes-Hut with the tree rebuilt on the GPU
+  every step (bounding-box reduction, Morton codes, radix sort, Karras radix
+  tree, bottom-up centers of mass with atomic visit counters, stack-based
+  traversal with a θ slider). Spiral galaxy, galaxy collision, Plummer sphere
+  and cold collapse presets; glowing additive sprites colored by speed or
+  origin, optional trails, orbit camera; FPS, interactions per frame and an
+  energy-drift readout from a once-per-second GPU reduction.
+- Example 24, convolution reverb: uniformly partitioned overlap-save FFT
+  convolution on the GPU (frequency-domain delay line, one multiply-accumulate
+  dispatch over up to 563 partitions, stereo packed into one complex FFT) of
+  a live signal streamed through an AudioWorklet, with a fixed latency of
+  (1 + D) blocks and an underrun counter. Procedural Small room, Concert hall,
+  Cathedral, Plate and Reverse impulse responses (frequency-dependent decay,
+  early reflections, pre-delay) or an uploaded WAV; synth, microphone and file
+  sources; decay, pre-delay, mix, output gain, Bypass and an A/B switch to the
+  browser's ConvolverNode. Shows the IR waveform, spectrogram, Schroeder decay
+  and RT60, an input/wet scope and level meters, plus a GPU-vs-CPU accuracy
+  self-test and realtime throughput.
 
 ## [0.3.0] - 2026-10-30
 
