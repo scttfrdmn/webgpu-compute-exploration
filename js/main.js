@@ -21,6 +21,8 @@ import { initCloth } from './examples/cloth.js';
 import { initPathTracer } from './examples/path-tracer.js';
 import { initMNISTTrain } from './examples/mnist-train.js';
 import { initMNISTRecognize } from './examples/mnist-recognize.js';
+import { initNBody } from './examples/nbody.js';
+import { initConvolutionReverb } from './examples/convolution-reverb.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -133,6 +135,8 @@ function initInteractiveExamplesOnVisible() {
         'canvas-pt': initPathTracer,
         'canvas-mnist-train': initMNISTTrain,
         'canvas-mnist-draw': initMNISTRecognize,
+        'canvas-nbody': initNBody,
+        'canvas-reverb': initConvolutionReverb,
     };
     const instances = new Map();
 

@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Twenty-five interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, and an MNIST CNN that is trained and run entirely in compute shaders. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Twenty-five interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, an MNIST CNN that is trained and run entirely in compute shaders, Barnes-Hut N-body gravity with a GPU-built tree, and real-time partitioned-FFT convolution reverb. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -212,6 +212,29 @@ Draw a digit and classify it on the GPU with the same network.
 - **Random test digit**: one of the 2,000 test images with its true label and whether the prediction is right
 - **Data license**: the cached weights are derived from MNIST and are CC BY-SA 3.0, like the data
 
+### 23. N-Body Gravity (Barnes-Hut)
+Self-gravitating stars with two force solvers, leapfrog integration and an energy-conservation readout.
+- **Bodies**: 4,096 to 262,144 equal-mass bodies (xyz + mass, velocity + origin tag), Plummer-softened gravity with G = 1
+- **Brute force**: O(N²) direct sum with 256-body tiles in workgroup memory (GPU Gems 3, ch. 31), up to 32,768 bodies
+- **Barnes-Hut (GPU-built tree every step)**: bounding-box reduction, 30-bit Morton codes, 8-pass radix sort of (code, index), binary radix tree per Karras 2012 (duplicate codes made unique by index), bottom-up mass, center of mass and bounds with an atomic visit counter per node, then a per-body traversal with a 64-entry stack and the opening test d < l/θ + δ; 33 dispatches per step
+- **Integration**: kick-drift-kick leapfrog with a fixed time step, 1-4 steps per frame (fewer when a frame would exceed 2·10⁹ interactions)
+- **Presets**: Spiral galaxy (exponential disk + Plummer bulge, circular velocities from the enclosed mass), Galaxy collision (two disks on a parabolic encounter), Plummer sphere (virialized), Cold collapse (uniform sphere at rest)
+- **Rendering**: additive point sprites with a soft glow in an HDR target, exponential tone mapping; colored by speed or by origin; optional fading trails from a ring buffer of 8 past positions per body
+- **Readout**: N, mode, interactions per frame (measured on the GPU for Barnes-Hut), FPS, and the energy drift (E − E₀)/|E₀| from a GPU reduction of the kinetic and potential energy with a 16-byte readback once per second
+- **Controls**: Start/Pause/Reset, presets, body count, mode, θ (0.3-1), softening, time step, speed, color mode, trails; orbit, pan and zoom camera
+
+### 24. Convolution Reverb
+A live stereo signal convolved on the GPU with an impulse response of up to 6 s, with an A/B switch to the browser's ConvolverNode.
+- **Impulse responses**: generated procedurally, no files: Small room, Concert hall, Cathedral, Plate and Reverse. Decorrelated stereo noise split into three bands, each with its own exponential decay (highs die first), plus a build-up, early reflections and a pre-delay; Decay (RT60) and Pre-delay sliders. Or upload a WAV (first two channels, up to 6 s). The RT60 is measured from the Schroeder integral (T30)
+- **Algorithm**: uniformly partitioned overlap-save (Gardner 1995, Wefers 2015). The IR is cut into P partitions of B = 1024 or 2048 samples, each FFT'd once at N = 2B (batched dispatches). For every input block the GPU runs an FFT of [previous, current] block into a frequency-domain delay line, sums X·H over all P partitions in one dispatch (one invocation per bin, loop bounded at 563), runs one inverse FFT and keeps the last B samples. Radix-2 FFT stages are separate dispatches with dynamic uniform offsets
+- **Stereo**: both channels share one complex FFT (z = L + i·R). The spectra are split with Z[k] and conj(Z[N−k]), and Y = Y_L + i·Y_R comes back from a single inverse FFT
+- **Streaming**: an inline AudioWorklet posts each block to the main thread, which convolves it on the GPU and posts the wet block back (one 8-16 KB readback per block). Wet block k plays at a fixed delay of (1 + D)·B samples: one block for the partition plus D = 1-5 blocks of GPU slack (64 ms at B = 1024, D = 2, 48 kHz). A late block plays as silence and is counted as an underrun. The dry path and the ConvolverNode are delayed to match
+- **Accuracy**: a self-test per IR pushes a noise block through every partition and compares six read-back blocks with a direct CPU convolution; the first non-silent block of each stream is checked the same way. Both are shown in the info panel
+- **Sources**: built-in synth demo (plucks, claps, a chord, with gaps for the tails; no permissions), microphone (on button press), looping audio file
+- **Controls**: Start/Stop, sources, Bypass, A/B (GPU vs ConvolverNode), Space presets, decay, pre-delay, wet/dry mix, output gain (at most 0.5, then a limiter and a soft clip), block size, GPU slack
+- **Visualization**: render pass showing the IR waveform, its spectrogram with the energy decay curve and the RT60 marker, the latest input and wet blocks, and peak meters for input, wet and output
+- **Performance**: round-trip time per block against its deadline, backlog, underruns, and the self-test throughput in multiples of realtime
+
 ### 25. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
@@ -301,6 +324,8 @@ webgpu/
 │   │   ├── mnist-model.js             # Shared CNN for 21/22: WGSL kernels, GPU driver, weights format
 │   │   ├── mnist-train.js             # Example 21: Train a CNN on MNIST in compute shaders
 │   │   ├── mnist-recognize.js         # Example 22: Recognize hand-drawn digits
+│   │   ├── nbody.js                   # Example 23: N-body gravity (brute force and GPU-built Barnes-Hut tree)
+│   │   ├── convolution-reverb.js      # Example 24: Partitioned FFT convolution reverb (AudioWorklet + GPU)
 │   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── tools/
@@ -376,7 +401,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (N-body, convolution reverb) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Ideas for further examples are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 
