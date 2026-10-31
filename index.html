@@ -215,6 +215,7 @@
             <li><a href="#boids">8 Boids</a></li>
             <li><a href="#dla">9 DLA</a></li>
             <li><a href="#reaction-diffusion">10 Turing</a></li>
+            <li><a href="#wave-equation">11 Waves</a></li>
             <li><a href="#wasm-mandelbrot">14 WASM</a></li>
         </ul>
     </nav>
@@ -435,6 +436,36 @@
         <p class="hint"><strong>Interaction:</strong> hold the left mouse button and drag to paint chemical V. A preset or Reset reseeds the grid.</p>
         <canvas id="canvas-rd" class="interactive" width="1024" height="768"></canvas>
         <div id="output-rd" class="output"></div>
+    </section>
+
+    <section class="example" id="wave-equation">
+        <h3><span class="num">11</span>Wave Equation</h3>
+        <p>Ripples spread, reflect and interfere on a 512×384 water surface, solved with finite differences on the 2D wave equation and lit from its surface normals.</p>
+        <div class="controls">
+            <button id="btn-wave-start" class="primary">▶ Start</button>
+            <button id="btn-wave-pause">⏸ Pause</button>
+            <button id="btn-wave-reset">Reset</button>
+            <label for="wave-speed">Wave speed (C)</label>
+            <input type="range" id="wave-speed" min="0.10" max="0.70" step="0.01" value="0.50">
+            <span id="wave-speed-value">0.50</span>
+            <label for="wave-damping">Damping</label>
+            <input type="range" id="wave-damping" min="0" max="0.02" step="0.001" value="0.004">
+            <span id="wave-damping-value">0.004</span>
+            <label for="wave-steps">Steps / frame</label>
+            <input type="range" id="wave-steps" min="1" max="16" value="4">
+            <span id="wave-steps-value">4</span>
+            <button id="btn-wave-rain">Rain: off</button>
+            <button id="btn-wave-absorb">Absorbing edges: off</button>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="wave-preset" data-preset="open">Open water</button>
+            <button class="wave-preset" data-preset="slit">Double slit</button>
+            <button class="wave-preset" data-preset="ellipse">Ellipse</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> click to drop a ripple, hold to keep dropping them · shift-drag to draw walls. Reset clears the water and keeps the walls; a preset replaces both.</p>
+        <canvas id="canvas-wave" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-wave" class="output"></div>
     </section>
 
     <h2 class="group-title">WebAssembly</h2>

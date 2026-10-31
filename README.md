@@ -94,6 +94,16 @@ Two virtual chemicals diffuse and react, producing Turing patterns like coral, s
 - **Visualization**: Full-screen fragment shader maps V through an Ocean, Magma or Mono color ramp
 - **Performance**: Measured FPS and simulation steps per second; no CPU readback
 
+### 11. Wave Equation
+Water ripples from the 2D wave equation: drop ripples, draw walls, and watch them reflect and interfere.
+- **Grid**: 512×384 cells, one height per cell in two storage buffers (u(t) and u(t−1)) plus a per-cell wall mask
+- **Algorithm**: Damped wave equation u_tt + γu_t = c²∇²u, centered (leapfrog) differences and a 5-point Laplacian; Courant number C = 0.1-0.7 (stable up to 1/√2), default 0.5; 1-16 steps per frame, one dispatch each
+- **Boundaries**: Walls and the grid edge are fixed at u = 0 and reflect waves; optional absorbing sponge layer at the edges
+- **Presets**: Open water, Double slit (plane-wave source, interference fringes), Ellipse (a drop at one focus refocuses at the other)
+- **Interaction**: Click or hold to drop ripples, shift-drag to draw walls, Rain toggle with drops placed by a GPU hash
+- **Rendering**: Full-screen fragment shader computes surface normals from height differences, diffuse + specular lighting over a blue/teal height ramp
+- **Performance**: Measured FPS and simulation steps per second; no CPU readback
+
 ### 14. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
@@ -168,6 +178,7 @@ webgpu/
 │   │   ├── boids.js                   # Example 8: Boids flocking
 │   │   ├── dla-3d.js                  # Example 9: 3D DLA
 │   │   ├── reaction-diffusion.js      # Example 10: Gray-Scott reaction-diffusion
+│   │   ├── wave-equation.js           # Example 11: 2D wave equation (water ripples)
 │   │   └── wasm-mandelbrot.js         # Example 14: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
@@ -241,7 +252,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (wave equation, falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 

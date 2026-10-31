@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
   Coral, Mitosis, Maze, Holes, Chaos and Cells presets, feed/kill and
   steps-per-frame sliders, three color ramps, mouse painting, and an FPS readout.
   The WASM Mandelbrot example is now number 11.
+- Example 11, wave equation: water ripples on a 512×384 grid from a damped
+  leapfrog finite-difference solver, with Open water, Double slit and Ellipse
+  presets, click-to-drop ripples, shift-drag walls, rain, an absorbing-edge
+  toggle, wave speed / damping / steps-per-frame sliders, lit water shading, and
+  an FPS readout.
 
 ### Fixed
 - Losing the GPU device (driver reset, GPU process crash) left a frozen page. The status
