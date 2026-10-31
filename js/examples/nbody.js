@@ -1522,7 +1522,7 @@ export class NBodySimulation {
         this.timerConfig = '';
 
         this.count = count;
-        this.mode = 'bh';            // 'bh' | 'brute'
+        this.mode = 'bh';             // 'bh' | 'brute'
         this.presetKey = 'spiral';
         this.theta = 0.5;
         this.softening = 0.05;

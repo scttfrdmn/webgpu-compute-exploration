@@ -114,8 +114,9 @@ const scaling = {
     ],
     baseline: 'Brute force does exactly N − 1 interactions per body; Barnes-Hut at θ = 0.5 does a few hundred to about a '
         + 'thousand (248 at N = 1,024, 1,140 at 65,536 in CI) plus a 30-dispatch tree build, so it loses at small N and wins '
-        + 'at large N. In CI, on a CPU-emulated GPU, the wall times cross between N = 8,192 (93 vs 83 ms) and 16,384 '
-        + `(212 vs 294 ms). Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here (the example allows 32,768).`,
+        + 'at large N. In CI, on a CPU-emulated GPU, the wall times cross between N = 8,192 (brute force about 15% faster) '
+        + `and 16,384 (Barnes-Hut about 25% faster). Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here `
+        + '(the example allows 32,768).',
     async *run(ctx, { preset }) {
         for (const n of SCALING_COUNTS) {
             if (n > BH_MAX_N) break;
@@ -168,8 +169,8 @@ const energyDrift = {
         },
     }],
     baseline: `CI (software GPU, brute force, Plummer N = 2,048, t = ${DRIFT_TIME}): max |ΔE/E₀| 3.4e-5 / 5.5e-6 / 1.3e-6 / `
-        + '3.0e-7 at dt = 0.04 / 0.02 / 0.01 / 0.005, about 4× per halving (dt²). With Barnes-Hut at θ = 0.5 the error '
-        + 'stays near 3e-4 whatever dt is: the tree force and potential error dominates. The f32 energy sum itself is good to about 1e-7.',
+        + '3.0e-7 at dt = 0.04 / 0.02 / 0.01 / 0.005, about 4× per halving (dt²). With Barnes-Hut at θ = 0.5 it stays at '
+        + '6.4e-4 to 6.9e-4 for every dt: the force and potential error of the tree dominates. The f32 energy sum itself is good to about 1e-7.',
     async *run(ctx, { n, mode, preset }) {
         const N = Math.min(n, mode === 'brute' ? BRUTE_MAX_N : BH_MAX_N);
         const { positions, velocities } = generateBodies(preset, N, SOFTENING, SEED);
