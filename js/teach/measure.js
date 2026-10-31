@@ -5,15 +5,20 @@
 //   {
 //     id, title, question,                       // question: one sentence the experiment answers
 //     settings: [{ key, label, options: [{ value, label }], default }],   // optional fixed choices
-//     budgetMs,                                  // hard wall-clock cap for the whole run (≤ 30 s)
+//     budgetMs,                                  // hard wall-clock cap for the whole run (≤ MAX_BUDGET_MS, 20 s)
 //     columns: [{ key, label, format? }],        // results table
-//     charts: [{ x, xLabel, logX?, y: [keys], yLabel, logY?, labels?: {key: label}, reference? }],
+//     charts: [{ x, xLabel, logX?, y: [keys], yLabel, logY?, labels?: {key: label},
+//                reference?: { label, points } | (rows) => ({ label, points }),   // e.g. a trend through your data
+//                emptyNote? }],                // shown when no series has a value (e.g. GPU ms without timestamps)
 //     baseline,                                  // optional text: what CI measured, for comparison
 //     async *run(ctx, settings) { ... yield row ... }   // one row per sweep step
 //   }
 // Rules every experiment follows: problem sizes come from fixed lists with hard caps; each step is
 // bounded GPU work; call `await ctx.step()` between steps (it waits for the GPU, yields to the page and
 // throws if the run was cancelled, the budget is spent, or the device was lost).
+// Timing: when GPU work goes through an example's compute-only export (e.g. measureForces in nbody.js),
+// that function owns its GpuTimer and returns gpuMs/wallMs; experiments that dispatch directly use
+// ctx.newTimer(). Columns like θ or dt that should print as written use `format: String`.
 
 import { getGPUDevice, isDeviceLost, on, recordExperimentResult } from './app-state.js';
 import { GpuTimer } from '../gpu-timer.js';
@@ -21,7 +26,7 @@ import { renderLineChart } from './chart.js';
 import { experimentsModule } from './registry.js';
 import { pauseExplore } from './tabs.js';
 
-export const MAX_BUDGET_MS = 30000;
+export const MAX_BUDGET_MS = 20000;
 let busy = false;                 // one experiment at a time, page-wide
 const runButtons = new Set();
 
@@ -35,6 +40,18 @@ export async function runExperiment(experiment, settings, ctx, onRow) {
         onRow?.(row, rows);
     }
     return rows;
+}
+
+// A ctx for CI tests of experiments on the software GPU: no wall budget (software rendering is slow),
+// no UI yielding, but the same step() contract (waits for submitted GPU work).
+export function makeTestContext(gpuDevice) {
+    const device = gpuDevice.device;
+    return {
+        device, gpuDevice, timestamps: gpuDevice.timestamps === true,
+        newTimer: (options) => new GpuTimer(gpuDevice, options),
+        elapsedMs: () => 0, remainingMs: () => Infinity, check() {},
+        async step() { await device.queue.onSubmittedWorkDone(); },
+    };
 }
 
 // Builds the ctx an experiment receives. `now` and `waitForUI` are injectable for tests.
@@ -215,7 +232,8 @@ export function formatCell(column, value) {
     if (typeof value === 'number') {
         if (Number.isInteger(value)) return value.toLocaleString('en-US');
         const abs = Math.abs(value);
-        return abs !== 0 && (abs < 1e-3 || abs >= 1e5) ? value.toExponential(2) : value.toPrecision(3);
+        // three significant digits without trailing zeros (0.5 stays "0.5", 0.12345 becomes "0.123")
+        return abs !== 0 && (abs < 1e-3 || abs >= 1e5) ? value.toExponential(2) : String(+value.toPrecision(3));
     }
     return String(value);
 }

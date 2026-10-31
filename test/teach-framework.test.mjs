@@ -73,6 +73,7 @@ test('results: CSV escaping and cell formatting', () => {
     assert.equal(formatCell({}, 1234567), '1,234,567');
     assert.equal(formatCell({}, 0.000012), '1.20e-5');
     assert.equal(formatCell({}, 3.14159), '3.14');
+    assert.equal(formatCell({}, 0.5), '0.5');
     assert.equal(formatCell({}, NaN), '—');
     assert.equal(formatCell({ format: v => `${v} ms` }, 2), '2 ms');
 });

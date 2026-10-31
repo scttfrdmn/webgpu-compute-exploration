@@ -88,9 +88,20 @@ export function renderLineChart(holder, spec) {
     const caption = document.createElement('figcaption');
     caption.textContent = spec.title ?? `${spec.yLabel} vs ${spec.xLabel}`;
     holder.append(caption);
-    if (rows.length === 0) return;
+    const plottable = rows.some(r => keys.some(k => typeof r[k] === 'number' && Number.isFinite(r[k]) && (!spec.logY || r[k] > 0)));
+    if (!plottable) {
+        if (spec.rows.length) {
+            const note = document.createElement('p');
+            note.className = 'hint chart-empty';
+            note.textContent = spec.emptyNote ?? 'No values to plot for this chart.';
+            holder.append(note);
+        }
+        return;
+    }
 
-    const refPoints = spec.reference?.points ?? [];
+    // A reference may be a function of the measured rows, e.g. a θ² trend anchored to the visitor's own data
+    const reference = typeof spec.reference === 'function' ? spec.reference(rows) : spec.reference;
+    const refPoints = reference?.points ?? [];
     const xs = extent([...rows, ...refPoints.map(([x]) => ({ [spec.x]: x }))], [spec.x], spec.logX);
     const ys = extent([...rows, ...refPoints.map(([, y]) => ({ __ref: y }))], [...keys, '__ref'], spec.logY);
     if (!xs || !ys) return;
@@ -127,7 +138,7 @@ export function renderLineChart(holder, spec) {
         el('path', { d, class: 'chart-reference' }, svg);
         const [lx, ly] = refPoints[refPoints.length - 1];
         el('text', { x: xScale(lx) - 4, y: yScale(ly) - 6, 'text-anchor': 'end', class: 'chart-tick' }, svg)
-            .textContent = spec.reference.label;
+            .textContent = reference.label;
     }
 
     // Series: 2px line, markers with a surface ring, direct label at the line end

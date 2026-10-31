@@ -15,6 +15,7 @@ import { device } from './harness.mjs';
 import { generateBodies, measureForces, measureEnergyDrift } from '../../js/examples/nbody.js';
 import { directForces, relErrors } from '../../js/refs/nbody.js';
 import experiments from '../../js/teach/experiments/nbody.js';
+import { makeTestContext } from '../../js/teach/measure.js';
 
 const gpuDevice = { device, timestamps: device.features.has('timestamp-query') };
 const EPS = 0.05;
@@ -82,10 +83,8 @@ test('measureEnergyDrift: E₀ matches the float64 energy; drift stays small (br
     }
 });
 
-// The Measure tab's ctx, without the runner's 30 s budget (a software GPU is far slower than a visitor's)
-function testContext() {
-    return { device, gpuDevice, timestamps: gpuDevice.timestamps, step: () => device.queue.onSubmittedWorkDone() };
-}
+// The Measure tab's ctx without the runner's wall budget (a software GPU is far slower than a visitor's)
+const testContext = () => makeTestContext(gpuDevice);
 
 async function runAll(experiment, settings) {
     const rows = [];
