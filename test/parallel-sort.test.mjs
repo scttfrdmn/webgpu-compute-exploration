@@ -15,21 +15,11 @@ import assert from 'node:assert/strict';
 import { sortInternals as S, ParallelSort, wgslModules } from '../js/examples/parallel-sort.js';
 import { structLayout, decodeStruct } from './helpers/wgsl-layout.mjs';
 import { mockDevice } from './helpers/mock-gpu.mjs';
+import { rng, encode, decode, edgeCases, cpuSort } from './helpers/parallel-sort-refs.mjs';
 
 const WG = S.WORKGROUP_SIZE;
 const BLOCK = S.BITONIC_BLOCK;
 const RADIX_BITS = 32 / S.RADIX_PASSES;
-
-function rng(seed) {   // mulberry32
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 // ---- Bitonic replica ----
 const pairIndex = (t, j) => Math.floor(t / j) * (2 * j) + (t % j);
@@ -177,32 +167,7 @@ function radixSortU32(input) {
     return a;   // 8 passes: back in the first buffer, as the shader's keysA
 }
 
-// ---- f32 key conversion replica (cs_encode_f32 / cs_decode_f32) ----
-const encode = u => (u ^ ((u & 0x80000000) !== 0 ? 0xffffffff : 0x80000000)) >>> 0;
-const decode = u => (u ^ ((u & 0x80000000) === 0 ? 0xffffffff : 0x80000000)) >>> 0;
-
-function edgeCases(seed) {
-    const r = rng(seed);
-    const rand = n => Uint32Array.from({ length: n }, () => (r() * 0x100000000) >>> 0);
-    const cases = {
-        empty: new Uint32Array(0),
-        one: Uint32Array.of(7),
-        two: Uint32Array.of(9, 3),
-        three: Uint32Array.of(5, 0xffffffff, 0),
-        sorted1000: Uint32Array.from({ length: 1000 }, (_, i) => i),
-        reversed1023: Uint32Array.from({ length: 1023 }, (_, i) => 1023 - i),
-        allEqual513: new Uint32Array(513).fill(42),
-        withPadKey600: Uint32Array.from({ length: 600 }, (_, i) => (i % 3 ? i : 0xffffffff)),
-        fewUnique2049: Uint32Array.from({ length: 2049 }, () => Math.floor(r() * 4)),
-        random511: rand(511),
-        random512: rand(512),
-        random1025: rand(1025),
-        random4097: rand(4097),
-    };
-    return cases;
-}
-
-const cpuSort = a => Uint32Array.from(a).sort();
+// rng, encode/decode (f32 key conversion replica), edgeCases and cpuSort: test/helpers/parallel-sort-refs.mjs
 
 test('bitonicSchedule: stage counts and order (real code)', (t) => {
     for (const padded of [2, 8, 256, 512, 1024, 8192, 1 << 20]) {

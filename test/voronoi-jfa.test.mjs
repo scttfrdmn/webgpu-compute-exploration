@@ -13,140 +13,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { jfaSteps, packColor, VoronoiJFA, MAX_SEEDS, wgslModules } from '../js/examples/voronoi-jfa.js';
-import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mjs';
-import { mockDevice } from './helpers/mock-gpu.mjs';
+import { decodeStruct } from './helpers/wgsl-layout.mjs';
+import {
+    NONE, PARAMS, SEED, makeJFA, generateSeeded, uploadedSeeds, seedPass, floodPass, exactCheck, errorsVsBrute,
+    MAX_ERROR_RATE, MAX_ERROR_RATE_PLUS_ONE,
+} from './helpers/voronoi-refs.mjs';
 
 const f = Math.fround;
-const NONE = 0xffffffff;
-const mod = { wgslModules };
-const PARAMS = structLayout(moduleCode(mod, 'flood'), 'Params');
-const SEED = structLayout(moduleCode(mod, 'flood'), 'Seed');
 
-globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
-globalThis.requestAnimationFrame ??= () => 0;
-
-function rng(seed) {   // mulberry32
-    let a = seed >>> 0;
-    return () => {
-        a = (a + 0x6d2b79f5) >>> 0;
-        let t = a;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-function makeJFA(width, height) {
-    const device = mockDevice();
-    const canvas = {
-        width, height, addEventListener() {}, removeEventListener() {},
-        getContext: () => ({ configure() {}, getCurrentTexture: () => ({ createView() {} }) }),
-    };
-    return { device, jfa: new VoronoiJFA(device, canvas) };
-}
-
-// Seeds placed by the shipped generate() with Math.random replaced by a seeded generator
-function generateSeeded(jfa, count, layout, seed) {
-    const saved = Math.random;
-    Math.random = rng(seed);
-    try { jfa.generate(count, layout); } finally { Math.random = saved; }
-}
-
-// Seed positions as the GPU sees them: decode the bytes writeSeeds() uploads
-function uploadedSeeds(device, jfa) {
-    jfa.writeSeeds();
-    const bytes = device.lastWrite(jfa.seedBuffer).bytes;
-    const n = bytes.byteLength / SEED.size;
-    const out = new Float32Array(2 * n);
-    for (let i = 0; i < n; i++) {
-        const s = decodeStruct(bytes, SEED, i * SEED.size);
-        out[2 * i] = s.pos[0]; out[2 * i + 1] = s.pos[1];
-    }
-    return out;
-}
-
-// f32 metricDistance (Euclidean returns the squared distance)
-function metricF32(cx, cy, sx, sy, metric) {
-    const dx = Math.abs(f(cx - sx)), dy = Math.abs(f(cy - sy));
-    if (metric === 1) return f(dx + dy);
-    if (metric === 2) return Math.max(dx, dy);
-    return f(f(dx * dx) + f(dy * dy));
-}
-function metric64(cx, cy, sx, sy, metric) {
-    const dx = Math.abs(cx - sx), dy = Math.abs(cy - sy);
-    if (metric === 1) return dx + dy;
-    if (metric === 2) return Math.max(dx, dy);
-    return dx * dx + dy * dy;
-}
-
-function seedPass(w, h, seeds) {
-    const ids = new Uint32Array(w * h).fill(NONE);
-    const count = seeds.length / 2;
-    for (let i = 0; i < count; i++) {
-        const px = Math.min(Math.max(Math.floor(seeds[2 * i]), 0), w - 1);
-        const py = Math.min(Math.max(Math.floor(seeds[2 * i + 1]), 0), h - 1);
-        const at = py * w + px;
-        ids[at] = Math.min(ids[at], i);   // atomicMin
-    }
-    return ids;
-}
-
-function floodPass(idsIn, w, h, seeds, k, metric) {
-    const count = seeds.length / 2;
-    const out = new Uint32Array(w * h);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const cx = f(x + 0.5), cy = f(y + 0.5);
-        let bestId = NONE, bestDist = 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-            const qx = x + dx * k, qy = y + dy * k;
-            if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
-            const id = idsIn[qy * w + qx];
-            if (id >= count) continue;
-            const d = metricF32(cx, cy, seeds[2 * id], seeds[2 * id + 1], metric);
-            if (bestId === NONE || d < bestDist || (d === bestDist && id < bestId)) { bestId = id; bestDist = d; }
-        }
-        out[y * w + x] = bestId;
-    }
-    return out;
-}
-
-// cs_exact replica: counters[0] strictly-farther pixels, counters[1] differing index (f32)
-function exactCheck(ids, w, h, seeds, metric) {
-    const count = seeds.length / 2;
-    const counters = [0, 0];
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const cx = f(x + 0.5), cy = f(y + 0.5);
-        let bestId = NONE, bestDist = 0;
-        for (let i = 0; i < count; i++) {
-            const d = metricF32(cx, cy, seeds[2 * i], seeds[2 * i + 1], metric);
-            if (bestId === NONE || d < bestDist) { bestId = i; bestDist = d; }
-        }
-        const j = ids[y * w + x];
-        if (j !== bestId) counters[1]++;
-        if (j >= count || metricF32(cx, cy, seeds[2 * j], seeds[2 * j + 1], metric) > bestDist) counters[0]++;
-    }
-    return counters;
-}
-
-// Independent reference: float64 brute force. A pixel is an error if its JFA seed is farther than
-// the true nearest by more than f32 rounding (relative 1e-6).
-function errorsVsBrute(ids, w, h, seeds, metric) {
-    const count = seeds.length / 2;
-    let wrong = 0, maxExcess = 0;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const cx = x + 0.5, cy = y + 0.5;
-        let best = Infinity;
-        for (let i = 0; i < count; i++) best = Math.min(best, metric64(cx, cy, seeds[2 * i], seeds[2 * i + 1], metric));
-        const j = ids[y * w + x];
-        const d = j < count ? metric64(cx, cy, seeds[2 * j], seeds[2 * j + 1], metric) : Infinity;
-        if (d > best * (1 + 1e-6) + 1e-9) {
-            wrong++;
-            const lin = metric === 0 ? Math.sqrt(d) - Math.sqrt(best) : d - best;
-            maxExcess = Math.max(maxExcess, lin);
-        }
-    }
-    return { wrong, maxExcess };
-}
+// Replica and reference helpers (seeded generate(), uploaded seed decode, f32 metric, seed/flood/
+// exact-check replicas, float64 brute force) live in test/helpers/voronoi-refs.mjs, shared with
+// test/gpu/voronoi-jfa.gpu.test.mjs.
 
 test('jfaSteps: N/2 ... 1 for N = next power of two ≥ max(w, h) (real code)', () => {
     assert.deepEqual(jfaSteps(640, 480, false), [512, 256, 128, 64, 32, 16, 8, 4, 2, 1]);
@@ -209,8 +86,8 @@ test('JFA replica vs brute-force nearest seed (3 metrics × 4 layouts, JFA and J
     // headroom while still catching index-math bugs, which
     // produce errors on a large fraction of pixels.
     for (const m of [0, 1, 2]) {
-        assert.ok(rate(m) < 0.001, `JFA error rate metric ${m}: ${rate(m)}`);
-        assert.ok(ratePlus(m) < 0.0005, `JFA+1 error rate metric ${m}: ${ratePlus(m)}`);
+        assert.ok(rate(m) < MAX_ERROR_RATE, `JFA error rate metric ${m}: ${rate(m)}`);
+        assert.ok(ratePlus(m) < MAX_ERROR_RATE_PLUS_ONE, `JFA+1 error rate metric ${m}: ${ratePlus(m)}`);
     }
 });
 

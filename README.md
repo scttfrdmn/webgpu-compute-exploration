@@ -289,6 +289,21 @@ python3 -m http.server 8000
 
 ### Validation
 
+The shaders are checked in three layers, all in CI on every push and pull request:
+
+1. **Static validation** (`wgsl` job): naga parses and validates every WGSL module the examples ship.
+2. **CPU reference suite** (`test` job): JavaScript replicas of the shader algorithms and the examples'
+   real JavaScript, compared against independent references. Runs anywhere, no GPU.
+3. **Real-shader execution on a software GPU** (`gpu-software` job): `test/gpu/` compiles the exact WGSL
+   from `wgslModules()`, dispatches it through Dawn's Node bindings (the `webgpu` npm package) on Mesa
+   lavapipe, a CPU-only Vulkan driver, and compares the read-back buffers with the CPU references.
+   This tests the WGSL itself, which the replicas cannot.
+
+The GPU tests **never run locally by default**: `npm test` only picks up `test/*.test.mjs`, and
+`test/gpu/harness.mjs` refuses to start unless `CI=true` on Linux and the adapter reports a software
+device (llvmpipe/lavapipe/SwiftShader or a fallback adapter). Driving a real GPU from automated tests
+can hang it, so leave `test/gpu/` to CI.
+
 Every example exports `wgslModules()`, the WGSL modules it passes to `createShaderModule`. CI validates
 each one offline with [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) (no GPU or browser needed).
 To run the same check locally:
@@ -366,7 +381,8 @@ webgpu/
 │   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── test/                              # CPU reference tests (npm test), one per example
-│   └── helpers/                       # WGSL struct layout calculator, mock GPU device
+│   ├── gpu/                           # Shipped WGSL executed on a software GPU (CI only, never locally)
+│   └── helpers/                       # WGSL struct layout calculator, mock GPU device, shared references
 ├── tools/
 │   ├── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
 │   └── validate-wgsl.mjs              # Validates every example's WGSL modules with naga (CI)

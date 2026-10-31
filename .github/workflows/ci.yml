@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'ci/**']
   pull_request:
 
 jobs:
@@ -57,3 +57,35 @@ jobs:
           node-version: 22
       - name: CPU reference tests
         run: node --test 'test/*.test.mjs'
+
+  # Executes selected shipped WGSL kernels on Mesa lavapipe (a CPU-only Vulkan driver) through
+  # Dawn's Node bindings and compares the results with the CPU references (test/gpu/, #51).
+  # test/gpu/harness.mjs refuses to run unless CI=true and the adapter is a software device.
+  gpu-software:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      WEBGPU_NPM_VERSION: 0.6.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Mesa lavapipe (software Vulkan)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+      - name: Force the lavapipe ICD
+        run: |
+          icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
+          test -n "$icd"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+      - name: Software adapter
+        run: vulkaninfo --summary
+      - name: Install WebGPU runtime (dawn.node)
+        run: npm install --no-save --no-package-lock --ignore-scripts "webgpu@$WEBGPU_NPM_VERSION"
+      - name: GPU kernel tests
+        run: >-
+          node --test --test-reporter=spec --test-concurrency=2 --test-timeout=240000
+          --test-force-exit 'test/gpu/*.gpu.test.mjs'

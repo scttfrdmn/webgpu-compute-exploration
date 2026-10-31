@@ -14,18 +14,10 @@ import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mj
 import { mockDevice } from './helpers/mock-gpu.mjs';
 
 const { generateMaze, braidMaze, extractPath, GENERATORS, MazeSolver } = maze;
-const OPEN_N = 1, OPEN_E = 2, OPEN_S = 4, OPEN_W = 8, ON_PATH = 16;
-const INF = 0xffffffff;
+import { OPEN_N, OPEN_E, OPEN_S, OPEN_W, INF, openNeighbors, queueBFS, fakeCanvas } from './helpers/maze-refs.mjs';
 
-// Neighbours reachable through open passages from cell c
-function openNeighbors(cells, w, h, c) {
-    const x = c % w, y = (c - x) / w, out = [];
-    if (cells[c] & OPEN_N) out.push(c - w);
-    if (cells[c] & OPEN_E) out.push(c + 1);
-    if (cells[c] & OPEN_S) out.push(c + w);
-    if (cells[c] & OPEN_W) out.push(c - 1);
-    return out;
-}
+// openNeighbors / queueBFS (independent queue BFS reference) / fakeCanvas live in
+// test/helpers/maze-refs.mjs, shared with test/gpu/maze.gpu.test.mjs.
 
 // Structural checks shared by perfect and braided mazes. Returns the number of undirected passages.
 function checkWalls(cells, w, h) {
@@ -51,20 +43,6 @@ function checkWalls(cells, w, h) {
         }
     }
     return edges;
-}
-
-// Independent reference: queue BFS over open passages
-function queueBFS(cells, w, h, start) {
-    const n = w * h, dist = new Uint32Array(n).fill(INF), q = new Int32Array(n);
-    let head = 0, tail = 0;
-    dist[start] = 0; q[tail++] = start;
-    while (head < tail) {
-        const c = q[head++];
-        for (const nb of openNeighbors(cells, w, h, c)) {
-            if (dist[nb] === INF) { dist[nb] = dist[c] + 1; q[tail++] = nb; }
-        }
-    }
-    return dist;
 }
 
 // CPU replica of cs_bfs_step: one call = one dispatch for BFS level `level` (pull formulation).
@@ -220,16 +198,6 @@ test('extractPath rejects a field that is not a BFS distance field', () => {
     assert.deepEqual(extractPath(cells, broken, w, h, 0, 24), []);
     assert.deepEqual(extractPath(cells, dist, w, h, 0, 0), [0]);
 });
-
-// Minimal stand-ins for the DOM objects the solver's constructor touches
-function fakeCanvas() {
-    return {
-        width: 0, height: 0,
-        getContext: () => ({ configure() {}, getCurrentTexture: () => ({ createView: () => ({}) }) }),
-        addEventListener() {}, removeEventListener() {},
-        getBoundingClientRect: () => ({ left: 0, top: 0, width: 1, height: 1 }),
-    };
-}
 
 test('MazeSolver.writeParams matches struct Params, one copy per dynamic-offset slot', (t) => {
     const device = mockDevice();

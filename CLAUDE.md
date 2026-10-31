@@ -11,6 +11,11 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   `npm run validate:wgsl` (set `NAGA=/path/to/naga` if it is not on PATH), and `npm test` (`node --test 'test/*.test.mjs'`).
 - `test/` is CPU-only: it runs the examples' exported JS and CPU replicas of the shader algorithms. Rendering
   and GPU behaviour still have to be verified in a browser. Never run tests on the GPU or in a headless browser.
+- `test/gpu/` (`*.gpu.test.mjs`) executes the shipped WGSL through Dawn's Node bindings (`webgpu` npm, version pinned
+  in the `gpu-software` CI job) on Mesa lavapipe and compares with the CPU references. It is **CI-only**: never run
+  it, `npm install webgpu`, or any other WebGPU runtime on a developer's machine from automation — iterate by pushing
+  a branch and reading the CI log. `test/gpu/harness.mjs` aborts unless `CI=true`, Linux, and a software adapter;
+  keep that guard. `npm test` must never import `test/gpu/`; shared references go in `test/helpers/`.
 - WGSL is validated without a GPU by `tools/validate-wgsl.mjs`: it imports each example's `wgslModules()` and runs
   `naga` (naga-cli 30.0.1, pinned in `.github/workflows/ci.yml`) on every module. It catches the same errors
   Chrome's compiler reports. Examples must not touch browser globals at import time.
