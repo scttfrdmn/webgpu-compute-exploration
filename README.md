@@ -365,8 +365,8 @@ webgpu/
 ├── js/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
 │   ├── webgpu-utils.js                # WebGPU helper functions
-│   ├── gpu-timer.js                   # GPU pass timing with timestamp queries
 │   ├── device-report.js               # Builds the opt-in Markdown device report
+│   ├── gpu-timer.js                   # GPU pass timing with timestamp queries
 │   ├── examples/
 │   │   ├── vector-addition.js         # Example 1: Vector addition
 │   │   ├── matrix-multiplication.js   # Example 2: Matrix multiply
