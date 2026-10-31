@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Ten interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Eleven interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion) and ray-marched 3D fractals. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -85,7 +85,16 @@ Fractal growth simulation creating dendritic crystal structures.
 - **Rendering**: Instanced cubes with gradient coloring
 - **Interaction**: Drag to rotate, wheel to zoom, adjustable stickiness
 
-### 10. WASM Integration (Mandelbrot Set)
+### 10. Reaction-Diffusion (Gray-Scott)
+Two virtual chemicals diffuse and react, producing Turing patterns like coral, spots and mazes.
+- **Grid**: 512×384 cells that wrap at the edges, (U, V) per cell in two ping-pong storage buffers
+- **Algorithm**: Gray-Scott model, 3×3 Laplacian, Du = 1.0, Dv = 0.5, dt = 1.0; 1-32 substeps per frame, one dispatch each
+- **Presets**: Coral, Mitosis, Maze, Holes, Chaos, Cells, plus feed and kill sliders
+- **Interaction**: Hold the left mouse button and drag to paint chemical V, also while paused
+- **Visualization**: Full-screen fragment shader maps V through an Ocean, Magma or Mono color ramp
+- **Performance**: Measured FPS and simulation steps per second; no CPU readback
+
+### 11. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -158,7 +167,8 @@ webgpu/
 │   │   ├── ray-marching.js            # Example 7: Ray marching fractals
 │   │   ├── boids.js                   # Example 8: Boids flocking
 │   │   ├── dla-3d.js                  # Example 9: 3D DLA
-│   │   └── wasm-mandelbrot.js         # Example 10: WASM integration
+│   │   ├── reaction-diffusion.js      # Example 10: Gray-Scott reaction-diffusion
+│   │   └── wasm-mandelbrot.js         # Example 11: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
@@ -231,7 +241,7 @@ This architecture is ideal for:
 
 ## Extending This Project
 
-Planned examples (reaction-diffusion, wave equation, falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
+Planned examples (wave equation, falling sand, noise, FFT, sorting, k-means, Voronoi, maze solving, N-body, cloth, MNIST inference, convolution reverb, path tracing) are tracked as [issues](https://github.com/scttfrdmn/webgpu-compute-exploration/issues?q=is%3Aissue+label%3A%22type%3A+feature%22), grouped into milestones and on the [project board](https://github.com/users/scttfrdmn/projects/85).
 
 ## Support
 

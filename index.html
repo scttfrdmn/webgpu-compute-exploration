@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Ten interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Eleven interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="WebGPU Compute Shader Examples">
-    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
     <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
     <meta property="og:image:width" content="1280">
@@ -192,7 +192,7 @@
     <header class="hero">
         <div class="inner">
             <h1>WebGPU <span>Compute</span> Exploration</h1>
-            <p>Ten interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            <p>Eleven interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
             set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
             <div class="hero-links">
@@ -214,7 +214,8 @@
             <li><a href="#ray-marching">7 Fractals</a></li>
             <li><a href="#boids">8 Boids</a></li>
             <li><a href="#dla">9 DLA</a></li>
-            <li><a href="#wasm-mandelbrot">10 WASM</a></li>
+            <li><a href="#reaction-diffusion">10 Turing</a></li>
+            <li><a href="#wasm-mandelbrot">11 WASM</a></li>
         </ul>
     </nav>
 
@@ -399,11 +400,48 @@
         <div id="output-dla" class="output"></div>
     </section>
 
+    <section class="example" id="reaction-diffusion">
+        <h3><span class="num">10</span>Reaction-Diffusion (Gray-Scott)</h3>
+        <p>Two chemicals diffuse and react on a 512×384 wrap-around grid, growing coral, spots, mazes and other Turing patterns.</p>
+        <div class="controls">
+            <button id="btn-rd-start" class="primary">▶ Start</button>
+            <button id="btn-rd-pause">⏸ Pause</button>
+            <button id="btn-rd-reset">Reset</button>
+            <label for="rd-feed">Feed</label>
+            <input type="range" id="rd-feed" min="0.010" max="0.100" step="0.0001" value="0.0545">
+            <span id="rd-feed-value">0.0545</span>
+            <label for="rd-kill">Kill</label>
+            <input type="range" id="rd-kill" min="0.040" max="0.075" step="0.0001" value="0.062">
+            <span id="rd-kill-value">0.0620</span>
+            <label for="rd-speed">Steps / frame</label>
+            <input type="range" id="rd-speed" min="1" max="32" value="12">
+            <span id="rd-speed-value">12</span>
+            <label for="rd-palette">Colors</label>
+            <select id="rd-palette">
+                <option value="0">Ocean</option>
+                <option value="1">Magma</option>
+                <option value="2">Mono</option>
+            </select>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="rd-preset" data-preset="coral">Coral</button>
+            <button class="rd-preset" data-preset="mitosis">Mitosis</button>
+            <button class="rd-preset" data-preset="maze">Maze</button>
+            <button class="rd-preset" data-preset="holes">Holes</button>
+            <button class="rd-preset" data-preset="chaos">Chaos</button>
+            <button class="rd-preset" data-preset="cells">Cells</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> hold the left mouse button and drag to paint chemical V. A preset or Reset reseeds the grid.</p>
+        <canvas id="canvas-rd" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-rd" class="output"></div>
+    </section>
+
     <h2 class="group-title">WebAssembly</h2>
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">10</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">11</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>

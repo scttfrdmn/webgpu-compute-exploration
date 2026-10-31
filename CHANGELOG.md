@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Example 10, Gray-Scott reaction-diffusion: a 512×384 wrap-around grid with
+  Coral, Mitosis, Maze, Holes, Chaos and Cells presets, feed/kill and
+  steps-per-frame sliders, three color ramps, mouse painting, and an FPS readout.
+  The WASM Mandelbrot example is now number 11.
+
 ### Fixed
 - Losing the GPU device (driver reset, GPU process crash) left a frozen page. The status
   badge now reports the loss, example controls are disabled, and a Reload button appears.
