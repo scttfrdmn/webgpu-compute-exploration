@@ -17,6 +17,10 @@ import { initParallelSort } from './examples/parallel-sort.js';
 import { initKMeans } from './examples/kmeans.js';
 import { initVoronoiJFA } from './examples/voronoi-jfa.js';
 import { initMaze } from './examples/maze.js';
+import { initCloth } from './examples/cloth.js';
+import { initPathTracer } from './examples/path-tracer.js';
+import { initMNISTTrain } from './examples/mnist-train.js';
+import { initMNISTRecognize } from './examples/mnist-recognize.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 
 let gpuDevice = null;
@@ -125,6 +129,10 @@ function initInteractiveExamplesOnVisible() {
         'canvas-kmeans': initKMeans,
         'canvas-voronoi': initVoronoiJFA,
         'canvas-maze': initMaze,
+        'canvas-cloth': initCloth,
+        'canvas-pt': initPathTracer,
+        'canvas-mnist-train': initMNISTTrain,
+        'canvas-mnist-draw': initMNISTRecognize,
     };
     const instances = new Map();
 

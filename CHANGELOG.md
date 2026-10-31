@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Example 19, cloth simulation: a 32×32 to 128×128 particle fabric with
+  structural, shear and bend links, solved with position-based dynamics on the
+  GPU (Verlet integration, long-range tethers to the pins, Gauss-Seidel
+  constraint iterations split into 12 race-free color sets, sphere and floor
+  collisions with Coulomb friction). Wind, optional tearing with a threshold,
+  shift-drag grabbing, five presets (two corners, top edge, curtain, drop on
+  sphere, flag), wireframe and particle views, and an FPS readout.
+- Example 20, Monte Carlo path tracer: a compute shader traces one path per
+  pixel per frame (spheres, quads, rotated boxes and planes; diffuse, metal,
+  glass and emissive materials; next-event estimation with MIS, Russian
+  roulette, 1-8 bounces) into an accumulation buffer, tone-mapped with ACES or
+  Reinhard. Cornell box, Spheres, Caustics and Materials scenes; orbit camera
+  with depth of field and click-to-focus; resolution, exposure and firefly
+  clamp controls; spp, FPS and rays-per-second readout; stops at a target spp.
+- Example 21, MNIST: Train: a small CNN (conv 5×5×8, max-pool, conv 5×5×16,
+  max-pool, dense 256→10; 5,994 weights) trained in the browser entirely in
+  compute shaders on 10,000 MNIST images: GPU batch assembly with random ±2 px
+  shifts, forward pass, softmax cross-entropy, full backprop, race-free
+  per-sample gradient reduction and SGD with momentum, weight decay and
+  learning-rate decay; live loss and accuracy charts, test accuracy on 2,000
+  images after every epoch, first-layer filters, Export weights and Use in
+  Recognize. A CPU trainer with the same algorithm (`tools/train-mnist.mjs`)
+  produced the cached weights (98.00% test accuracy).
+- Example 22, MNIST: Recognize: draw a digit (mouse, pen or touch), MNIST-style
+  preprocessing (fit 20×20, center of mass) and GPU inference with the cached
+  weights or those from example 21; confidence bars, the 28×28 network input,
+  activation maps of both conv layers, and random test digits with their true
+  labels. MNIST data and derived weights are CC BY-SA 3.0 (`data/mnist/`).
+
 ## [0.3.0] - 2026-10-30
 
 ### Added
