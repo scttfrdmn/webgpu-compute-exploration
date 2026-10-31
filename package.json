@@ -1,7 +1,7 @@
 {
   "name": "webgpu-compute-exploration",
   "version": "0.4.0",
-  "description": "Interactive WebGPU compute shader examples in WGSL: SPH fluid, molecular dynamics, boids, Game of Life, ray-marched fractals, 3D DLA, and Rust/WASM integration",
+  "description": "25 interactive WebGPU compute shader examples in WGSL: simulations (SPH, cloth, N-body Barnes-Hut, waves, reaction-diffusion), parallel algorithms (sorting, k-means, Voronoi, BFS), rendering (path tracing, ray marching), signal processing (FFT, convolution reverb), and a CNN trained in the browser",
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 8000",
@@ -13,13 +13,17 @@
     "compute-shaders",
     "gpgpu",
     "gpu-computing",
-    "wasm",
-    "webassembly",
+    "parallel-algorithms",
+    "scientific-computing",
+    "physics-simulation",
+    "n-body",
+    "path-tracing",
+    "fft",
+    "machine-learning",
+    "mnist",
     "sph",
-    "molecular-dynamics",
-    "boids",
-    "ray-marching",
-    "game-of-life"
+    "wasm",
+    "webassembly"
   ],
   "author": "Scott Friedman",
   "repository": {

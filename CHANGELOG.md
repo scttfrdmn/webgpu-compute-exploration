@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- package.json description and keywords, the CITATION abstract, and the GitHub
+  repository description and topics now cover all 25 examples.
+
 ## [0.4.0] - 2026-10-31
 
 ### Added

@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "WebGPU Compute Exploration"
-abstract: "Interactive WebGPU/WGSL compute examples, from basic parallel operations to physics simulations, with Rust/WASM integration."
+abstract: "25 interactive WebGPU/WGSL compute examples, from basic parallel operations to physics simulations, parallel algorithms, path tracing, signal processing and a CNN trained in the browser, with Rust/WASM integration."
 authors:
   - family-names: Friedman
     given-names: Scott
