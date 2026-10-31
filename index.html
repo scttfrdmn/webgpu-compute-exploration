@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Twenty-three interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, cloth simulation, a Monte Carlo path tracer, an MNIST CNN trained and run in the browser, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Twenty-five interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, cloth simulation, a Monte Carlo path tracer, an MNIST CNN trained and run in the browser, Barnes-Hut N-body gravity, GPU convolution reverb, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="WebGPU Compute Shader Examples">
-    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, FFT audio, GPU sorting, k-means, Voronoi, mazes, cloth, path tracing, MNIST, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
+    <meta property="og:description" content="Interactive WGSL compute demos: SPH fluid, molecular dynamics, boids, Game of Life, reaction-diffusion, water waves, falling sand, procedural noise, FFT audio, GPU sorting, k-means, Voronoi, mazes, cloth, path tracing, MNIST, N-body, reverb, ray-marched fractals, 3D DLA, and Rust/WASM. Runs in the browser.">
     <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
     <meta property="og:image:width" content="1280">
@@ -192,7 +192,7 @@
     <header class="hero">
         <div class="inner">
             <h1>WebGPU <span>Compute</span> Exploration</h1>
-            <p>Twenty-three interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            <p>Twenty-five interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
             set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
             <div class="hero-links">
@@ -227,7 +227,9 @@
             <li><a href="#path-tracer">20 Path tracing</a></li>
             <li><a href="#mnist-train">21 Train</a></li>
             <li><a href="#mnist-recognize">22 Digits</a></li>
-            <li><a href="#wasm-mandelbrot">23 WASM</a></li>
+            <li><a href="#nbody">23 N-body</a></li>
+            <li><a href="#convolution-reverb">24 Reverb</a></li>
+            <li><a href="#wasm-mandelbrot">25 WASM</a></li>
         </ul>
     </nav>
 
@@ -941,11 +943,120 @@
         <div id="output-mnist-recognize" class="output"></div>
     </section>
 
+    <section class="example" id="nbody">
+        <h3><span class="num">23</span>N-Body Gravity (Barnes-Hut)</h3>
+        <p>Up to 262,144 self-gravitating stars integrated with leapfrog. Brute force sums all N² pairs with workgroup-shared tiles; Barnes-Hut rebuilds an octree-like tree on the GPU every step (bounding box, Morton codes, radix sort, Karras radix tree, bottom-up centers of mass with atomic counters) and walks it with a fixed-size stack, treating distant groups as single masses. The energy readout shows how much accuracy θ trades for speed.</p>
+        <div class="controls">
+            <button id="btn-nbody-start" class="primary">▶ Start</button>
+            <button id="btn-nbody-pause">⏸ Pause</button>
+            <button id="btn-nbody-reset">Reset</button>
+            <label for="nbody-count">Bodies</label>
+            <select id="nbody-count">
+                <option value="4096">4,096</option>
+                <option value="16384" selected>16,384</option>
+                <option value="32768">32,768</option>
+                <option value="65536">65,536</option>
+                <option value="131072">131,072</option>
+                <option value="262144">262,144</option>
+            </select>
+            <label for="nbody-mode">Mode</label>
+            <select id="nbody-mode">
+                <option value="bh" selected>Barnes-Hut</option>
+                <option value="brute">Brute force (≤ 32,768)</option>
+            </select>
+            <label for="nbody-color">Color</label>
+            <select id="nbody-color">
+                <option value="speed" selected>By speed</option>
+                <option value="origin">By origin</option>
+            </select>
+            <label for="nbody-trails">Trails</label>
+            <input type="checkbox" id="nbody-trails">
+        </div>
+        <div class="controls">
+            <label for="nbody-theta">θ</label>
+            <input type="range" id="nbody-theta" min="0.3" max="1" step="0.05" value="0.5">
+            <span id="nbody-theta-value">0.50</span>
+            <label for="nbody-softening">Softening</label>
+            <input type="range" id="nbody-softening" min="0.005" max="0.2" step="0.005" value="0.05">
+            <span id="nbody-softening-value">0.050</span>
+            <label for="nbody-dt">Time step</label>
+            <input type="range" id="nbody-dt" min="0.001" max="0.02" step="0.001" value="0.01">
+            <span id="nbody-dt-value">0.010</span>
+            <label for="nbody-speed">Speed</label>
+            <input type="range" id="nbody-speed" min="1" max="4" step="1" value="2">
+            <span id="nbody-speed-value">2×</span>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Presets</span>
+            <button class="nbody-preset" data-preset="spiral">Spiral galaxy</button>
+            <button class="nbody-preset" data-preset="collision">Galaxy collision</button>
+            <button class="nbody-preset" data-preset="plummer">Plummer sphere</button>
+            <button class="nbody-preset" data-preset="collapse">Cold collapse</button>
+        </div>
+        <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom. θ is the Barnes-Hut opening angle (smaller is more accurate and slower), softening ε smooths close encounters, Speed is leapfrog steps per frame. Changing θ, ε or the mode restarts the energy baseline; presets and the body count reset the simulation. Brute force is limited to 32,768 bodies.</p>
+        <canvas id="canvas-nbody" class="interactive" width="1024" height="768"></canvas>
+        <div id="output-nbody" class="output"></div>
+    </section>
+
+    <section class="example" id="convolution-reverb">
+        <h3><span class="num">24</span>Convolution Reverb</h3>
+        <p>A live stereo signal convolved on the GPU with an impulse response of up to 6 seconds: uniformly partitioned overlap-save FFT convolution, with the input spectra kept in a frequency-domain delay line and all partitions multiply-accumulated in one dispatch per block. Impulse responses are generated procedurally (or upload your own WAV). An A/B switch compares the result with the browser's ConvolverNode.</p>
+        <div class="controls">
+            <button id="btn-reverb-start" class="primary">▶ Start</button>
+            <button id="btn-reverb-stop">Stop</button>
+            <button id="btn-reverb-synth">Synth demo</button>
+            <button id="btn-reverb-mic">Microphone</button>
+            <button id="btn-reverb-file">Audio file…</button>
+            <input type="file" id="reverb-file" accept="audio/*" hidden>
+            <button id="btn-reverb-bypass">Bypass: off</button>
+            <button id="btn-reverb-ab">A/B: GPU</button>
+        </div>
+        <div class="controls">
+            <label for="reverb-decay">Decay (RT60)</label>
+            <input type="range" id="reverb-decay" min="0.2" max="5" step="0.1" value="2.2">
+            <span id="reverb-decay-value">2.2 s</span>
+            <label for="reverb-predelay">Pre-delay</label>
+            <input type="range" id="reverb-predelay" min="0" max="100" step="1" value="22">
+            <span id="reverb-predelay-value">22 ms</span>
+            <label for="reverb-mix">Mix</label>
+            <input type="range" id="reverb-mix" min="0" max="100" step="1" value="35">
+            <span id="reverb-mix-value">35% wet</span>
+            <label for="reverb-gain">Output</label>
+            <input type="range" id="reverb-gain" min="0" max="0.5" step="0.01" value="0.3">
+            <span id="reverb-gain-value">-10.5 dB</span>
+            <label for="reverb-block">Block</label>
+            <select id="reverb-block">
+                <option value="1024" selected>1024</option>
+                <option value="2048">2048</option>
+            </select>
+            <label for="reverb-depth">GPU slack</label>
+            <select id="reverb-depth">
+                <option value="1">1 block</option>
+                <option value="2" selected>2 blocks</option>
+                <option value="3">3 blocks</option>
+                <option value="5">5 blocks</option>
+            </select>
+        </div>
+        <div class="seed-buttons">
+            <span class="label">Space</span>
+            <button class="reverb-space" data-space="room">Small room</button>
+            <button class="reverb-space" data-space="hall">Concert hall</button>
+            <button class="reverb-space" data-space="cathedral">Cathedral</button>
+            <button class="reverb-space" data-space="plate">Plate</button>
+            <button class="reverb-space" data-space="reverse">Reverse</button>
+            <button id="btn-reverb-ir">Load IR…</button>
+            <input type="file" id="reverb-ir-file" accept="audio/*,.wav" hidden>
+        </div>
+        <p class="hint"><strong>Audio:</strong> nothing plays until you press Start or a source; the output is capped at 0.5 with a limiter and soft clip. Use headphones with the microphone (speakers feed back into a reverb). Latency is one block for the partition plus the GPU slack; the dry signal and the ConvolverNode are delayed by the same amount, so A/B compares like with like. <strong>Canvas:</strong> top left the IR waveform (left channel above, right below), bottom left its spectrogram (50 Hz-16 kHz, 0 to -90 dB) with the Schroeder energy decay (white), the -60 dB line and the measured RT60 (green); top right the latest input block (blue) and GPU wet block (orange); bottom right peak meters for input L/R, wet L/R and the final output (-60 to 0 dBFS).</p>
+        <canvas id="canvas-reverb" width="1024" height="512"></canvas>
+        <div id="output-reverb" class="output"></div>
+    </section>
+
     <h2 class="group-title">WebAssembly</h2>
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">23</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">25</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
