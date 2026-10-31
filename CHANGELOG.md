@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-31
+
 ### Added
 - Every example exports `wgslModules()`, the exact WGSL it passes to `createShaderModule`, and
   `tools/validate-wgsl.mjs` (`npm run validate:wgsl`) validates all 63 modules with naga. A new
@@ -232,7 +234,8 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.1.0...v0.2.0
