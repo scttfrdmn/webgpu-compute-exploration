@@ -68,6 +68,19 @@
             border: 1px solid #555;
             margin-top: 10px;
         }
+        .image-pair {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        .image-pair figure {
+            margin: 0;
+        }
+        .image-pair figcaption {
+            margin-top: 10px;
+            color: #aaa;
+            font-size: 0.9em;
+        }
         canvas.interactive {
             cursor: crosshair;
         }
@@ -138,8 +151,16 @@
         <h2>3. Image Processing: Gaussian Blur</h2>
         <p>Applies a Gaussian blur filter to an image using compute shaders.</p>
         <button id="btn-image-blur">Run Image Blur</button>
-        <canvas id="canvas-original" width="512" height="512"></canvas>
-        <canvas id="canvas-blurred" width="512" height="512"></canvas>
+        <div class="image-pair">
+            <figure>
+                <figcaption>Original</figcaption>
+                <canvas id="canvas-original" width="512" height="512"></canvas>
+            </figure>
+            <figure>
+                <figcaption>Blurred (GPU)</figcaption>
+                <canvas id="canvas-blurred" width="512" height="512"></canvas>
+            </figure>
+        </div>
         <div id="output-image-blur" class="output"></div>
     </div>
 

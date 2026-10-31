@@ -181,6 +181,105 @@ fn fs_main(
 }
 `;
 
+// Simulation box: faint glass faces plus glowing edges drawn as screen-space quads
+// (WebGPU lines are always 1px wide, so edges are expanded to camera-facing strips)
+const boxShader = `
+struct Uniforms {
+    viewProj: mat4x4<f32>,
+}
+
+struct BoxParams {
+    halfSize: f32,
+    edgeHalfWidth: f32, // in pixels
+    viewport: vec2<f32>,
+}
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var<uniform> box: BoxParams;
+
+fn corner(i: u32) -> vec3<f32> {
+    let sign = vec3<f32>(
+        select(-1.0, 1.0, (i & 1u) != 0u),
+        select(-1.0, 1.0, (i & 2u) != 0u),
+        select(-1.0, 1.0, (i & 4u) != 0u)
+    );
+    return sign * box.halfSize;
+}
+
+// Corner index pairs for the 12 edges (corner bit 0 = +x, bit 1 = +y, bit 2 = +z)
+const EDGES = array<vec2<u32>, 12>(
+    vec2<u32>(0u, 1u), vec2<u32>(2u, 3u), vec2<u32>(4u, 5u), vec2<u32>(6u, 7u),
+    vec2<u32>(0u, 2u), vec2<u32>(1u, 3u), vec2<u32>(4u, 6u), vec2<u32>(5u, 7u),
+    vec2<u32>(0u, 4u), vec2<u32>(1u, 5u), vec2<u32>(2u, 6u), vec2<u32>(3u, 7u)
+);
+
+// Corner indices for the 12 face triangles
+const FACES = array<u32, 36>(
+    0u, 1u, 3u, 0u, 3u, 2u,  4u, 6u, 7u, 4u, 7u, 5u,
+    0u, 4u, 5u, 0u, 5u, 1u,  2u, 3u, 7u, 2u, 7u, 6u,
+    0u, 2u, 6u, 0u, 6u, 4u,  1u, 5u, 7u, 1u, 7u, 3u
+);
+
+@vertex
+fn vs_face(@builtin(vertex_index) vertexIdx: u32) -> @builtin(position) vec4<f32> {
+    return uniforms.viewProj * vec4<f32>(corner(FACES[vertexIdx]), 1.0);
+}
+
+@fragment
+fn fs_face() -> @location(0) vec4<f32> {
+    return vec4<f32>(0.45, 0.65, 1.0, 0.035);
+}
+
+struct EdgeOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) side: f32,
+}
+
+@vertex
+fn vs_edge(
+    @builtin(vertex_index) vertexIdx: u32,
+    @builtin(instance_index) edgeIdx: u32
+) -> EdgeOutput {
+    let edge = EDGES[edgeIdx];
+    let a = uniforms.viewProj * vec4<f32>(corner(edge.x), 1.0);
+    let b = uniforms.viewProj * vec4<f32>(corner(edge.y), 1.0);
+
+    // Two triangles: (end, side) for each of the 6 vertices
+    let ends = array<f32, 6>(0.0, 1.0, 0.0, 0.0, 1.0, 1.0);
+    let sides = array<f32, 6>(-1.0, -1.0, 1.0, 1.0, -1.0, 1.0);
+    let end = ends[vertexIdx];
+    let side = sides[vertexIdx];
+
+    var out: EdgeOutput;
+    out.side = side;
+    if (a.w <= 0.0 || b.w <= 0.0) {
+        // Edge crosses behind the camera; drop it
+        out.position = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        return out;
+    }
+
+    // Offset perpendicular to the edge's on-screen direction by a fixed pixel width
+    let screenA = a.xy / a.w * box.viewport;
+    let screenB = b.xy / b.w * box.viewport;
+    let dir = normalize(screenB - screenA);
+    let normal = vec2<f32>(-dir.y, dir.x);
+    let clip = mix(a, b, end);
+    let offset = normal * side * box.edgeHalfWidth * 2.0 / box.viewport * clip.w;
+    out.position = clip + vec4<f32>(offset, 0.0, 0.0);
+    return out;
+}
+
+@fragment
+fn fs_edge(@location(0) side: f32) -> @location(0) vec4<f32> {
+    // Bright core with a soft glow falloff across the strip
+    let d = abs(side);
+    let glow = pow(1.0 - d, 2.0);
+    let core = 1.0 - smoothstep(0.0, 0.35, d);
+    let color = mix(vec3<f32>(0.35, 0.6, 1.0), vec3<f32>(0.85, 0.95, 1.0), core);
+    return vec4<f32>(color, glow * 0.85);
+}
+`;
+
 // Simple matrix math utilities
 class Mat4 {
     static perspective(fov, aspect, near, far) {
@@ -247,7 +346,7 @@ function dot(a, b) {
 
 class Camera {
     constructor() {
-        this.distance = 40;
+        this.distance = 75; // frames the whole 30-unit box
         this.rotation = { x: 0.5, y: 0.5 };
         this.target = [0, 0, 0];
     }
@@ -330,7 +429,7 @@ class MolecularDynamics {
         this.canvas.addEventListener('wheel', (e) => {
             e.preventDefault();
             this.camera.distance *= (1 + e.deltaY * 0.001);
-            this.camera.distance = Math.max(10, Math.min(100, this.camera.distance));
+            this.camera.distance = Math.max(30, Math.min(150, this.camera.distance)); // stay outside the box
         });
     }
 
@@ -471,6 +570,8 @@ class MolecularDynamics {
             }
         });
 
+        this.setupBoxPipelines();
+
         this.depthTexture = this.device.createTexture({
             size: [this.canvas.width, this.canvas.height],
             format: 'depth24plus',
@@ -493,6 +594,73 @@ class MolecularDynamics {
                 ]
             })
         ];
+    }
+
+    setupBoxPipelines() {
+        const module = this.device.createShaderModule({ code: boxShader });
+
+        this.boxParamsBuffer = this.device.createBuffer({
+            size: 16,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
+        });
+        this.device.queue.writeBuffer(this.boxParamsBuffer, 0, new Float32Array([
+            this.boxSize / 2, 3.0, this.canvas.width, this.canvas.height
+        ]));
+
+        const layout = this.device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } }
+            ]
+        });
+        this.boxBindGroup = this.device.createBindGroup({
+            layout,
+            entries: [
+                { binding: 0, resource: { buffer: this.uniformBuffer } },
+                { binding: 1, resource: { buffer: this.boxParamsBuffer } }
+            ]
+        });
+
+        // Transparent passes: depth-tested against the atoms, but never write depth
+        const depthStencil = { depthWriteEnabled: false, depthCompare: 'less', format: 'depth24plus' };
+        const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [layout] });
+
+        this.boxFacePipeline = this.device.createRenderPipeline({
+            layout: pipelineLayout,
+            vertex: { module, entryPoint: 'vs_face' },
+            fragment: {
+                module,
+                entryPoint: 'fs_face',
+                targets: [{
+                    format: 'bgra8unorm',
+                    blend: {
+                        color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+                        alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' }
+                    }
+                }]
+            },
+            primitive: { topology: 'triangle-list', cullMode: 'none' },
+            depthStencil
+        });
+
+        this.boxEdgePipeline = this.device.createRenderPipeline({
+            layout: pipelineLayout,
+            vertex: { module, entryPoint: 'vs_edge' },
+            fragment: {
+                module,
+                entryPoint: 'fs_edge',
+                targets: [{
+                    format: 'bgra8unorm',
+                    // Additive blending for a glow
+                    blend: {
+                        color: { srcFactor: 'src-alpha', dstFactor: 'one' },
+                        alpha: { srcFactor: 'zero', dstFactor: 'one' }
+                    }
+                }]
+            },
+            primitive: { topology: 'triangle-list', cullMode: 'none' },
+            depthStencil
+        });
     }
 
     updateParams() {
@@ -552,6 +720,13 @@ class MolecularDynamics {
         renderPass.setPipeline(this.renderPipeline);
         renderPass.setBindGroup(0, this.renderBindGroups[this.currentBuffer]);
         renderPass.draw(60, this.numAtoms); // 20 icosahedron faces per atom, numAtoms instances
+
+        // Box after the opaque atoms: faint faces, then glowing edges (12 instances of 6 vertices)
+        renderPass.setBindGroup(0, this.boxBindGroup);
+        renderPass.setPipeline(this.boxFacePipeline);
+        renderPass.draw(36);
+        renderPass.setPipeline(this.boxEdgePipeline);
+        renderPass.draw(6, 12);
         renderPass.end();
 
         this.device.queue.submit([commandEncoder.finish()]);
@@ -589,6 +764,7 @@ class MolecularDynamics {
         this.atomBuffers.forEach(b => b.destroy());
         this.paramsBuffer.destroy();
         this.uniformBuffer.destroy();
+        this.boxParamsBuffer.destroy();
         this.depthTexture.destroy();
     }
 }
