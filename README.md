@@ -4,7 +4,7 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Twenty-three interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, and an MNIST CNN that is trained and run entirely in compute shaders. A Rust/WebAssembly example shows WASM coordinating GPU work.
+Twenty-five interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, and an MNIST CNN that is trained and run entirely in compute shaders. A Rust/WebAssembly example shows WASM coordinating GPU work.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
@@ -212,7 +212,7 @@ Draw a digit and classify it on the GPU with the same network.
 - **Random test digit**: one of the 2,000 test images with its true label and whether the prediction is right
 - **Data license**: the cached weights are derived from MNIST and are CC BY-SA 3.0, like the data
 
-### 23. WASM Integration (Mandelbrot Set)
+### 25. WASM Integration (Mandelbrot Set)
 Demonstrates Rust/WASM coordinating WebGPU compute shaders.
 - **Architecture**: Rust handles configuration, WebGPU performs computation
 - **Rendering**: 800×600 fractal with HSV color mapping
@@ -301,7 +301,7 @@ webgpu/
 │   │   ├── mnist-model.js             # Shared CNN for 21/22: WGSL kernels, GPU driver, weights format
 │   │   ├── mnist-train.js             # Example 21: Train a CNN on MNIST in compute shaders
 │   │   ├── mnist-recognize.js         # Example 22: Recognize hand-drawn digits
-│   │   └── wasm-mandelbrot.js         # Example 23: WASM integration
+│   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── tools/
 │   └── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin

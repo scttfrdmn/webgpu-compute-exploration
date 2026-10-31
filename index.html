@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebGPU Compute Shader Examples — WGSL GPGPU demos in the browser</title>
-    <meta name="description" content="Twenty-three interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, cloth simulation, a Monte Carlo path tracer, an MNIST CNN trained and run in the browser, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
+    <meta name="description" content="Twenty-five interactive WebGPU compute shader examples in WGSL: SPH fluid simulation, molecular dynamics, boids flocking, Game of Life, Gray-Scott reaction-diffusion, wave equation, falling sand, Perlin/simplex noise, GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving, cloth simulation, a Monte Carlo path tracer, an MNIST CNN trained and run in the browser, ray-marched 3D fractals, 3D diffusion-limited aggregation, Gaussian blur, matrix multiplication, and Rust/WebAssembly integration. Runs in your browser, no install.">
     <meta name="author" content="Scott Friedman">
     <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/">
     <meta property="og:type" content="website">
@@ -192,7 +192,7 @@
     <header class="hero">
         <div class="inner">
             <h1>WebGPU <span>Compute</span> Exploration</h1>
-            <p>Twenty-three interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
+            <p>Twenty-five interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
             set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
             <div class="hero-links">
@@ -227,7 +227,7 @@
             <li><a href="#path-tracer">20 Path tracing</a></li>
             <li><a href="#mnist-train">21 Train</a></li>
             <li><a href="#mnist-recognize">22 Digits</a></li>
-            <li><a href="#wasm-mandelbrot">23 WASM</a></li>
+            <li><a href="#wasm-mandelbrot">25 WASM</a></li>
         </ul>
     </nav>
 
@@ -945,7 +945,7 @@
 
 
     <section class="example" id="wasm-mandelbrot">
-        <h3><span class="num">23</span>WASM Integration: Mandelbrot Set</h3>
+        <h3><span class="num">25</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
