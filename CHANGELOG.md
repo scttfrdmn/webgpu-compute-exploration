@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Every example exports `wgslModules()`, the exact WGSL it passes to `createShaderModule`, and
+  `tools/validate-wgsl.mjs` (`npm run validate:wgsl`) validates all 63 modules with naga. A new
+  `wgsl` CI job runs it on every push and pull request, and fails if an example creates shader
+  modules without exporting them.
+
 ### Changed
 - package.json description and keywords, the CITATION abstract, and the GitHub
   repository description and topics now cover all 25 examples.

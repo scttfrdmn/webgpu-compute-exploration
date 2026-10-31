@@ -223,3 +223,7 @@ calculations on the GPU.`;
         throw error;
     }
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() { return [{ name: 'compute', code: shaderCode }]; }

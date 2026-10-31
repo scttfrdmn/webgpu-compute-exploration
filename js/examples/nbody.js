@@ -2238,3 +2238,23 @@ export async function initNBody(gpuDevice) {
     updateOutput();
     return simulation;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'integrate', code: integrateShader },
+        { name: 'brute', code: bruteShader },
+        { name: 'bounds', code: boundsShader },
+        { name: 'morton', code: mortonShader },
+        { name: 'radix', code: radixShader },
+        { name: 'initNodes', code: initNodesShader },
+        { name: 'build', code: buildShader },
+        { name: 'bottomUp', code: bottomUpShader },
+        { name: 'force', code: forceShader },
+        { name: 'energy', code: energyShader },
+        { name: 'trail', code: trailShader },
+        { name: 'render', code: renderShader },
+        { name: 'tonemap', code: tonemapShader },
+    ];
+}

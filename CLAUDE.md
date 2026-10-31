@@ -7,10 +7,12 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 - Serve: `python3 -m http.server 8000` (or `npm run dev`), open http://localhost:8000 in a WebGPU browser.
 - WASM: `./wasm/build.sh` → `js/wasm-pkg/` (gitignored). Needs a `rustc` with `wasm32-unknown-unknown`;
   on this machine Homebrew's `rustc` shadows rustup's, so run with `PATH=~/.cargo/bin:$PATH`.
-- Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done` and the WASM build.
+- Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done`, the WASM build, and
+  `npm run validate:wgsl` (set `NAGA=/path/to/naga` if it is not on PATH).
 - There are no automated tests; examples must be verified in a browser.
-- Validate WGSL without a GPU using naga (`cargo install naga-cli`): extract the shader strings and run
-  `naga file.wgsl`. It catches the same errors Chrome's compiler reports.
+- WGSL is validated without a GPU by `tools/validate-wgsl.mjs`: it imports each example's `wgslModules()` and runs
+  `naga` (naga-cli 30.0.1, pinned in `.github/workflows/ci.yml`) on every module. It catches the same errors
+  Chrome's compiler reports. Examples must not touch browser globals at import time.
 - 3D examples use column-major matrices (`Mat4` in molecular-dynamics.js / dla-3d.js) with WebGPU's [0, 1] depth range.
 - Simulation parameters can be checked without a GPU by porting the shader math to a small Node script (done for SPH,
   DLA and the ray marcher).
@@ -38,7 +40,8 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 1. Add `js/examples/<name>.js`, a `<section class="example">` (plus a `nav.toc` link) in `index.html`, and register
    its canvas id in `initInteractiveExamplesOnVisible` in `js/main.js` (or wire a button for one-shot examples).
 2. Target 60 FPS (30 minimum for heavy rendering); offer size/quality controls, presets, and a performance readout.
-3. Comment the shader with the algorithm.
+3. Comment the shader with the algorithm. Export `wgslModules()` returning `[{ name, code }]` with every module
+   passed to `createShaderModule` (each variant, if code is built at runtime); CI fails examples without it.
 4. Add it to the README feature list and project structure, and to `CHANGELOG.md` under Unreleased.
 
 ## Project tracking

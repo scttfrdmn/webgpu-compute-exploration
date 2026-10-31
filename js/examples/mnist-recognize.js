@@ -523,3 +523,7 @@ ${prediction}${error ? `\n<span class="error">${error}</span>` : ''}
     }
     return recognizer;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() { return [{ name: 'maps', code: mapsShader }]; }

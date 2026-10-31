@@ -287,6 +287,17 @@ python3 -m http.server 8000
 
 5. Open http://localhost:8000
 
+### Validation
+
+Every example exports `wgslModules()`, the WGSL modules it passes to `createShaderModule`. CI validates
+each one offline with [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) (no GPU or browser needed).
+To run the same check locally:
+
+```bash
+cargo install naga-cli --version 30.0.1 --locked
+npm run validate:wgsl   # or: NAGA=/path/to/naga node tools/validate-wgsl.mjs
+```
+
 ## Project Structure
 
 ```
@@ -329,7 +340,8 @@ webgpu/
 │   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── tools/
-│   └── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
+│   ├── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
+│   └── validate-wgsl.mjs              # Validates every example's WGSL modules with naga (CI)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
 │   ├── build.sh                       # WASM build script
@@ -339,7 +351,7 @@ webgpu/
 ├── CITATION.cff
 ├── CLAUDE.md                          # Notes for AI coding assistants
 ├── LICENSE
-├── package.json                       # npm scripts: dev server, WASM build
+├── package.json                       # npm scripts: dev server, WASM build, WGSL validation
 └── README.md
 ```
 

@@ -969,3 +969,14 @@ ${describeCheck()}
     showLayout();
     return voronoi;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() {
+    return [
+        { name: 'seed', code: seedShader },
+        { name: 'flood', code: floodShader },
+        { name: 'exact', code: exactShader },
+        { name: 'render', code: renderShader },
+    ];
+}

@@ -131,3 +131,7 @@ export async function runVectorAddition(gpuDevice) {
 • Elements per ms: ${(size / (endTime - startTime)).toFixed(0).toLocaleString()}
 • Throughput: ${((size * 4) / (endTime - startTime) / 1024).toFixed(2)} MB/ms`;
 }
+
+// Every WGSL module this example compiles, exactly as passed to createShaderModule.
+// tools/validate-wgsl.mjs validates these in CI.
+export function wgslModules() { return [{ name: 'compute', code: shaderCode }]; }

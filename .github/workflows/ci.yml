@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: 22
       - name: Syntax-check JavaScript
-        run: for f in $(git ls-files '*.js'); do node --check "$f"; done
+        run: for f in $(git ls-files '*.js' '*.mjs'); do node --check "$f"; done
 
   wasm:
     runs-on: ubuntu-latest
@@ -26,3 +26,24 @@ jobs:
           tool: wasm-pack
       - name: Build WASM module
         run: ./wasm/build.sh
+
+  wgsl:
+    runs-on: ubuntu-latest
+    env:
+      NAGA_VERSION: 30.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Cache naga-cli
+        id: naga-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/naga
+          key: naga-cli-${{ env.NAGA_VERSION }}-${{ runner.os }}
+      - name: Install naga-cli
+        if: steps.naga-cache.outputs.cache-hit != 'true'
+        run: cargo install naga-cli --version "$NAGA_VERSION" --locked
+      - name: Validate WGSL modules
+        run: node tools/validate-wgsl.mjs
