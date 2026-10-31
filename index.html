@@ -58,6 +58,19 @@
             border-radius: 999px; color: var(--text); font-size: 0.92rem;
         }
         .hero-links a:hover { border-color: var(--accent); color: var(--accent); }
+        .hero-links button { border-radius: 999px; }
+
+        /* Opt-in device report: built on request, copied to the clipboard, never sent automatically */
+        .device-report { margin-top: 12px; max-width: 760px; }
+        .device-report .hint { margin: 0 0 6px; }
+        .device-report-feedback { color: var(--accent-2); font-size: 0.9rem; }
+        .device-report details summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; }
+        .device-report details summary:hover { color: var(--text); }
+        .device-report pre {
+            margin: 8px 0 0; max-height: 320px; overflow: auto; white-space: pre-wrap;
+            background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem;
+        }
 
         .status {
             display: inline-flex; align-items: center; gap: 8px;
@@ -199,6 +212,19 @@
                 <div id="gpu-status" class="status">Checking WebGPU support…</div>
                 <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">Source on GitHub</a>
                 <a href="https://caniuse.com/webgpu">Browser support</a>
+                <button id="btn-device-report" type="button">Copy device report</button>
+                <a href="https://github.com/scttfrdmn/webgpu-compute-exploration/issues/new?template=device-report.md"
+                   target="_blank" rel="noopener">Share it in a new issue</a>
+                <span id="device-report-feedback" class="device-report-feedback" aria-live="polite"></span>
+            </div>
+            <div class="device-report">
+                <p class="hint">The device report lists your browser, GPU adapter, features and limits, and what the
+                examples you tried measured this session. It is only copied to your clipboard — nothing is sent
+                anywhere unless you paste it yourself.</p>
+                <details id="device-report-details">
+                    <summary>Preview the device report</summary>
+                    <pre id="device-report-preview">Open to build the report.</pre>
+                </details>
             </div>
         </div>
     </header>

@@ -31,6 +31,9 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 - `js/main.js` — gets the GPU device, wires the one-shot buttons, and creates each interactive example when its
   canvas nears the viewport (IntersectionObserver). Nothing simulates until Start; ray marching runs only while visible.
 - `js/webgpu-utils.js` — `getGPUDevice`, `createBuffer`, `readBuffer` helpers.
+- `js/device-report.js` — `buildDeviceReport` for the header's opt-in "Copy device report" button. It reads only a
+  whitelist of plain number/boolean fields (`fps`, `running`, `steps`, `numParticles`, …) from example instances and
+  never calls their methods; expose new measurements as such fields to have them reported.
 - `data/mnist/` — MNIST subset + cached weights for examples 21/22 (CC BY-SA 3.0, not MIT); `tools/train-mnist.mjs`
   regenerates `weights.bin` on the CPU with the same math as the GPU kernels in `js/examples/mnist-model.js`.
 - `js/examples/<name>.js` — one self-contained example per file; WGSL shaders are inline template strings.

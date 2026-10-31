@@ -251,6 +251,17 @@ WebGPU ships by default in (as of late 2026):
 
 Check support at: https://caniuse.com/webgpu
 
+### Sharing a device report
+
+To help track which examples work where, press **Copy device report** at the top of the page after trying
+some examples. It copies a Markdown report to your clipboard: browser and user agent, the GPU adapter's
+info, features and limits (next to the default device limits the page uses), the preferred canvas format and
+WGSL language features, the last FPS and a few counters from each interactive example you opened, the first
+lines of any one-shot results, and WebGPU errors or device loss seen this session. You can preview the exact
+text first. Nothing is sent anywhere; paste it into a
+[device report issue](https://github.com/scttfrdmn/webgpu-compute-exploration/issues/new?template=device-report.md)
+if you want to share it.
+
 ## Setup
 
 ### Quick Start (JavaScript Only)
@@ -343,7 +354,9 @@ Tests marked `todo` record known bugs the suite found. Each one fails until its 
 
 ```
 webgpu/
-├── .github/workflows/                 # CI and GitHub Pages deployment
+├── .github/
+│   ├── workflows/                     # CI and GitHub Pages deployment
+│   └── ISSUE_TEMPLATE/device-report.md # Issue template for shared device reports
 ├── assets/
 │   └── social-preview.png             # Preview image (README, link previews)
 ├── data/
@@ -353,6 +366,7 @@ webgpu/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
 │   ├── webgpu-utils.js                # WebGPU helper functions
 │   ├── gpu-timer.js                   # GPU pass timing with timestamp queries
+│   ├── device-report.js               # Builds the opt-in Markdown device report
 │   ├── examples/
 │   │   ├── vector-addition.js         # Example 1: Vector addition
 │   │   ├── matrix-multiplication.js   # Example 2: Matrix multiply
