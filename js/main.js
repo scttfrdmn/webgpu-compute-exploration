@@ -25,7 +25,7 @@ async function init() {
             return;
         }
 
-        gpuDevice = await getGPUDevice();
+        gpuDevice = await getGPUDevice(handleDeviceLost);
         statusDiv.className = 'status supported';
         const info = gpuDevice.adapter.info || {};
         const adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ') || info.description;
@@ -129,6 +129,26 @@ function initInteractiveExamplesOnVisible() {
 
     for (const id of Object.keys(examples)) {
         observer.observe(document.getElementById(id));
+    }
+}
+
+// Examples hold references to the old device and have already bound their DOM listeners, so
+// rebuilding them in place would duplicate handlers. Stop interaction and offer a clean reload.
+function handleDeviceLost(info) {
+    const statusDiv = document.getElementById('gpu-status');
+    statusDiv.className = 'status not-supported';
+    statusDiv.textContent = info.message ? `GPU device lost: ${info.message}` : 'GPU device lost';
+
+    document.querySelectorAll('.example button, .example input, .example select')
+        .forEach(control => control.disabled = true);
+
+    if (!document.getElementById('btn-reload')) {
+        const reload = document.createElement('button');
+        reload.id = 'btn-reload';
+        reload.className = 'primary';
+        reload.textContent = 'Reload page';
+        reload.addEventListener('click', () => location.reload());
+        statusDiv.after(reload);
     }
 }
 
