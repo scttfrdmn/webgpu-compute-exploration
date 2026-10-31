@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
 ### Added
 - The WASM Mandelbrot example is now number 19.
 - Example 14, FFT audio visualizer: Web Audio samples from a built-in synth
@@ -125,6 +127,7 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/releases/tag/v0.1.0
