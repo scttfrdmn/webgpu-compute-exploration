@@ -81,12 +81,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             continue;
         }
 
-        var r = atomsIn[j].position - atom.position;
+        // r points from j to i, so a positive force_mag (repulsive core) pushes i away from j
+        var r = atom.position - atomsIn[j].position;
         r = minImage(r, params.boxSize);
         force += computeForce(r);
     }
 
-    // Velocity Verlet integration
+    // Semi-implicit (symplectic) Euler integration
     let acceleration = force;
     var newVel = atom.velocity + acceleration * params.deltaTime;
     var newPos = atom.position + newVel * params.deltaTime;
@@ -839,7 +840,7 @@ export async function initMolecularDynamics(gpuDevice) {
 
 <span class="info">Physics:</span>
 • Force field: Lennard-Jones potential
-• Integration: Velocity Verlet
+• Integration: semi-implicit Euler
 • Boundary: Periodic (wrapping)
 • Pair interactions: ${interactions.toLocaleString()}
 • Timestep: 0.016 units

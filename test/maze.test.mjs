@@ -87,7 +87,7 @@ function solveReplica(cells, w, h, start, goal) {
 }
 
 // Width 1 is excluded: carve() tests b === a + 1 before b === a + w, so with w = 1 a vertical
-// passage is stored as E/W bits (see the todo test at the end). Every MAZE_SIZES entry has w >= 63.
+// passage was stored as E/W bits (fixed in #65; see the test at the end). Every MAZE_SIZES entry has w >= 63.
 const SIZES = [[1, 1], [9, 1], [2, 2], [2, 9], [17, 11], [63, 47]];
 
 test('every generator builds a perfect maze (spanning tree) for several sizes and seeds', (t) => {
@@ -241,9 +241,7 @@ test('MAZE_SIZES never uses width 1 (where carve() is ambiguous)', () => {
     for (const { w, h } of Object.values(maze.MAZE_SIZES)) assert.ok(w >= 2 && h >= 1);
 });
 
-test('width-1 mazes encode vertical passages as N/S', {
-    todo: 'carve() checks b === a + 1 before b === a + w, so w = 1 mazes get E/W bits; unreachable from the UI (MAZE_SIZES)',
-}, () => {
+test('width-1 mazes encode vertical passages as N/S', () => {
     const { cells } = generateMaze('dfs', 1, 9, 0, 1);
     checkWalls(cells, 1, 9);
 });

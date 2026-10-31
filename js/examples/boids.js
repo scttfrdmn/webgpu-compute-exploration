@@ -29,6 +29,15 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> boidsOut: array<Boid>;
 @group(0) @binding(2) var<uniform> params: Params;
 
+// normalize() of a zero vector is NaN; return zero instead (e.g. neighbors' velocities cancel)
+fn safeNormalize(v: vec2<f32>) -> vec2<f32> {
+    let len = length(v);
+    if (len < 1e-6) {
+        return vec2<f32>(0.0);
+    }
+    return v / len;
+}
+
 fn limit(v: vec2<f32>, maxLen: f32) -> vec2<f32> {
     let len = length(v);
     if (len > maxLen) {
@@ -55,7 +64,7 @@ fn separation(boid: Boid) -> vec2<f32> {
     if (count > 0u) {
         steering /= f32(count);
         if (length(steering) > 0.0) {
-            steering = normalize(steering) * params.maxSpeed - boid.velocity;
+            steering = safeNormalize(steering) * params.maxSpeed - boid.velocity;
             steering = limit(steering, params.maxForce);
         }
     }
@@ -79,7 +88,7 @@ fn alignment(boid: Boid) -> vec2<f32> {
 
     if (count > 0u) {
         avgVel /= f32(count);
-        avgVel = normalize(avgVel) * params.maxSpeed;
+        avgVel = safeNormalize(avgVel) * params.maxSpeed;
         var steering = avgVel - boid.velocity;
         steering = limit(steering, params.maxForce);
         return steering;
@@ -105,7 +114,7 @@ fn cohesion(boid: Boid) -> vec2<f32> {
     if (count > 0u) {
         avgPos /= f32(count);
         var desired = avgPos - boid.position;
-        desired = normalize(desired) * params.maxSpeed;
+        desired = safeNormalize(desired) * params.maxSpeed;
         var steering = desired - boid.velocity;
         steering = limit(steering, params.maxForce);
         return steering;
@@ -165,7 +174,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             if (idx == 0u) {
                 // First boid is predator
                 let center = (params.boundsMin + params.boundsMax) * 0.5;
-                let toCenter = normalize(center - boid.position) * params.maxSpeed * 0.5;
+                let toCenter = safeNormalize(center - boid.position) * params.maxSpeed * 0.5;
                 acceleration = toCenter;
             } else {
                 // Others flee from predator
@@ -180,7 +189,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         case 2u: { // Scatter
             acceleration *= 0.1;
             let center = (params.boundsMin + params.boundsMax) * 0.5;
-            let away = normalize(boid.position - center);
+            let away = safeNormalize(boid.position - center);
             acceleration += away * params.maxForce * 2.0;
         }
         case 3u: { // Vortex

@@ -8,10 +8,9 @@
 // References: −dU/dr of U(r) = 4ε[(σ/r)¹² − (σ/r)⁶] by central finite differences, nearest image by
 // brute force over the 27 periodic images, Newton's third law.
 //
-// Finding (test marked todo, does not fail the suite): computeForce returns force_mag · r with
-// r = x_j − x_i, i.e. the force on atom i points *toward* j when force_mag > 0 (r < 2^{1/6}σ).
-// The physical LJ force is F_i = 24ε(2(σ/r)¹² − (σ/r)⁶)/r² · (x_i − x_j): the shader's sign is
-// inverted (short-range attraction, long-range repulsion). The magnitude is right.
+// History: this suite found that computeForce had its sign inverted (r = x_j − x_i, so atoms attracted
+// at short range). Fixed in #64: the shader now uses r = x_i − x_j, matching the physical LJ force
+// F_i = 24ε(2(σ/r)¹² − (σ/r)⁶)/r² · (x_i − x_j).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +24,7 @@ const f32 = Math.fround;
 // ---- replica of the shader ----
 const EPSILON = 1.0, SIGMA = 1.0, CUTOFF_SQ = 6.25;
 
-// computeForce(r), r = x_j − x_i, exactly as in the shader (float64 arithmetic)
+// computeForce(r), r = x_i − x_j, exactly as in the shader (float64 arithmetic)
 function computeForce(r) {
     const d2 = r[0] * r[0] + r[1] * r[1] + r[2] * r[2];
     if (d2 > CUTOFF_SQ || d2 < 0.01) return [0, 0, 0];
@@ -50,7 +49,7 @@ function stepReplica(pos, vel, { dt, L, T, thermostat = true }) {
         const F = [0, 0, 0];
         for (let j = 0; j < n; j++) {
             if (j === i) continue;
-            const r = minImage([0, 1, 2].map(c => pos[j][c] - pos[i][c]), L);
+            const r = minImage([0, 1, 2].map(c => pos[i][c] - pos[j][c]), L);
             const f = computeForce(r);
             F[0] += f[0]; F[1] += f[1]; F[2] += f[2];
         }
@@ -77,7 +76,7 @@ test('LJ force magnitude equals |dU/dr| (finite differences), cutoffs at r = 2.5
         const f = computeForce(dir.map(c => c * r));
         const h = 1e-6 * r;
         const dUdr = (U(r + h) - U(r - h)) / (2 * h);
-        // shader convention: force on i along r = x_j − x_i is force_mag·r; physical F_i·r̂ = +dU/dr
+        // shader convention: force on i is force_mag·r with r = x_i − x_j, so F_i·r̂ = −dU/dr
         const along = f[0] * dir[0] + f[1] * dir[1] + f[2] * dir[2];
         const perp = Math.hypot(f[0] - along * dir[0], f[1] - along * dir[1], f[2] - along * dir[2]);
         maxRel = Math.max(maxRel, Math.abs(Math.abs(along) - Math.abs(dUdr)) / Math.max(Math.abs(dUdr), 1e-3));
@@ -93,12 +92,17 @@ test('LJ force magnitude equals |dU/dr| (finite differences), cutoffs at r = 2.5
     assert.notDeepEqual(computeForce([2.49, 0, 0]), [0, 0, 0]);
 });
 
+test('shader uses the same r = x_i − x_j convention as this replica', () => {
+    // Keeps the replica honest: if the shader's direction changes again, this fails.
+    const compute = wgslModules().map(m => m.code).join('\n');
+    assert.match(compute, /var r = atom\.position - atomsIn\[j\]\.position;/);
+});
+
 test('LJ force is repulsive inside r_min = 2^{1/6}σ and attractive outside',
-    { todo: 'shader computeForce sign is inverted (force on i points toward j at short range); see file header' },
     () => {
-        // atom i at the origin, atom j at +x: repulsion pushes i toward −x
-        assert.ok(computeForce([1.0, 0, 0])[0] < 0, 'r = 1.0σ: force on i must point away from j');
-        assert.ok(computeForce([1.5, 0, 0])[0] > 0, 'r = 1.5σ: force on i must point toward j');
+        // r = x_i − x_j = +x (atom i sits on the +x side of j): repulsion pushes i further toward +x
+        assert.ok(computeForce([1.0, 0, 0])[0] > 0, 'r = 1.0σ: force on i must point away from j');
+        assert.ok(computeForce([1.5, 0, 0])[0] < 0, 'r = 1.5σ: force on i must point toward j');
     });
 
 test('pair forces with minimum image obey Newton\'s third law (total force = 0)', (t) => {
@@ -110,7 +114,7 @@ test('pair forces with minimum image obey Newton\'s third law (total force = 0)'
     let maxF = 0;
     for (let i = 0; i < pos.length; i++) for (let j = 0; j < pos.length; j++) {
         if (i === j) continue;
-        const f = computeForce(minImage([0, 1, 2].map(c => pos[j][c] - pos[i][c]), L));
+        const f = computeForce(minImage([0, 1, 2].map(c => pos[i][c] - pos[j][c]), L));
         for (let c = 0; c < 3; c++) F[c] += f[c];
         maxF = Math.max(maxF, Math.hypot(...f));
     }
@@ -157,7 +161,6 @@ test('integrator replica: semi-implicit Euler drift, thermostat relaxes speed to
 });
 
 test('energy of a small LJ cluster is conserved by the integrator core (thermostat off)',
-    { todo: 'fails because of the inverted force sign (atoms fall into each other); passes with the sign fixed' },
     (t) => {
         // 8 atoms on a cube of side 1.12σ (near r_min), small random velocities, dt = 0.002
         const L = 30, dt = 0.002;

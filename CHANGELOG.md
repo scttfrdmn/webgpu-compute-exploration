@@ -33,6 +33,15 @@ All notable changes to this project are documented here. The format follows
 - package.json description and keywords, the CITATION abstract, and the GitHub
   repository description and topics now cover all 25 examples.
 
+### Fixed
+- SPH fluid: the WGSL `Particle` struct had a 24-byte stride while the JS packs 32 bytes, so
+  particle data was read misaligned on upload and on Add Water; the struct is now padded (#63).
+- Molecular dynamics: the Lennard-Jones force pointed the wrong way (attraction at short range).
+  Energy is now conserved by the integrator core; the header and info panel now name the
+  integrator correctly (semi-implicit Euler) (#64).
+- Boids: zero-length vectors no longer produce NaN steering; maze generation stores 1-wide mazes
+  correctly; DLA resets its seed count for every seed type (#65).
+
 ## [0.4.0] - 2026-10-31
 
 ### Added

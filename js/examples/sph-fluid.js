@@ -7,6 +7,7 @@ struct Particle {
     velocity: vec2<f32>,
     density: f32,
     pressure: f32,
+    pad: vec2<f32>, // keeps the stride at 32 bytes to match the JS packing (8 floats)
 }
 
 struct Params {
@@ -70,6 +71,7 @@ struct Particle {
     velocity: vec2<f32>,
     density: f32,
     pressure: f32,
+    pad: vec2<f32>, // keeps the stride at 32 bytes to match the JS packing (8 floats)
 }
 
 struct Params {
@@ -155,6 +157,7 @@ struct Particle {
     velocity: vec2<f32>,
     density: f32,
     pressure: f32,
+    pad: vec2<f32>, // keeps the stride at 32 bytes to match the JS packing (8 floats)
 }
 
 struct Params {
@@ -218,6 +221,7 @@ struct Particle {
     velocity: vec2<f32>,
     density: f32,
     pressure: f32,
+    pad: vec2<f32>, // keeps the stride at 32 bytes to match the JS packing (8 floats)
 }
 
 struct Uniforms {
