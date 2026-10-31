@@ -144,10 +144,26 @@
         }
         canvas.interactive { cursor: crosshair; }
         canvas.square { max-width: min(100%, 720px); }
-        .image-pair { display: flex; flex-wrap: wrap; gap: 16px; }
-        .image-pair figure { margin: 0; flex: 1 1 300px; max-width: 512px; }
-        .image-pair figcaption { margin-top: 12px; color: var(--muted); font-size: 0.85rem; }
-        .image-pair canvas { width: 100%; margin-top: 6px; }
+
+        /* One-shot examples: a black stage with a centered Run button that moves to the corner after a run */
+        .stage { position: relative; margin-top: 12px; width: fit-content; max-width: 100%; }
+        .stage canvas { margin-top: 0; }
+        .run-overlay {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            border-radius: 8px; background: rgba(0, 0, 0, 0.25);
+        }
+        .run-overlay button { padding: 12px 22px; font-size: 1rem; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); }
+        .stage.ran .run-overlay { inset: auto 12px 12px auto; background: none; }
+        .stage.ran .run-overlay button { padding: 6px 12px; font-size: 0.85rem; opacity: 0.85; }
+        .stage.ran .run-overlay button:hover { opacity: 1; }
+
+        .image-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 512px)); gap: 12px; }
+        .image-pair figure { position: relative; margin: 0; }
+        .image-pair canvas { width: 100%; }
+        .image-pair figcaption {
+            position: absolute; top: 10px; left: 10px; padding: 3px 9px; border-radius: 999px;
+            background: rgba(13, 17, 23, 0.75); color: var(--text); font-size: 0.8rem;
+        }
 
         /* Result panels stay hidden until an example writes to them */
         .output {
@@ -166,6 +182,7 @@
             text-align: center; color: var(--muted); font-size: 0.9rem;
         }
         @media (max-width: 640px) {
+            .image-pair { grid-template-columns: minmax(0, 1fr); }
             .example { padding: 16px; }
             .controls label { margin-left: 0; }
         }
@@ -221,16 +238,18 @@
     <section class="example" id="gaussian-blur">
         <h3><span class="num">3</span>Image Processing: Gaussian Blur</h3>
         <p>Applies a 25×25 Gaussian blur (σ = 4) to a sharp-edged test image with a compute shader.</p>
-        <button id="btn-image-blur">Run Image Blur</button>
-        <div class="image-pair">
-            <figure>
-                <figcaption>Original</figcaption>
-                <canvas id="canvas-original" width="512" height="512"></canvas>
-            </figure>
-            <figure>
-                <figcaption>Blurred (GPU)</figcaption>
-                <canvas id="canvas-blurred" width="512" height="512"></canvas>
-            </figure>
+        <div class="stage">
+            <div class="image-pair">
+                <figure>
+                    <canvas id="canvas-original" width="512" height="512"></canvas>
+                    <figcaption>Original</figcaption>
+                </figure>
+                <figure>
+                    <canvas id="canvas-blurred" width="512" height="512"></canvas>
+                    <figcaption>Blurred (GPU)</figcaption>
+                </figure>
+            </div>
+            <div class="run-overlay"><button id="btn-image-blur" class="primary">▶ Run Image Blur</button></div>
         </div>
         <div id="output-image-blur" class="output"></div>
     </section>
@@ -386,8 +405,10 @@
     <section class="example" id="wasm-mandelbrot">
         <h3><span class="num">10</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
-        <button id="btn-wasm-mandelbrot">Run WASM + WebGPU</button>
-        <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
+        <div class="stage">
+            <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
+            <div class="run-overlay"><button id="btn-wasm-mandelbrot" class="primary">▶ Run WASM + WebGPU</button></div>
+        </div>
         <div id="output-wasm-mandelbrot" class="output"></div>
     </section>
     </main>

@@ -74,6 +74,7 @@ function setupEventListeners() {
         try {
             const result = await runImageBlur(gpuDevice);
             output.innerHTML = result;
+            btn.closest('.stage').classList.add('ran');
         } catch (error) {
             output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
         }
@@ -87,6 +88,7 @@ function setupEventListeners() {
         try {
             const result = await runWASMMandelbrot(gpuDevice);
             output.innerHTML = result;
+            btn.closest('.stage').classList.add('ran');
         } catch (error) {
             output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
         }
