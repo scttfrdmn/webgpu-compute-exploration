@@ -1,7 +1,7 @@
 {
   "name": "webgpu-compute-exploration",
   "version": "0.1.0",
-  "description": "Exploration of WebGPU computational capabilities with WASM integration",
+  "description": "Interactive WebGPU compute shader examples in WGSL: SPH fluid, molecular dynamics, boids, Game of Life, ray-marched fractals, 3D DLA, and Rust/WASM integration",
   "type": "module",
   "scripts": {
     "dev": "python3 -m http.server 8000",
@@ -9,10 +9,17 @@
   },
   "keywords": [
     "webgpu",
-    "wasm",
+    "wgsl",
     "compute-shaders",
+    "gpgpu",
     "gpu-computing",
-    "wgsl"
+    "wasm",
+    "webassembly",
+    "sph",
+    "molecular-dynamics",
+    "boids",
+    "ray-marching",
+    "game-of-life"
   ],
   "author": "Scott Friedman",
   "repository": {

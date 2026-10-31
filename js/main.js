@@ -20,25 +20,22 @@ async function init() {
 
         if (!isSupported) {
             statusDiv.className = 'status not-supported';
-            statusDiv.innerHTML = '❌ WebGPU is not supported in this browser. Please use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac).';
+            statusDiv.textContent = 'WebGPU not available — use Chrome/Edge 113+, Safari 26+, or Firefox 141+ (Windows) / 147+ (Apple silicon Mac)';
             disableAllButtons();
             return;
         }
 
         gpuDevice = await getGPUDevice();
         statusDiv.className = 'status supported';
-        statusDiv.innerHTML = `✅ WebGPU is supported! Using adapter: ${gpuDevice.adapter.name || 'Unknown'}`;
+        const info = gpuDevice.adapter.info || {};
+        const adapterName = [info.vendor, info.architecture].filter(Boolean).join(' ') || info.description;
+        statusDiv.textContent = adapterName ? `WebGPU ready · ${adapterName}` : 'WebGPU ready';
 
         setupEventListeners();
-        await initGameOfLife(gpuDevice);
-        await initMolecularDynamics(gpuDevice);
-        await initSPHFluid(gpuDevice);
-        await initRayMarching(gpuDevice);
-        await initBoids(gpuDevice);
-        await initDLA3D(gpuDevice);
+        initInteractiveExamplesOnVisible();
     } catch (error) {
         statusDiv.className = 'status not-supported';
-        statusDiv.innerHTML = `❌ Error initializing WebGPU: ${error.message}`;
+        statusDiv.textContent = `WebGPU failed to initialize: ${error.message}`;
         disableAllButtons();
     }
 }
@@ -77,6 +74,7 @@ function setupEventListeners() {
         try {
             const result = await runImageBlur(gpuDevice);
             output.innerHTML = result;
+            btn.closest('.stage').classList.add('ran');
         } catch (error) {
             output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
         }
@@ -90,11 +88,48 @@ function setupEventListeners() {
         try {
             const result = await runWASMMandelbrot(gpuDevice);
             output.innerHTML = result;
+            btn.closest('.stage').classList.add('ran');
         } catch (error) {
             output.innerHTML = `<span class="error">Error: ${error.message}</span>`;
         }
         btn.disabled = false;
     });
+}
+
+// Interactive examples are created only when their canvas nears the viewport, and none
+// start simulating until the user presses Start. Ray marching has no Start button, so it
+// renders only while its canvas is visible.
+function initInteractiveExamplesOnVisible() {
+    const examples = {
+        'canvas-gol': initGameOfLife,
+        'canvas-md': initMolecularDynamics,
+        'canvas-sph': initSPHFluid,
+        'canvas-fractal': initRayMarching,
+        'canvas-boids': initBoids,
+        'canvas-dla': initDLA3D,
+    };
+    const instances = new Map();
+
+    const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            const id = entry.target.id;
+            if (entry.isIntersecting && !instances.has(id)) {
+                instances.set(id, examples[id](gpuDevice).catch((error) => {
+                    console.error(`Failed to initialize ${id}:`, error);
+                }));
+            }
+            if (id === 'canvas-fractal' && instances.has(id)) {
+                instances.get(id).then((renderer) => {
+                    if (!renderer) return;
+                    if (entry.isIntersecting) renderer.start(); else renderer.pause();
+                });
+            }
+        }
+    }, { rootMargin: '200px' });
+
+    for (const id of Object.keys(examples)) {
+        observer.observe(document.getElementById(id));
+    }
 }
 
 function disableAllButtons() {

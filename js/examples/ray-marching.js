@@ -70,14 +70,18 @@ fn juliaDE(pos: vec3<f32>) -> f32 {
     return 0.25 * sqrt(mz2 / md2) * log(mz2);
 }
 
-// Menger sponge distance estimator
+// Menger sponge distance estimator (Inigo Quilez's formulation)
+fn floorMod(x: vec3<f32>, m: f32) -> vec3<f32> {
+    return x - m * floor(x / m);
+}
+
 fn mengerDE(pos: vec3<f32>) -> f32 {
-    var p = pos;
-    var d = max(max(abs(p.x), abs(p.y)), abs(p.z)) - 1.0;
+    let q = abs(pos) - vec3<f32>(1.0);
+    var d = length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
     var s = 1.0;
 
     for (var i = 0; i < 4; i++) {
-        let a = (abs(p) * 3.0 - 1.0) % 2.0 - 1.0;
+        let a = floorMod(pos * s, 2.0) - 1.0;
         s *= 3.0;
         let r = abs(1.0 - 3.0 * abs(a));
 
@@ -87,7 +91,6 @@ fn mengerDE(pos: vec3<f32>) -> f32 {
         let c = (min(da, min(db, dc)) - 1.0) / s;
 
         d = max(d, c);
-        p = a;
     }
 
     return d;
@@ -97,7 +100,8 @@ fn mengerDE(pos: vec3<f32>) -> f32 {
 fn mandelboxDE(pos: vec3<f32>) -> f32 {
     var p = pos;
     var dr = 1.0;
-    let scale = 2.0;
+    // Negative scale keeps the whole fractal within about 2 units of the origin
+    let scale = -1.5;
     let fixedRadius = 1.0;
     let minRadius = 0.5;
     let fixedRadius2 = fixedRadius * fixedRadius;
@@ -130,7 +134,7 @@ fn sceneSDF(pos: vec3<f32>) -> f32 {
         case 0u: { return mandelbulbDE(pos, uniforms.power); }
         case 1u: { return juliaDE(pos); }
         case 2u: { return mengerDE(pos); }
-        case 3u: { return mandelboxDE(pos); }
+        case 3u: { return mandelboxDE(pos * 3.0) / 3.0; } // shrink to fit the default view
         default: { return mandelbulbDE(pos, uniforms.power); }
     }
 }
@@ -160,6 +164,18 @@ fn rayMarch(ro: vec3<f32>, rd: vec3<f32>) -> f32 {
     return -1.0;
 }
 
+// Soft ambient occlusion from a few distance samples along the normal
+fn ambientOcclusion(p: vec3<f32>, n: vec3<f32>) -> f32 {
+    var occlusion = 0.0;
+    var weight = 1.0;
+    for (var i = 1; i <= 5; i++) {
+        let d = 0.03 * f32(i);
+        occlusion += weight * (d - sceneSDF(p + n * d));
+        weight *= 0.5;
+    }
+    return clamp(1.0 - 4.0 * occlusion, 0.0, 1.0);
+}
+
 fn rotateX(p: vec3<f32>, angle: f32) -> vec3<f32> {
     let c = cos(angle);
     let s = sin(angle);
@@ -172,23 +188,21 @@ fn rotateY(p: vec3<f32>, angle: f32) -> vec3<f32> {
     return vec3<f32>(c * p.x + s * p.z, p.y, -s * p.x + c * p.z);
 }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let coords = vec2<f32>(global_id.xy);
-    if (coords.x >= uniforms.resolution.x || coords.y >= uniforms.resolution.y) {
-        return;
-    }
+@fragment
+fn fs_main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+    let coords = fragCoord.xy;
 
-    // Normalized coordinates
-    let uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
+    // Pixel y grows downward; flip so +y is up in camera space
+    var uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
+    uv.y = -uv.y;
 
     // Camera setup
     var ro = vec3<f32>(0.0, 0.0, uniforms.cameraZoom);
     ro = rotateX(ro, uniforms.cameraRotX);
     ro = rotateY(ro, uniforms.cameraRotY + uniforms.time * 0.1);
 
-    let target = vec3<f32>(0.0, 0.0, 0.0);
-    let forward = normalize(target - ro);
+    let lookAt = vec3<f32>(0.0, 0.0, 0.0);
+    let forward = normalize(lookAt - ro);
     let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
     let up = cross(forward, right);
 
@@ -197,7 +211,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Ray march
     let t = rayMarch(ro, rd);
 
-    var color = vec3<f32>(0.0);
+    // Background gradient so the silhouette stays visible against the page
+    var color = mix(vec3<f32>(0.02, 0.02, 0.05), vec3<f32>(0.12, 0.14, 0.22), uv.y + 0.5);
     if (t > 0.0) {
         let pos = ro + rd * t;
         let normal = estimateNormal(pos);
@@ -207,26 +222,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let diffuse = max(dot(normal, lightDir), 0.0);
         let specular = pow(max(dot(reflect(-lightDir, normal), -rd), 0.0), 32.0);
 
-        // Ambient occlusion approximation
-        let ao = 1.0 - f32(i32(t * 10.0)) * 0.05;
+        let ao = ambientOcclusion(pos, normal);
 
         // Color based on position and normal
         let baseColor = vec3<f32>(0.8, 0.4, 0.2) + normal * 0.2;
         color = baseColor * (diffuse * 0.7 + 0.3) * ao + specular * 0.5;
 
         // Fog
-        color = mix(color, vec3<f32>(0.0), clamp(t / 50.0, 0.0, 1.0));
+        color = mix(color, vec3<f32>(0.02, 0.02, 0.05), clamp(t / 20.0, 0.0, 1.0));
     }
 
-    // Output to texture (would need storage texture binding)
-    // For now we'll use render pass
+    return vec4<f32>(color, 1.0);
 }
 `;
 
-// We'll use a simpler full-screen render approach
+// Full-screen quad; the fragment shader ray-marches each pixel
 const FULLSCREEN_VERTEX = `
 @vertex
-fn main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
     let pos = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0),
         vec2<f32>(1.0, -1.0),
@@ -238,12 +251,6 @@ fn main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32>
     return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
 }
 `;
-
-const FRAGMENT_SHADER = RAY_MARCH_SHADER.replace('@compute @workgroup_size(8, 8)\nfn main(@builtin(global_invocation_id) global_id: vec3<u32>)',
-'@fragment\nfn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32>') + `
-    return vec4<f32>(color, 1.0);
-}
-`.replace('let coords = vec2<f32>(global_id.xy);', 'let coords = fragCoord.xy;');
 
 class RayMarchingRenderer {
     constructor(device, canvas) {
@@ -309,7 +316,7 @@ class RayMarchingRenderer {
         });
 
         const shaderModule = this.device.createShaderModule({
-            code: FULLSCREEN_VERTEX + '\n' + FRAGMENT_SHADER
+            code: FULLSCREEN_VERTEX + '\n' + RAY_MARCH_SHADER
         });
 
         this.uniformBuffer = this.device.createBuffer({
@@ -337,24 +344,26 @@ class RayMarchingRenderer {
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             vertex: {
                 module: shaderModule,
-                entryPoint: 'main'
+                entryPoint: 'vs_main'
             },
             fragment: {
                 module: shaderModule,
-                entryPoint: 'main',
+                entryPoint: 'fs_main',
                 targets: [{ format: 'bgra8unorm' }]
             }
         });
     }
 
     updateUniforms() {
+        // maxSteps and fractalType are u32 in WGSL; written as floats they would read as ~1e9
         const uniforms = new Float32Array(16);
+        const uniformsU32 = new Uint32Array(uniforms.buffer);
         uniforms[0] = this.canvas.width;
         uniforms[1] = this.canvas.height;
         uniforms[2] = this.time;
         uniforms[3] = this.power;
-        uniforms[4] = this.maxSteps;
-        uniforms[5] = this.fractalType;
+        uniformsU32[4] = this.maxSteps;
+        uniformsU32[5] = this.fractalType;
         uniforms[6] = this.cameraRotX;
         uniforms[7] = this.cameraRotY;
         uniforms[8] = this.cameraZoom;
@@ -388,8 +397,13 @@ class RayMarchingRenderer {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
+    }
+
+    pause() {
+        this.running = false;
     }
 
     animate() {
@@ -410,8 +424,8 @@ export async function initRayMarching(gpuDevice) {
     const canvas = document.getElementById('canvas-fractal');
     const output = document.getElementById('output-fractal');
 
+    // Not started here: main.js runs it only while the canvas is on screen
     const renderer = new RayMarchingRenderer(device, canvas);
-    renderer.start();
 
     const fractalTypes = {
         'mandelbulb': 0,

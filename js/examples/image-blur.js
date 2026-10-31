@@ -3,8 +3,9 @@ const shaderCode = `
 @group(0) @binding(1) var<storage, read_write> output: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> dimensions: vec2<u32>;
 
-const kernelSize = 5;
-const sigma = 2.0;
+// Kernel covers ±3σ so the Gaussian tails are not truncated visibly
+const sigma = 4.0;
+const kernelSize = 25;
 
 fn gaussian(x: f32, y: f32) -> f32 {
     return exp(-(x*x + y*y) / (2.0 * sigma * sigma)) / (2.0 * 3.14159265 * sigma * sigma);
@@ -44,24 +45,35 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 }
 `;
 
+// Sharp-edged test pattern (checkerboard, thin rings, fine diagonal lines) so the blur is obvious
 function createTestImage(width, height) {
     const imageData = new Float32Array(width * height * 4);
+    const centerX = width / 2;
+    const centerY = height / 2;
 
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             const idx = (y * width + x) * 4;
-
-            const centerX = width / 2;
-            const centerY = height / 2;
             const dist = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
-            const maxDist = Math.sqrt(centerX ** 2 + centerY ** 2);
 
-            const pattern = Math.sin(x / 20) * Math.cos(y / 20);
-            const radial = 1 - (dist / maxDist);
+            const checker = (Math.floor(x / 32) + Math.floor(y / 32)) % 2;
+            let r = checker ? 0.95 : 0.1;
+            let g = checker ? 0.75 : 0.15;
+            let b = checker ? 0.2 : 0.35;
 
-            imageData[idx] = (pattern * 0.5 + 0.5) * radial;
-            imageData[idx + 1] = (Math.sin(x / 30 + y / 30) * 0.5 + 0.5) * radial;
-            imageData[idx + 2] = radial;
+            // Thin bright rings around the center
+            if (dist < 180 && Math.floor(dist) % 24 < 3) {
+                r = 0.2; g = 0.9; b = 1.0;
+            }
+
+            // 1-pixel diagonal lines in the top-left quadrant
+            if (x < centerX && y < centerY && (x + y) % 8 === 0) {
+                r = g = b = 1.0;
+            }
+
+            imageData[idx] = r;
+            imageData[idx + 1] = g;
+            imageData[idx + 2] = b;
             imageData[idx + 3] = 1.0;
         }
     }
@@ -190,7 +202,7 @@ export async function runImageBlur(gpuDevice) {
     dimensionsBuffer.destroy();
 
     const totalPixels = width * height;
-    const kernelSize = 5;
+    const kernelSize = 25;
     const opsPerPixel = kernelSize * kernelSize * 4;
     const totalOps = totalPixels * opsPerPixel;
 
@@ -199,7 +211,7 @@ export async function runImageBlur(gpuDevice) {
 <span class="info">Configuration:</span>
 • Image dimensions: ${width} × ${height} (${totalPixels.toLocaleString()} pixels)
 • Kernel size: ${kernelSize} × ${kernelSize}
-• Blur type: Gaussian (σ = 2.0)
+• Blur type: Gaussian (σ = 4.0)
 • Workgroup size: 8 × 8
 
 <span class="info">Results:</span>

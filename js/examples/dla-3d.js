@@ -4,7 +4,7 @@
 const PARTICLE_UPDATE_SHADER = `
 struct Particle {
     position: vec3<f32>,
-    active: u32,
+    rngState: u32, // per-walker random state; 0 means the walker has stuck and retired
 }
 
 struct GridCell {
@@ -22,12 +22,31 @@ struct Params {
 @group(0) @binding(1) var<storage, read_write> grid: array<GridCell>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-// Simple random number generator (LCG)
-fn random(seed: u32) -> f32 {
-    let a = 1103515245u;
-    let c = 12345u;
-    let m = 2147483648u;
-    return f32((a * seed + c) % m) / f32(m);
+// PCG hash (Jarzynski & Olano, "Hash Functions for GPU Rendering", 2020)
+fn pcgHash(v: u32) -> u32 {
+    let state = v * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Advance a walker's random state and return a value in [0, 1)
+fn nextRandom(state: ptr<function, u32>) -> f32 {
+    *state = pcgHash(*state);
+    return f32(*state >> 8u) / 16777216.0;
+}
+
+fn spawnPosition(state: ptr<function, u32>) -> vec3<f32> {
+    let size = f32(params.gridSize);
+    let center = size / 2.0;
+    let spawnRadius = size * 0.45;
+    let theta = nextRandom(state) * 6.28318;
+    let cosPhi = nextRandom(state) * 2.0 - 1.0; // uniform over the sphere
+    let sinPhi = sqrt(1.0 - cosPhi * cosPhi);
+    return vec3<f32>(
+        center + spawnRadius * sinPhi * cos(theta),
+        center + spawnRadius * sinPhi * sin(theta),
+        center + spawnRadius * cosPhi
+    );
 }
 
 fn gridIndex(pos: vec3<i32>) -> u32 {
@@ -68,60 +87,46 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     var particle = particles[idx];
-
-    if (particle.active == 0u) {
+    var rng = particle.rngState;
+    if (rng == 0u) {
         return;
     }
 
-    // Generate random direction
-    let seed = idx * 1000u + u32(params.time * 1000.0);
-    let r1 = random(seed);
-    let r2 = random(seed + 1u);
-    let r3 = random(seed + 2u);
-
+    // One random-walk step along a random axis
+    let axis = nextRandom(&rng);
+    let step = select(-1, 1, nextRandom(&rng) > 0.5);
     var dir = vec3<i32>(0, 0, 0);
-    if (r1 < 0.333) {
-        dir.x = select(-1, 1, r2 > 0.5);
-    } else if (r1 < 0.666) {
-        dir.y = select(-1, 1, r2 > 0.5);
+    if (axis < 0.333) {
+        dir.x = step;
+    } else if (axis < 0.666) {
+        dir.y = step;
     } else {
-        dir.z = select(-1, 1, r2 > 0.5);
+        dir.z = step;
     }
 
     let currentPos = vec3<i32>(particle.position);
-    let newPos = currentPos + dir;
-
+    var newPos = currentPos + dir;
     let size = i32(params.gridSize);
 
-    // Check if out of bounds - respawn at spawn radius
     if (newPos.x < 0 || newPos.x >= size || newPos.y < 0 || newPos.y >= size || newPos.z < 0 || newPos.z >= size) {
-        // Respawn at outer radius
-        let center = f32(size) / 2.0;
-        let spawnRadius = f32(size) * 0.45;
-        let theta = r1 * 6.28318;
-        let phi = r2 * 3.14159;
-        particle.position = vec3<f32>(
-            center + spawnRadius * sin(phi) * cos(theta),
-            center + spawnRadius * sin(phi) * sin(theta),
-            center + spawnRadius * cos(phi)
-        );
-        particles[idx] = particle;
-        return;
-    }
-
-    // Check if next to occupied cell
-    if (hasNeighbor(newPos)) {
-        // Stick with probability based on stickiness
-        if (r3 < params.stickiness) {
-            let gridIdx = gridIndex(newPos);
-            if (gridIdx != 0xFFFFFFFFu) {
-                atomicStore(&grid[gridIdx].occupied, 1u);
-                particle.active = 0u;
-            }
+        // Wandered out of the volume: respawn on the outer sphere
+        particle.position = spawnPosition(&rng);
+    } else {
+        // Never step into the aggregate
+        if (isOccupied(newPos)) {
+            newPos = currentPos;
         }
+
+        if (hasNeighbor(newPos) && nextRandom(&rng) < params.stickiness) {
+            // Stick: freeze this cell and retire the walker
+            atomicStore(&grid[gridIndex(newPos)].occupied, 1u);
+            particles[idx].rngState = 0u;
+            return;
+        }
+        particle.position = vec3<f32>(newPos);
     }
 
-    particle.position = vec3<f32>(newPos);
+    particle.rngState = max(rng, 1u); // keep live walkers distinguishable from retired ones
     particles[idx] = particle;
 }
 `;
@@ -177,7 +182,7 @@ const CUBE_NORMALS = array<vec3<f32>, 6>(
 );
 
 @vertex
-fn main(
+fn vs_main(
     @builtin(vertex_index) vertexIdx: u32,
     @builtin(instance_index) instanceIdx: u32
 ) -> VertexOutput {
@@ -228,7 +233,7 @@ fn main(
 
 const RENDER_FRAGMENT_SHADER = `
 @fragment
-fn main(
+fn fs_main(
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>
 ) -> @location(0) vec4<f32> {
@@ -244,13 +249,14 @@ fn main(
 // Matrix utilities (reusing from molecular-dynamics)
 class Mat4 {
     static perspective(fov, aspect, near, far) {
+        // Column-major, WebGPU clip-space depth range [0, 1]
         const f = 1.0 / Math.tan(fov / 2);
         const nf = 1 / (near - far);
         return new Float32Array([
             f / aspect, 0, 0, 0,
             0, f, 0, 0,
-            0, 0, (far + near) * nf, -1,
-            0, 0, 2 * far * near * nf, 0
+            0, 0, far * nf, -1,
+            0, 0, far * near * nf, 0
         ]);
     }
 
@@ -267,15 +273,16 @@ class Mat4 {
         ]);
     }
 
+    // a * b for column-major matrices (element [col * 4 + row])
     static multiply(a, b) {
         const result = new Float32Array(16);
-        for (let i = 0; i < 4; i++) {
-            for (let j = 0; j < 4; j++) {
-                result[i * 4 + j] =
-                    a[i * 4 + 0] * b[0 * 4 + j] +
-                    a[i * 4 + 1] * b[1 * 4 + j] +
-                    a[i * 4 + 2] * b[2 * 4 + j] +
-                    a[i * 4 + 3] * b[3 * 4 + j];
+        for (let col = 0; col < 4; col++) {
+            for (let row = 0; row < 4; row++) {
+                result[col * 4 + row] =
+                    a[0 * 4 + row] * b[col * 4 + 0] +
+                    a[1 * 4 + row] * b[col * 4 + 1] +
+                    a[2 * 4 + row] * b[col * 4 + 2] +
+                    a[3 * 4 + row] * b[col * 4 + 3];
             }
         }
         return result;
@@ -387,8 +394,9 @@ class DLA3D {
     }
 
     initializeParticles() {
-        // position(3) + active(1)
+        // position(3) + rngState(1, u32 via a Uint32Array view; nonzero = still walking)
         this.particles = new Float32Array(this.numParticles * 4);
+        const particlesU32 = new Uint32Array(this.particles.buffer);
 
         const center = this.gridSize / 2;
         const spawnRadius = this.gridSize * 0.45;
@@ -400,7 +408,7 @@ class DLA3D {
             this.particles[i * 4 + 0] = center + spawnRadius * Math.sin(phi) * Math.cos(theta);
             this.particles[i * 4 + 1] = center + spawnRadius * Math.sin(phi) * Math.sin(theta);
             this.particles[i * 4 + 2] = center + spawnRadius * Math.cos(phi);
-            this.particles[i * 4 + 3] = 1; // active
+            particlesU32[i * 4 + 3] = 1 + Math.floor(Math.random() * 0xFFFFFFFE); // rngState
         }
     }
 
@@ -534,11 +542,11 @@ class DLA3D {
             layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
             vertex: {
                 module: shaderModule,
-                entryPoint: 'main'
+                entryPoint: 'vs_main'
             },
             fragment: {
                 module: shaderModule,
-                entryPoint: 'main',
+                entryPoint: 'fs_main',
                 targets: [{ format: 'bgra8unorm' }]
             },
             primitive: {
@@ -570,11 +578,14 @@ class DLA3D {
 
     updateParams() {
         const params = new Float32Array([
-            this.numParticles,
-            this.gridSize,
+            0, // numParticles (u32, set below)
+            0, // gridSize (u32, set below)
             this.stickiness,
             this.time
         ]);
+        const paramsU32 = new Uint32Array(params.buffer);
+        paramsU32[0] = this.numParticles;
+        paramsU32[1] = this.gridSize;
         this.device.queue.writeBuffer(this.paramsBuffer, 0, params);
     }
 
@@ -635,6 +646,7 @@ class DLA3D {
     }
 
     start() {
+        if (this.running) return;
         this.running = true;
         this.animate();
     }
