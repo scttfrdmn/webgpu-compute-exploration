@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Losing the GPU device (driver reset, GPU process crash) left a frozen page. The status
+  badge now reports the loss, example controls are disabled, and a Reload button appears.
+  Uncaught WebGPU validation errors are logged with a `[WebGPU]` prefix.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added

@@ -5,7 +5,8 @@ export async function checkWebGPUSupport() {
     return true;
 }
 
-export async function getGPUDevice() {
+// onLost(info) is called if the device is lost for any reason other than an explicit destroy()
+export async function getGPUDevice(onLost) {
     if (!navigator.gpu) {
         throw new Error('WebGPU is not supported');
     }
@@ -18,10 +19,15 @@ export async function getGPUDevice() {
     const device = await adapter.requestDevice();
 
     device.lost.then((info) => {
-        console.error(`WebGPU device was lost: ${info.message}`);
-        if (info.reason !== 'destroyed') {
-            console.error('Device lost unexpectedly, may need to recreate');
+        console.error(`WebGPU device was lost (${info.reason}): ${info.message}`);
+        if (info.reason !== 'destroyed' && onLost) {
+            onLost(info);
         }
+    });
+
+    // Surface validation errors that no error scope caught, tagged so they are easy to find
+    device.addEventListener('uncapturederror', (event) => {
+        console.error(`[WebGPU] ${event.error.constructor.name}: ${event.error.message}`);
     });
 
     return { device, adapter };
