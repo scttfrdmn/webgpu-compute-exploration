@@ -33,7 +33,9 @@ export const GPU_TIME_NOTE = 'GPU times use timestamp queries; Chrome quantizes 
 
 export function timestampsSupported(device) {
     const dev = device?.device ?? device;
-    return !!dev?.features?.has?.('timestamp-query');
+    // A real GPUSupportedFeatures.has returns a boolean; accept only true so stand-in device objects
+    // (test mocks, wrappers) whose has() returns something truthy don't switch timing on.
+    return dev?.features?.has?.('timestamp-query') === true;
 }
 
 export function formatMs(ms, digits = 2) {
