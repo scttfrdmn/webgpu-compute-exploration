@@ -66,9 +66,9 @@ const thetaError = {
         },
         { x: 'theta', xLabel: 'opening angle θ', logX: true, y: ['interactions'], yLabel: 'interactions per body', logY: true },
     ],
-    baseline: `CI, Plummer N = 4,096: median ${CI_MEDIAN_AT_HALF.toExponential(1)} at θ = 0.5 (shipped shader on a `
-        + 'software GPU and its CPU replica); the replica gives 1.5e-3 / 4.2e-3 / 8.7e-3 / 1.8e-2 at θ = 0.3 / 0.5 / 0.7 / 1.0, '
-        + `close to θ². Errors are checked on ${SAMPLE} bodies against a float64 direct sum.`,
+    baseline: `CI (shipped shader on a software GPU, Plummer N = 4,096): median ${CI_MEDIAN_AT_HALF.toExponential(1)} at `
+        + 'θ = 0.5; 1.5e-3 / 2.6e-3 / 4.2e-3 / 8.6e-3 / 1.5e-2 / 2.6e-2 at θ = 0.3 … 1.2, close to θ², with 997 → 134 '
+        + `interactions per body (brute force: 4,095). Errors are checked on ${SAMPLE} bodies against a float64 direct sum.`,
     async *run(ctx, { n, preset }) {
         const N = Math.min(n, BH_MAX_N);
         const { positions } = generateBodies(preset, N, SOFTENING, SEED);
@@ -112,9 +112,10 @@ const scaling = {
         { x: 'n', xLabel: 'bodies N', logX: true, y: ['bhWall', 'bruteWall'], yLabel: 'wall ms per force evaluation', logY: true,
             labels: { bhWall: 'Barnes-Hut', bruteWall: 'brute force' } },
     ],
-    baseline: 'Brute force does exactly N − 1 interactions per body; Barnes-Hut at θ = 0.5 does a few hundred to a '
-        + 'few thousand plus a 30-dispatch tree build, so it loses at small N and wins at large N. Brute force stops '
-        + `at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here (the example allows 32,768).`,
+    baseline: 'Brute force does exactly N − 1 interactions per body; Barnes-Hut at θ = 0.5 does a few hundred to about a '
+        + 'thousand (248 at N = 1,024, 1,140 at 65,536 in CI) plus a 30-dispatch tree build, so it loses at small N and wins '
+        + 'at large N. In CI, on a CPU-emulated GPU, the wall times cross between N = 8,192 (93 vs 83 ms) and 16,384 '
+        + `(212 vs 294 ms). Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here (the example allows 32,768).`,
     async *run(ctx, { preset }) {
         for (const n of SCALING_COUNTS) {
             if (n > BH_MAX_N) break;
@@ -140,12 +141,12 @@ export const DRIFT_TIME = 2;        // simulated time per run: steps = DRIFT_TIM
 export const DRIFT_COUNTS = [2048, 4096];
 export const DRIFT_SAMPLES = 25;    // energy readbacks per run (16 bytes each)
 // Measured in CI (brute force, Plummer N = 2,048, seed 5): max |ΔE/E₀| over t = 2 at dt = 0.01
-export const CI_DRIFT_AT_001 = 1e-4;
+export const CI_DRIFT_AT_001 = 1.3e-6;
 
 const energyDrift = {
     id: 'energy-drift',
     title: 'Time step vs energy error',
-    question: 'How does the leapfrog energy error scale with the time step dt, and where does single precision stop the improvement?',
+    question: 'How does the leapfrog energy error scale with the time step dt, and what does the Barnes-Hut approximation add to it?',
     settings: [
         { key: 'n', label: 'Bodies', options: DRIFT_COUNTS.map(n => ({ value: n, label: n.toLocaleString('en-US') })), default: 2048 },
         { key: 'mode', label: 'Forces', options: [{ value: 'brute', label: 'Brute force (exact)' }, { value: 'bh', label: 'Barnes-Hut θ = 0.5' }], default: 'brute' },
@@ -166,9 +167,9 @@ const energyDrift = {
             points: [DTS[DTS.length - 1], DTS[0]].map(dt => [dt, CI_DRIFT_AT_001 * (dt / 0.01) ** 2]),
         },
     }],
-    baseline: `CI, brute force Plummer N = 2,048: max |ΔE/E₀| ≈ ${CI_DRIFT_AT_001.toExponential(1)} at dt = 0.01 over t = ${DRIFT_TIME}. `
-        + 'Leapfrog is second order and symplectic: the error oscillates with an amplitude ∝ dt² instead of growing. '
-        + 'The f32 energy sum has noise near 1e-6, and Barnes-Hut adds its own force error.',
+    baseline: `CI (software GPU, brute force, Plummer N = 2,048, t = ${DRIFT_TIME}): max |ΔE/E₀| 3.4e-5 / 5.5e-6 / 1.3e-6 / `
+        + '3.0e-7 at dt = 0.04 / 0.02 / 0.01 / 0.005, about 4× per halving (dt²). With Barnes-Hut at θ = 0.5 the error '
+        + 'stays near 3e-4 whatever dt is: the tree force and potential error dominates. The f32 energy sum itself is good to about 1e-7.',
     async *run(ctx, { n, mode, preset }) {
         const N = Math.min(n, mode === 'brute' ? BRUTE_MAX_N : BH_MAX_N);
         const { positions, velocities } = generateBodies(preset, N, SOFTENING, SEED);

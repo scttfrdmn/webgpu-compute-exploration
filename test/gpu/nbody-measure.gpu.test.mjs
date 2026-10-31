@@ -126,6 +126,18 @@ test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks wi
     assert.deepEqual(rows.map(r => r.steps), [50, 100, 200, 400]);
     assert.ok(rows.every(r => Number.isFinite(r.maxDrift) && r.maxDrift < 5e-2));
     assert.ok(rows[0].maxDrift > rows[1].maxDrift && rows[1].maxDrift > rows[2].maxDrift, 'drift falls from dt = 0.04 to 0.01');
+    // second order: about 4× per halving of dt from 0.02 down (dt = 0.04 is outside the asymptotic range)
+    for (let i = 2; i < rows.length; i++) {
+        const r = rows[i - 1].maxDrift / rows[i].maxDrift;
+        assert.ok(r > 2 && r < 8, `dt ${rows[i - 1].dt} → ${rows[i].dt}: ratio ${r}`);
+    }
+
+    // Barnes-Hut at θ = 0.5: the tree's force/potential error sets a floor that a smaller dt cannot remove
+    const bh = await runAll(e, { n: 2048, mode: 'bh', preset: 'plummer' });
+    t.diagnostic(`BH ${bh.seconds.toFixed(1)} s: dt steps max|dE/E0| final: ${show(bh.rows, ['dt', 'steps', 'maxDrift', 'finalDrift'])}`);
+    assert.equal(bh.rows.length, 4);
+    assert.ok(bh.rows.every(r => r.maxDrift < 1e-2));
+    assert.ok(bh.rows[3].maxDrift > 10 * rows[3].maxDrift, 'Barnes-Hut floor above the brute-force error at dt = 0.005');
 });
 
 test('experiment scaling (Plummer): rows up to the caps, brute force stops at 16,384', async (t) => {
