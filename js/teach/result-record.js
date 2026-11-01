@@ -123,6 +123,8 @@ export function buildResultRecord({ exampleId, experiment, settings = {}, rows =
         protocol: {
             warmup: protocolUsed ? measured.warmup : null,
             repeats: protocolUsed ? measured.repeats : null,
+            ...(protocolUsed && measured.repeatsMax > measured.repeats ? { repeatsMax: measured.repeatsMax } : {}),
+            ...(protocolUsed && measured.warmupMax > measured.warmup ? { warmupMax: measured.warmupMax } : {}),
             timing: gpuDevice?.timestamps === true ? 'timestamp-query' : 'wall-clock',
             budgetMs: budgetMs ?? experiment.budgetMs,
             statistic: protocolUsed ? 'median' : 'as-reported',

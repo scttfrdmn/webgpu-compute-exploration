@@ -150,7 +150,7 @@ test('ctx.measure: warm-ups discarded, repeats kept, step() between every two ru
     assert.equal(m.phases.compile.median, 10);
     assert.equal(m.phases.compile.cv, 0);
     assert.equal(m.phases.dispatch.median, 3);
-    assert.deepEqual(ctx.measured, { calls: 1, warmup: 1, repeats: 5 });
+    assert.deepEqual(ctx.measured, { calls: 1, warmup: 1, repeats: 5, warmupMax: 1, repeatsMax: 5 });
 
     // no GPU time (no timestamp-query): gpuMs has n = 0 and null statistics; wall only
     const w = await ctx.measure(async () => ({ wallMs: 2, gpuMs: null }), { warmup: 0, repeats: 3 });
@@ -158,7 +158,7 @@ test('ctx.measure: warm-ups discarded, repeats kept, step() between every two ru
     assert.equal(w.gpuMs.median, null);
     assert.deepEqual(w.phases, {});
     assert.equal(w.wallMs.median, 2);
-    assert.deepEqual(ctx.measured, { calls: 2, warmup: 0, repeats: 3 });
+    assert.deepEqual(ctx.measured, { calls: 2, warmup: 0, repeats: 3, warmupMax: 1, repeatsMax: 5 });
 
     // caps and defaults
     let runs = 0;
@@ -229,4 +229,12 @@ test('ranges: row-key convention, table cells, CSV columns, chart range bars', (
     const logBars = rangeBars(rows, 'x', ['a'], id, id, { logY: true, yMin: 0.5 });
     assert.deepEqual(logBars.map(b => [b.x, b.y1, b.y2]), [[10, 10, 40], [20, 5, 60]]);
     assert.deepEqual(rangeBars([{ x: 1, a: 1 }], 'x', ['a'], id, id), [], 'no ranges: nothing drawn (old experiments unchanged)');
+});
+
+test('ctx.measured keeps the range of warm-up/repeat counts across measure calls (#81)', async () => {
+    const gpu = { device: { queue: { onSubmittedWorkDone: async () => {} } }, timestamps: false };
+    const ctx = makeContext(gpu, { budgetMs: 1000, waitForUI: async () => {}, deviceLost: () => false });
+    await ctx.measure(() => ({ wallMs: 1 }), { warmup: 1, repeats: 5 });
+    await ctx.measure(() => ({ wallMs: 1 }), { warmup: 0, repeats: 3 });
+    assert.deepEqual(ctx.measured, { calls: 2, warmup: 0, repeats: 3, warmupMax: 1, repeatsMax: 5 });
 });

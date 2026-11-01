@@ -152,6 +152,22 @@
             "none"
           ],
           "description": "iqr: rows carry <key>Lo / <key>Hi = q1 / q3 (type-7 quantiles) for columns marked range"
+        },
+        "repeatsMax": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "When an experiment used different repeat counts (e.g. fewer at large sizes), the largest; `repeats` is then the smallest"
+        },
+        "warmupMax": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Largest warm-up count when it varied; `warmup` is then the smallest"
         }
       }
     },

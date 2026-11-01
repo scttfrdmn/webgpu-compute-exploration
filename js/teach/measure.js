@@ -141,10 +141,19 @@ export async function measureRepeated(runOnce, { warmup = 1, repeats = 5, step =
 
 // ctx.measure plus ctx.measured: what the run's measure calls used, for the result record
 function withMeasure(ctx) {
-    ctx.measured = { calls: 0, warmup: null, repeats: null };
+    ctx.measured = { calls: 0, warmup: null, repeats: null, warmupMax: null, repeatsMax: null };
     ctx.measure = async (runOnce, options = {}) => {
         const result = await measureRepeated(runOnce, { ...options, step: () => ctx.step() });
-        ctx.measured = { calls: ctx.measured.calls + 1, warmup: result.warmup, repeats: result.repeats };
+        // Experiments may vary repeats (e.g. fewer at large N to fit the budget): keep the range, so the record
+        // reports the smallest count used and, when it varied, the largest (#81)
+        const m = ctx.measured, first = m.calls === 0;
+        ctx.measured = {
+            calls: m.calls + 1,
+            warmup: first ? result.warmup : Math.min(m.warmup, result.warmup),
+            repeats: first ? result.repeats : Math.min(m.repeats, result.repeats),
+            warmupMax: first ? result.warmup : Math.max(m.warmupMax, result.warmup),
+            repeatsMax: first ? result.repeats : Math.max(m.repeatsMax, result.repeats),
+        };
         return result;
     };
     return ctx;

@@ -48,7 +48,7 @@ const source = { version: '0.6.0', commit: SHA, url: `${REPO_URL}/tree/${SHA}`, 
 function sampleRecord(overrides = {}) {
     return buildResultRecord({
         exampleId: 'nbody', experiment, settings: { preset: 'plummer', n: 4096 }, rows, outcome: { status: 'done' },
-        measured: { calls: 2, warmup: 1, repeats: 5 }, gpuDevice: gpuDevice(), source, userAgent: 'TestBrowser/1.0',
+        measured: { calls: 2, warmup: 1, repeats: 3, warmupMax: 2, repeatsMax: 5 }, gpuDevice: gpuDevice(), source, userAgent: 'TestBrowser/1.0',
         generatedAt: '2026-11-01T12:34:56.789Z', ...overrides,
     });
 }
@@ -59,7 +59,8 @@ test('buildResultRecord: fields from the run, protocol, verification, environmen
     assert.deepEqual(r.source, source);
     assert.deepEqual(r.experiment, { exampleId: 'nbody', id: 'demo', title: 'Demo' });
     assert.deepEqual(r.settings, { preset: 'plummer', n: 4096 });
-    assert.deepEqual(r.protocol, { warmup: 1, repeats: 5, timing: 'timestamp-query', budgetMs: 20000, statistic: 'median', spread: 'iqr' });
+    // repeats varied between measure calls (#81): the smallest count, plus the largest
+    assert.deepEqual(r.protocol, { warmup: 1, repeats: 3, repeatsMax: 5, warmupMax: 2, timing: 'timestamp-query', budgetMs: 20000, statistic: 'median', spread: 'iqr' });
     assert.deepEqual(r.verification, [{ metric: 'max error', value: 2e-4, tolerance: '<= 0.001', reference: 'CPU', status: 'pass' }]);
     assert.deepEqual(r.environment.adapter, { vendor: 'acme', architecture: 'arch-x', device: 'gpu-1', description: 'Acme GPU', isFallbackAdapter: false });
     assert.deepEqual(r.environment.features, ['timestamp-query']);

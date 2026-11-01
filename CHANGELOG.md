@@ -10,6 +10,11 @@ All notable changes to this project are documented here. The format follows
 - Measurement protocol (#73): experiments repeat measurements (`ctx.measure`: warm-up + repeats) and
   report medians with the interquartile range, drawn as range bars; compile/upload/dispatch/readback
   phases where they apply. N-body adopts it.
+- Three flagship investigations brought to a common standard (#72, #75): matrix multiplication (new tiled
+  workgroup-memory kernel and a blocked CPU baseline: CPU vs naive GPU vs tiled GPU, with phases), N-body and
+  parallel sorting (now on the protocol). Each shows measured vs predicted — fitted log-log slopes with 95%
+  intervals against the theory (n³, θ², N² vs N log N, leapfrog dt², sorting complexities), crossovers
+  bracketed with their spreads — and states what the result does and does not show.
 - Experiment result schema v1 (#74): every run produces a versioned JSON record (source commit, settings,
   protocol, verification checks, adapter and browser), downloadable from the Measure tab and comparable
   with another person's file; the deployed site stamps `version.json` with the commit.
