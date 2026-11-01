@@ -55,7 +55,10 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   links `#<id>/understand`, `#<id>/measure`; leaving Explore stops the example via its own Pause/Stop button),
   `markdown.js` + `tex-mathml.js` render `content/understand/<id>.md` (escaped Markdown, `$…$` TeX subset → MathML),
   `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
-  examples have content, `app-state.js` shares the device and instances with `main.js`.
+  examples have content, `app-state.js` shares the device and instances with `main.js`, `stats.js` summarizes
+  repeats (median, IQR, CV), `result-record.js` builds and validates schema v1 records (Download / Compare).
+- `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`
+  (version, commit, build time) into the Pages build; `js/source-info.js` reads it (commit "local" when served locally).
 - `learn.html` + `js/teach/path.js` (data) + `js/teach/learn.js` (renderer) — the learning path; it never loads
   WebGPU. New examples should be placed in a track step; `test/learn-path.test.mjs` requires every example to appear.
 - `index.html` — page structure. Each example is a
@@ -81,7 +84,11 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 6. Teaching content (see `content/understand/nbody.md` and `js/teach/experiments/nbody.js` as the template):
    an Understand page with the outline in `test/teach-content.test.mjs` (`REQUIRED_SECTIONS`), and 1–3 Measure
    experiments (interface at the top of `js/teach/measure.js`) that use fixed parameter lists with hard caps, a
-   `budgetMs` ≤ 20 s, `await ctx.step()` between steps, and a CPU reference from `js/refs/`. GPU work for
+   `budgetMs` ≤ 20 s, `await ctx.step()` between steps, and a CPU reference from `js/refs/`. The budget is checked
+   between steps, so each step's GPU work must be capped on its own. Time with `ctx.measure(runOnce, { warmup, repeats })`
+   (medians + IQR via `withSpread`; phases via `js/phase-clock.js`), declare `columns[].unit`, and add
+   `verify(rows, settings)` checks against references where a result can be right or wrong; every run produces a
+   schema v1 record (`schema/experiment-result.v1.json`, built by `js/teach/result-record.js`). GPU work for
    experiments goes through a small compute-only export of the example (no canvas), covered by a CPU test and a
    `test/gpu/` test. List the example in `js/teach/registry.js`; `npm test` lints all registered content.
 

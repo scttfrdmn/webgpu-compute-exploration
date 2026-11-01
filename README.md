@@ -21,7 +21,10 @@ scaling).
   behaviour, things to try, and references (Markdown with MathML equations, `content/understand/<id>.md`).
 - **Measure** — experiments you start on your own GPU (e.g. Barnes-Hut opening angle vs force error, scaling
   against brute force), checked against CPU references in the browser and charted. Each experiment uses fixed,
-  capped problem sizes and a time budget, and its results are added to the device report.
+  capped problem sizes and repeats each measurement (median and interquartile range, with a phase breakdown where
+  it applies). Each step's GPU work is capped and the 20 s budget is checked between steps. Results carry
+  PASS/FAIL checks against the references and can be downloaded as a versioned JSON record (schema
+  `schema/experiment-result.v1.json`, stamped with the source commit) and compared with someone else's file.
 
 Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`. Content is being written example
 by example; tabs without content yet say so.
@@ -392,6 +395,8 @@ webgpu/
 │   └── social-preview.png             # Preview image (README, link previews)
 ├── content/
 │   └── understand/                    # Understand pages (Markdown + TeX math), one per example
+├── schema/
+│   └── experiment-result.v1.json      # JSON Schema for Measure result records
 ├── css/
 │   └── site.css                       # Shared styles (index.html, learn.html)
 ├── data/

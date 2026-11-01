@@ -7,10 +7,20 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Measurement protocol (#73): experiments repeat measurements (`ctx.measure`: warm-up + repeats) and
+  report medians with the interquartile range, drawn as range bars; compile/upload/dispatch/readback
+  phases where they apply. N-body adopts it.
+- Experiment result schema v1 (#74): every run produces a versioned JSON record (source commit, settings,
+  protocol, verification checks, adapter and browser), downloadable from the Measure tab and comparable
+  with another person's file; the deployed site stamps `version.json` with the commit.
 - Real-browser regression tests (`test/browser/`, new `browser` CI job, #77): Playwright drives the page
   in headless Chromium on a software WebGPU adapter — tabs and deep links, keyboard, lifecycle pauses,
   Measure runs and Cancel, the no-timestamp fallback, device loss, the learning path, the device report.
   CI-only, guarded like `test/gpu/`.
+
+### Changed
+- The Measure time budget is described accurately: it is checked between steps, and each step's GPU work
+  is capped (#76).
 
 ### Fixed
 - After a GPU device loss, examples scrolled into view were still created and re-enabled their controls.
