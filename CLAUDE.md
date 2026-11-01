@@ -50,6 +50,8 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   `markdown.js` + `tex-mathml.js` render `content/understand/<id>.md` (escaped Markdown, `$…$` TeX subset → MathML),
   `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
   examples have content, `app-state.js` shares the device and instances with `main.js`.
+- `learn.html` + `js/teach/path.js` (data) + `js/teach/learn.js` (renderer) — the learning path; it never loads
+  WebGPU. New examples should be placed in a track step; `test/learn-path.test.mjs` requires every example to appear.
 - `index.html` — page structure. Each example is a
   `<section class="example" id="…">` with an `<h3>`, listed in the sticky `nav.toc`; `.controls`, `.seed-buttons`,
   `.hint` and `.output` (hidden while empty) are the shared building blocks. Canvases are CSS-scaled, so pointer

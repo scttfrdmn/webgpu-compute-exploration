@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format follows
   reaction-diffusion, Barnes-Hut θ vs error, path-tracer noise vs samples (1/√spp), MNIST learning
   rate vs accuracy, FFT and convolution accuracy, sort and k-means verified against the CPU. Each
   example gained a small canvas-free measurement export, tested on the CPU and on CI's software GPU.
+- Learning path (`learn.html`, #57): two tracks, GPU programming and computational science, that
+  order the 25 examples into steps, each saying why it follows the last, what to try, and linking
+  to the example's Explore, Understand and Measure tabs (`learn.html#gpu`, `learn.html#science`).
 - Running simulations pause when their canvas scrolls off screen and resume when it comes back
   (unless you paused them yourself or left the Explore tab); audio examples stop and stay stopped.
 
