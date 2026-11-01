@@ -13,11 +13,24 @@ All notable changes to this project are documented here. The format follows
   URL allowlist). Measure runs user-started, capped, time-budgeted experiments on the visitor's GPU,
   compares with CPU references in the browser, and charts the results; results join the device report.
 - `js/refs/`: the CPU references used by the tests, now deployable for the Measure tab.
+- Understand pages and Measure experiments for all 25 examples (#55, #56). Every example has an
+  explanation for both audiences (GPU mapping; numerical behaviour) and 1–3 experiments that run on
+  your GPU against CPU references — e.g. the wave equation's CFL limit, float32 vs float64
+  reaction-diffusion, Barnes-Hut θ vs error, path-tracer noise vs samples (1/√spp), MNIST learning
+  rate vs accuracy, FFT and convolution accuracy, sort and k-means verified against the CPU. Each
+  example gained a small canvas-free measurement export, tested on the CPU and on CI's software GPU.
 - Running simulations pause when their canvas scrolls off screen and resume when it comes back
   (unless you paused them yourself or left the Explore tab); audio examples stop and stay stopped.
 
 ### Changed
 - Styles moved from `index.html` to `css/site.css`.
+
+### Fixed
+- Game of Life: clicking a cell did nothing (its grid buffer couldn't be copied), and once fixed it
+  toggled the vertically mirrored cell.
+- Voronoi: two random seeds in one pixel lost one seed's whole cell; seeds now get distinct pixels.
+- Info panels: molecular dynamics showed a hard-coded frame rate; SPH and boids misdescribed their
+  integrator, pass count and neighbor checks.
 
 ## [0.5.0] - 2026-10-31
 
