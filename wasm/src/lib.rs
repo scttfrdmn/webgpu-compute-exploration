@@ -40,6 +40,11 @@ impl MandelbrotConfig {
         self.center_y = y;
     }
 
+    // Used by the Measure tab (js/teach/experiments/wasm-mandelbrot.js) to time other iteration limits
+    pub fn set_max_iterations(&mut self, max_iterations: u32) {
+        self.max_iterations = max_iterations;
+    }
+
     pub fn get_width(&self) -> u32 {
         self.width
     }

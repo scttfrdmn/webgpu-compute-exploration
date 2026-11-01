@@ -4,31 +4,43 @@
 
 // Examples with an Understand page at content/understand/<id>.md
 export const UNDERSTAND = new Set([
+    'cloth',
+    'convolution-reverb',
     'dla',
     'falling-sand',
     'fft-audio',
     'kmeans',
     'maze',
+    'mnist-recognize',
+    'mnist-train',
     'nbody',
     'noise',
     'parallel-sort',
+    'path-tracer',
     'reaction-diffusion',
     'voronoi',
+    'wasm-mandelbrot',
     'wave-equation',
 ]);
 
 // Examples with experiments at js/teach/experiments/<id>.js (default export: array of experiments)
 export const MEASURE = new Set([
+    'cloth',
+    'convolution-reverb',
     'dla',
     'falling-sand',
     'fft-audio',
     'kmeans',
     'maze',
+    'mnist-recognize',
+    'mnist-train',
     'nbody',
     'noise',
     'parallel-sort',
+    'path-tracer',
     'reaction-diffusion',
     'voronoi',
+    'wasm-mandelbrot',
     'wave-equation',
 ]);
 

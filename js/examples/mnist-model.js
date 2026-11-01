@@ -39,6 +39,8 @@
 //   offset 132  f32[5994] W1, b1, W2, b2, W3, b3 in the order and shapes above
 // Shapes: W1 [8,1,5,5], b1 [8], W2 [16,8,5,5], b2 [16], W3 [10,256], b3 [10].
 
+import { GpuTimer } from '../gpu-timer.js';
+
 export const IMG_SIZE = 28;
 export const IMG_PIXELS = 784;
 export const NUM_CLASSES = 10;
@@ -920,4 +922,212 @@ export function wgslModules() {
         { name: 'compute-batch1', code: buildComputeShader(1) },
         { name: `compute-batch${MAX_BATCH}`, code: buildComputeShader(MAX_BATCH) },
     ];
+}
+
+// ---------------------------------------------------------------------------------------------
+// Compute-only API for the Measure tab (js/teach/experiments/mnist-train.js, mnist-recognize.js) and
+// test/gpu/. All three run the shipped kernels through MNISTGPU exactly as the examples encode them;
+// datasets are { images, labels, count } as loadDataset() returns them.
+
+export const MAX_MEASURE_BATCHES = 400;   // training mini-batches per measureTraining call
+export const MEASURE_SLOTS = 16;          // mini-batches per submit (the trainer's MAX_STEPS_PER_FRAME)
+export const MAX_MEASURE_REPEATS = 20;    // timed inference submits per measureInference call
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+async function readBuffer(device, buffer, offset, size) {
+    const staging = device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    const encoder = device.createCommandEncoder();
+    encoder.copyBufferToBuffer(buffer, offset, staging, 0, size);
+    device.queue.submit([encoder.finish()]);
+    try {
+        await staging.mapAsync(GPUMapMode.READ);
+        return staging.getMappedRange().slice(0);
+    } finally {
+        staging.destroy();
+    }
+}
+
+// Forward pass over the first `count` images of an uploaded dataset in batches of `batch` (mode 1, as
+// the trainer's test pass), one compute pass per batch followed by a copy of its softmax output, so the
+// probabilities of every image come back in one readback. Stats are cleared first.
+// Resolves to { count, correct, loss (mean), probs: Float32Array(count × 10), wallMs }.
+async function evaluateUploaded(gpu, data, count, batch) {
+    const device = gpu.device;
+    const L = gpu.layout;
+    const staging = device.createBuffer({ size: count * NUM_CLASSES * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    const t0 = performance.now();
+    try {
+        for (let first = 0; first < count; first += batch * gpu.maxSlots) {
+            const steps = [];
+            for (let s = first; s < count && steps.length < gpu.maxSlots; s += batch) {
+                steps.push({ start: s, count: Math.min(batch, count - s), mode: 1, dataLen: data.count });
+            }
+            gpu.writeSlots(steps);
+            const encoder = device.createCommandEncoder();
+            if (first === 0) encoder.clearBuffer(gpu.statsBuffer);
+            steps.forEach((step, i) => {
+                const pass = encoder.beginComputePass();
+                gpu.encodeBatch(pass, data.bindGroup, i, step);
+                pass.end();
+                encoder.copyBufferToBuffer(gpu.workBuffer, L.PROB * 4, staging, step.start * NUM_CLASSES * 4,
+                    step.count * NUM_CLASSES * 4);
+            });
+            device.queue.submit([encoder.finish()]);
+        }
+        await staging.mapAsync(GPUMapMode.READ);
+        const probs = new Float32Array(staging.getMappedRange().slice(0));
+        const stats = await readBuffer(device, gpu.statsBuffer, 0, STATS_SIZE);
+        const f32 = new Float32Array(stats), u32 = new Uint32Array(stats);
+        return { count: u32[6], correct: u32[5], loss: u32[6] ? f32[4] / u32[6] : null, probs, wallMs: performance.now() - t0 };
+    } finally {
+        staging.destroy();
+    }
+}
+
+// Trains from the seeded He initialization for `batches` mini-batches of `batch` images (≤
+// MAX_MEASURE_BATCHES; epochs roll over with a new shuffle and η = lr · lrDecay^epoch, exactly as the
+// trainer does), `slots` mini-batches per submit, each submit's compute pass timed. Stats are read back
+// after every submit (the training curve). Then, if `test` is given, the first `evalCount` test images
+// run forward. between(), if given, is awaited after every submit (the Measure runner passes ctx.step).
+// Resolves to { batches, examples, gpuMsPerBatch (null without timestamp-query), wallMsPerBatch,
+// curve: [{ batches, loss, accuracy }], trainLoss, trainAccuracy (of the last submit), test (the
+// evaluation, or null), weights: Float32Array(NUM_PARAMS) }.
+export async function measureTraining(gpuDevice, { train, test = null, batch = DEFAULTS.batch, lr = DEFAULTS.lr,
+    momentum = DEFAULTS.momentum, lrDecay = DEFAULTS.lrDecay, weightDecay = DEFAULTS.weightDecay,
+    maxShift = DEFAULTS.maxShift, seed = DEFAULTS.seed, batches = 100, slots = 8, evalCount = null, between = null }) {
+    if (!Number.isInteger(batch) || batch < 1 || batch > MAX_BATCH) throw new RangeError(`batch = ${batch} is outside 1 … ${MAX_BATCH}`);
+    if (!Number.isInteger(batches) || batches < 1 || batches > MAX_MEASURE_BATCHES) {
+        throw new RangeError(`batches = ${batches} is outside 1 … ${MAX_MEASURE_BATCHES}`);
+    }
+    if (!(lr > 0 && lr <= 1)) throw new RangeError(`learning rate ${lr} is outside (0, 1]`);
+    const device = gpuDevice.device ?? gpuDevice;
+    slots = Math.min(Math.max(Math.floor(slots), 1), MEASURE_SLOTS);
+    const gpu = new MNISTGPU(device, MAX_BATCH, Math.max(slots, test ? MEASURE_SLOTS : 1));
+    const trainData = gpu.uploadDataset(train, true);
+    const testData = test ? gpu.uploadDataset(test, false) : null;
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
+    try {
+        gpu.setWeights(initWeights(seed));
+        const n = train.count;
+        let epoch = -1, pos = n, done = 0, gpuSum = 0, gpuOk = true, wallSum = 0;
+        const curve = [];
+        while (done < batches) {
+            if (pos >= n) {
+                epoch++;
+                pos = 0;
+                device.queue.writeBuffer(trainData.orderBuffer, 0, epochOrder(n, seed, epoch));
+            }
+            const steps = [];
+            while (steps.length < slots && done + steps.length < batches && pos < n) {
+                const count = Math.min(batch, n - pos);
+                steps.push({ start: pos, count, mode: 0, dataLen: n, lr: lr * Math.pow(lrDecay, epoch), momentum,
+                    weightDecay, augSeed: augmentSeed(seed, epoch), maxShift });
+                pos += count;
+            }
+            gpu.writeSlots(steps);
+            const encoder = device.createCommandEncoder();
+            encoder.clearBuffer(gpu.statsBuffer);
+            const pass = encoder.beginComputePass(timer.computePassDescriptor('train'));
+            steps.forEach((step, i) => gpu.encodeBatch(pass, trainData.bindGroup, i, step));
+            pass.end();
+            timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timer.read();
+            const stats = await readBuffer(device, gpu.statsBuffer, 0, STATS_SIZE);
+            wallSum += performance.now() - t0;
+            const r = await timing;
+            if (r) gpuSum += r.total; else gpuOk = false;
+            done += steps.length;
+            const f32 = new Float32Array(stats), u32 = new Uint32Array(stats);
+            curve.push({ batches: done, loss: u32[2] ? f32[0] / u32[2] : null, accuracy: u32[2] ? u32[1] / u32[2] : null });
+            if (between) await between();
+        }
+        const weights = new Float32Array(await readBuffer(device, gpu.weightsBuffer, 0, NUM_PARAMS * 4));
+        const last = curve[curve.length - 1];
+        let evaluation = null;
+        if (testData) {
+            const r = await evaluateUploaded(gpu, testData, Math.min(evalCount ?? test.count, test.count), MAX_BATCH);
+            evaluation = { ...r, accuracy: r.count ? r.correct / r.count : null };
+        }
+        return {
+            batches: done, examples: done * batch, gpuMsPerBatch: gpuOk ? gpuSum / done : null,
+            wallMsPerBatch: wallSum / done, curve, trainLoss: last.loss, trainAccuracy: last.accuracy,
+            test: evaluation, weights,
+        };
+    } finally {
+        timer.destroy();
+        trainData.destroy();
+        testData?.destroy();
+        gpu.destroy();
+    }
+}
+
+// Evaluation of `weights` on the first `count` images of `data`, in batches of `batch` (mode 1).
+// Resolves to { count, correct, accuracy, loss, probs: Float32Array(count × 10), wallMs }.
+export async function evaluateWeights(gpuDevice, { weights, data, count = data.count, batch = MAX_BATCH }) {
+    if (!Number.isInteger(batch) || batch < 1 || batch > MAX_BATCH) throw new RangeError(`batch = ${batch} is outside 1 … ${MAX_BATCH}`);
+    if (!Number.isInteger(count) || count < 1 || count > data.count) throw new RangeError(`count = ${count} is outside 1 … ${data.count}`);
+    const device = gpuDevice.device ?? gpuDevice;
+    const gpu = new MNISTGPU(device, MAX_BATCH, MEASURE_SLOTS);
+    const uploaded = gpu.uploadDataset(data, false);
+    try {
+        gpu.setWeights(weights);
+        const r = await evaluateUploaded(gpu, uploaded, count, batch);
+        return { ...r, accuracy: r.count ? r.correct / r.count : null };
+    } finally {
+        uploaded.destroy();
+        gpu.destroy();
+    }
+}
+
+// Inference latency for a batch of the first `batch` images of `data` (mode 1, forward only): `warmup`
+// untimed and `repeats` timed submits (each ≤ MAX_MEASURE_REPEATS), each one compute pass plus the
+// readback of the batch's probabilities, awaited before the next. Resolves to { batch, gpuMs, wallMs
+// (median round trip: submit to probabilities on the CPU), perImageMs }.
+export async function measureInference(gpuDevice, { weights, data, batch = 1, warmup = 2, repeats = 10 }) {
+    if (!Number.isInteger(batch) || batch < 1 || batch > Math.min(MAX_BATCH, data.count)) {
+        throw new RangeError(`batch = ${batch} is outside 1 … ${MAX_BATCH}`);
+    }
+    const device = gpuDevice.device ?? gpuDevice;
+    const gpu = new MNISTGPU(device, MAX_BATCH, 1);
+    const uploaded = gpu.uploadDataset(data, false);
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
+    const staging = device.createBuffer({ size: batch * NUM_CLASSES * 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    try {
+        gpu.setWeights(weights);
+        gpu.writeSlots([{ start: 0, count: batch, mode: 1, dataLen: data.count }]);
+        const timedRuns = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const total = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS) + timedRuns;
+        const gpuMs = [], wallMs = [];
+        for (let r = 0; r < total; r++) {
+            const timed = r >= total - timedRuns;
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('infer') : {});
+            gpu.encodeBatch(pass, uploaded.bindGroup, 0, { start: 0, count: batch, mode: 1 });
+            pass.end();
+            encoder.copyBufferToBuffer(gpu.workBuffer, gpu.layout.PROB * 4, staging, 0, batch * NUM_CLASSES * 4);
+            if (timed) timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timed ? timer.read() : null;
+            await staging.mapAsync(GPUMapMode.READ);
+            staging.unmap();
+            if (!timed) continue;
+            wallMs.push(performance.now() - t0);
+            const result = await timing;
+            gpuMs.push(result ? result.total : null);
+        }
+        const wall = median(wallMs);
+        return { batch, gpuMs: median(gpuMs), wallMs: wall, perImageMs: wall / batch };
+    } finally {
+        staging.destroy();
+        timer.destroy();
+        uploaded.destroy();
+        gpu.destroy();
+    }
 }

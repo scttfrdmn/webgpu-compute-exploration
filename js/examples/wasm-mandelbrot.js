@@ -53,18 +53,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
 let wasmModule = null;
 
-async function loadWASM() {
+async function loadWASM({ quiet = false } = {}) {
     if (wasmModule) {
         return wasmModule;
     }
 
     try {
-        const { default: init, MandelbrotConfig, render_to_canvas } = await import('../wasm-pkg/webgpu_wasm.js');
+        const { default: init, MandelbrotConfig, render_to_canvas, compute_mandelbrot_cpu } = await import('../wasm-pkg/webgpu_wasm.js');
         await init();
-        wasmModule = { MandelbrotConfig, render_to_canvas };
+        wasmModule = { MandelbrotConfig, render_to_canvas, compute_mandelbrot_cpu };
         return wasmModule;
     } catch (error) {
-        console.error('Failed to load WASM module:', error);
+        if (!quiet) console.error('Failed to load WASM module:', error);
         throw new Error(`WASM module not found. Please build it first by running: cd wasm && chmod +x build.sh && ./build.sh`);
     }
 }
@@ -230,6 +230,91 @@ and rendering while WebGPU performs the compute-intensive fractal
 calculations on the GPU.`;
         }
         throw error;
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/wasm-mandelbrot.js) and test/gpu/ ----
+
+// The built WASM package ({ MandelbrotConfig, render_to_canvas, compute_mandelbrot_cpu }), or null when
+// js/wasm-pkg/ has not been built (wasm/build.sh)
+export async function loadWasmModule() {
+    try {
+        return await loadWASM({ quiet: true });
+    } catch {
+        return null;
+    }
+}
+
+export const MEASURE_MAX_PIXELS = 800 * 600;    // the example's canvas
+export const MEASURE_MAX_ITERATIONS = 4096;
+export const MAX_MEASURE_REPEATS = 10;
+
+// Escape counts of the width × height view (centre, zoom as lib.rs MandelbrotConfig) with the shipped
+// shader, Params as get_shader_params() lays them out: `repeats` timed runs of one dispatch plus the
+// readback of the counts. Resolves to { counts: Float32Array(width·height), gpuMs (median, null
+// without timestamp-query), wallMs (median: submit to counts on the CPU) }.
+export async function measureMandelbrot(gpuDevice, { width, height, maxIterations = 256, zoom = 1, centerX = -0.5,
+    centerY = 0, repeats = 3 }) {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > MEASURE_MAX_PIXELS) {
+        throw new RangeError(`${width} × ${height} is outside 1 … ${MEASURE_MAX_PIXELS} pixels`);
+    }
+    if (!Number.isInteger(maxIterations) || maxIterations < 1 || maxIterations > MEASURE_MAX_ITERATIONS) {
+        throw new RangeError(`maxIterations = ${maxIterations} is outside 1 … ${MEASURE_MAX_ITERATIONS}`);
+    }
+    const device = gpuDevice.device ?? gpuDevice;
+    const size = width * height * 4;
+    const params = new Float32Array([width, height, maxIterations, zoom, centerX, centerY]);
+    const paramsBuffer = device.createBuffer({ size: params.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const outputBuffer = device.createBuffer({ size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const readBuffer = device.createBuffer({ size, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
+    try {
+        device.queue.writeBuffer(paramsBuffer, 0, params);
+        const layout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            ],
+        });
+        const pipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+            compute: { module: device.createShaderModule({ code: shaderCode }), entryPoint: 'main' },
+        });
+        const bindGroup = device.createBindGroup({
+            layout,
+            entries: [{ binding: 0, resource: { buffer: paramsBuffer } }, { binding: 1, resource: { buffer: outputBuffer } }],
+        });
+        const gpuMs = [], wallMs = [];
+        let counts = null;
+        for (let r = 0; r < Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS); r++) {
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass(timer.computePassDescriptor('mandelbrot'));
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+            pass.end();
+            encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, size);
+            timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timer.read();
+            await readBuffer.mapAsync(GPUMapMode.READ);
+            counts = new Float32Array(readBuffer.getMappedRange().slice(0));
+            readBuffer.unmap();
+            wallMs.push(performance.now() - t0);
+            const result = await timing;
+            gpuMs.push(result ? result.total : null);
+        }
+        const median = (v) => {
+            const s = v.filter(x => typeof x === 'number').sort((a, b) => a - b);
+            return s.length ? s[s.length >> 1] : null;
+        };
+        return { counts, gpuMs: median(gpuMs), wallMs: median(wallMs) };
+    } finally {
+        timer.destroy();
+        paramsBuffer.destroy();
+        outputBuffer.destroy();
+        readBuffer.destroy();
     }
 }
 
