@@ -6,7 +6,8 @@
 // NBodySimulation without a canvas, exactly as the Measure tab does in a browser. Checked against:
 //   forces: the float64 direct sum (js/refs/nbody.js) with the bounds of nbody.gpu.test.mjs;
 //   energy: E₀ = Σ ½ m v² + ½ Σ m φ in float64 from the same bodies; the drift stays small and shrinks with dt;
-//   experiments: every row has the declared columns, and the trends the Understand page describes hold.
+//   experiments: every row has the declared columns, the trends the Understand page describes hold, and the
+//   record's measured-vs-predicted entries exist (θ slope, interactions and energy order must agree here).
 // The printed numbers are the CI baselines quoted in the experiment file.
 
 import { test } from 'node:test';
@@ -122,6 +123,17 @@ const show = (rows, keys) => rows.map(r => keys.map(k => {
     return typeof v === 'number' ? (Number.isInteger(v) ? v : v.toExponential(2)) : String(v);
 }).join(' ')).join('; ');
 
+// The record's measured-vs-predicted entries (#75), printed for the baselines; returns the verdicts
+function interpretation(record, t, count) {
+    assert.equal(record.interpretation?.length, count, 'interpretation entries');
+    for (const c of record.interpretation) {
+        assert.ok(c.claim && c.predicted && c.measured && [true, false, null].includes(c.agrees), JSON.stringify(c));
+        t.diagnostic(`interpret: ${c.claim}: measured ${c.measured}; ${c.agrees === true ? 'agrees' : c.agrees === false ? 'DISAGREES' : 'undetermined'}`
+            + ` (predicted ${c.predicted})`);
+    }
+    return record.interpretation.map(c => c.agrees);
+}
+
 test('experiment theta-error (Plummer N = 4,096): error grows ~θ², interactions fall', async (t) => {
     const e = byId['theta-error'];
     const { rows, seconds, record } = await runAll(e, { n: 4096, preset: 'plummer' }, t);
@@ -140,6 +152,8 @@ test('experiment theta-error (Plummer N = 4,096): error grows ~θ², interaction
     // θ² from 0.3 to 1.2 would be 16×; allow a generous range around that
     const ratio = rows[5].median / rows[0].median;
     assert.ok(ratio > 6 && ratio < 40, `median(1.2)/median(0.3) = ${ratio}`);
+    // measured vs predicted: θ² slope, interactions falling no faster than θ⁻³, the replica reproduced
+    assert.deepEqual(interpretation(record, t, 3), [true, true, true]);
 });
 
 test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks with dt', async (t) => {
@@ -158,6 +172,7 @@ test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks wi
         const r = rows[i - 1].maxDrift / rows[i].maxDrift;
         assert.ok(r > 2 && r < 8, `dt ${rows[i - 1].dt} → ${rows[i].dt}: ratio ${r}`);
     }
+    assert.deepEqual(interpretation(record, t, 1), [true], 'second order');
 
     // Barnes-Hut at θ = 0.5: the tree's force/potential error sets a floor that a smaller dt cannot remove
     const bh = await runAll(e, { n: 2048, mode: 'bh', preset: 'plummer' }, t);
@@ -165,6 +180,7 @@ test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks wi
     assert.equal(bh.rows.length, 4);
     assert.ok(bh.rows.every(r => r.maxDrift < 1e-2));
     assert.ok(bh.rows[3].maxDrift > 10 * rows[3].maxDrift, 'Barnes-Hut floor above the brute-force error at dt = 0.005');
+    assert.deepEqual(interpretation(bh.record, t, 2), [true, true], 'flat floor of the predicted size');
 });
 
 test('experiment scaling (Plummer): rows up to the caps, brute force stops at 16,384', async (t) => {
@@ -182,4 +198,9 @@ test('experiment scaling (Plummer): rows up to the caps, brute force stops at 16
         assert.ok(row.bhWall > 0 && row.interactions > 0 && row.interactions < row.n - 1);
         assert.equal(row.bruteWall === null, row.n > 16384);
     }
+    // Timing verdicts depend on the device and are printed, not asserted; the entries must exist, and on the
+    // software GPU the crossover falls inside the sweep
+    const verdicts = interpretation(record, t, 5);
+    assert.equal(verdicts[3], true, 'crossover bracketed inside the sweep');
+    t.diagnostic(`tree share: ${show(rows, ['n', 'treeShare'])}; gpu ms: ${show(rows, ['n', 'bhGpu', 'bruteGpu'])}`);
 });
