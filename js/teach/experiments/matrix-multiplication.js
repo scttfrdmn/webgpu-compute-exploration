@@ -10,7 +10,7 @@
 //
 // Caps (exported so test/matrix-multiplication-measure.test.mjs can check them): GPU n ≤ 1,024 (2.1 GFLOP
 // per product), CPU n ≤ 512 (0.27 GFLOP: about 0.1 s at the 2.4 GFLOPS one core of a 2023 laptop reaches,
-// and still under 1.5 s at 0.2 GFLOPS). Protocol for every path: 1 discarded warm-up, then 5 independent
+// still under 1.5 s at 0.2 GFLOPS; a loaded CI runner took 0.67 s). Protocol for every path: 1 discarded warm-up, then 5 independent
 // repeats (GPU: each a fresh measureMatmul call that creates, uploads, dispatches once and reads back).
 // Timed columns are medians with their interquartile range; errors are deterministic and come from the
 // last repeat.
@@ -76,7 +76,8 @@ export const sqrtNu = (n) => Math.sqrt(n) * UNIT_ROUNDOFF;
 const fmt = (digits) => (v) => v.toFixed(digits);
 const ms = (v) => (v < 10 ? v.toFixed(3) : v.toFixed(1));
 const sci = (v) => v.toExponential(2);
-const gf = (v) => (v < 10 ? v.toFixed(2) : v.toFixed(1));
+const gbs = (v) => (v < 10 ? v.toPrecision(2) : v.toFixed(0));
+const gf = (v) =>(v < 10 ? v.toFixed(2) : v.toFixed(1));
 const PATHS = ['cpu', 'naive', 'tiled'];
 const LABEL = { cpu: 'CPU (blocked JS)', naive: 'naive GPU', tiled: 'tiled GPU' };
 const PHASE_KEYS = ['Compile', 'Upload', 'Dispatch', 'Readback'];
@@ -152,7 +153,7 @@ const threeWay = {
             'Not a GPU ranking: one device, one browser, one run.',
             'The CPU baseline is single-threaded JavaScript, not an optimized BLAS: a tuned multithreaded BLAS on the same CPU is typically 10–100× faster.',
             'Not the hardware\'s peak: the tiled kernel has no register blocking or vectorized loads, and vendor libraries go several times further.',
-            'On software GPUs (as in CI) the ranking inverts: the "GPU" is CPU cores, where workgroup memory and barriers cost more than they save.',
+            'On a software GPU (as in CI) the "GPU" is the CPU itself, running the shader on every core with SIMD: beating the one-core JavaScript baseline there says nothing about GPU hardware, and workgroup memory is ordinary memory.',
             'Kernel times exclude transfers: whether offloading one product pays also depends on upload and readback (see the phases).',
         ],
     },
@@ -197,9 +198,12 @@ const threeWay = {
             labels: { cpuErr: LABEL.cpu, naiveErr: LABEL.naive, tiledErr: LABEL.tiled },
             reference: { label: '√n·u (typical)', points: [SIZES[0], SIZES.at(-1)].map(n => [n, sqrtNu(n)]) } },
     ],
-    baseline: 'CI (software GPU, lavapipe; not representative of any real GPU): see the numbers on the Understand page. '
-        + 'There the CPU baseline wins at every size, because the "GPU" is the CI machine\'s CPU cores. On a real GPU expect '
-        + 'the tiled kernel to beat the naive one by a few times at n ≥ 512 and both to beat one CPU core from a few hundred on.',
+    baseline: 'CI (Mesa lavapipe, a software GPU that runs the shader on the CI machine\'s CPU cores; wall-clock timing, no '
+        + 'timestamps; not representative of any real GPU), GFLOPS at n = 64 / 128 / 256 / 512 / 1,024: CPU 0.26 / 0.45 / 0.41 / '
+        + '0.40 / —, naive 0.62 / 0.94 / 1.12 / 1.15 / 1.15, tiled 0.76 / 0.82 / 2.03 / 1.39 / 1.48; tiled vs naive 1.28× '
+        + '(1.24–1.33) at 1,024. Fitted slopes over n = 128 … 1,024: naive 2.91 (95% CI 2.73 … 3.09), tiled 2.80 (1.67 … 3.92); '
+        + 'CPU over 64 … 512: 2.82 (2.17 … 3.47). Errors 0.71–0.90 √n·u for all three, naive and tiled bit-identical at every n. '
+        + 'On a real GPU expect tens to thousands of GFLOPS, a larger tiling gain, and a crossover with the CPU at a few hundred.',
     async *run(ctx, { maxN = MAX_SIZE } = {}) {
         const useGpu = ctx.timestamps === true;
         const timing = useGpu ? 'timestamps' : 'wall (submit → done)';
@@ -283,7 +287,7 @@ const threeWay = {
         claims.push({
             claim: 'The naive kernel is bound by memory traffic, not arithmetic',
             predicted: 'naive GFLOPS ≤ 0.25 × the bandwidth that serves its loads (8 bytes per multiply-add); tiled ≤ 4 × bandwidth',
-            measured: big ? `naive: ${(8 * big.n ** 3 / big.naiveMs / 1e6).toFixed(0)} GB/s of loads, tiled: ${(8 * big.n ** 3 / TILED_T / big.tiledMs / 1e6).toFixed(0)} GB/s, at n = ${big.n}` : 'no size with both kernels',
+            measured: big ? `naive: ${gbs(8 * big.n ** 3 / big.naiveMs / 1e6)} GB/s of loads, tiled: ${gbs(8 * big.n ** 3 / TILED_T / big.tiledMs / 1e6)} GB/s of global loads, at n = ${big.n}` : 'no size with both kernels',
             agrees: null,
             note: 'Compare with your GPU\'s memory bandwidth (not known to the page). If the naive figure exceeds it, caches are serving most '
                 + 'of its loads: the reuse happens, but in cache rather than in workgroup memory, and cache bandwidth is the limit.',
