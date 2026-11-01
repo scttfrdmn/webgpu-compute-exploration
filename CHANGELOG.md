@@ -25,6 +25,12 @@ All notable changes to this project are documented here. The format follows
   in headless Chromium on a software WebGPU adapter — tabs and deep links, keyboard, lifecycle pauses,
   Measure runs and Cancel, the no-timestamp fallback, device loss, the learning path, the device report.
   CI-only, guarded like `test/gpu/`.
+- Physical-GPU validation (#78): `validate.html` runs a fixed plan of the three flagship investigations
+  and downloads a validation bundle (`schema/validation-bundle.v1.json`: environment, adapter,
+  timestamp-query support and one schema v1 record per entry). `data/validation/matrix.json` lists the
+  target environments; `tools/validation-summary.mjs` turns committed bundles into the README's
+  correctness, tolerance, timing and interpretation tables; `tools/local-version.mjs` stamps a local
+  checkout so bundles name their commit.
 
 ### Changed
 - The Measure time budget is described accurately: it is checked between steps, and each step's GPU work

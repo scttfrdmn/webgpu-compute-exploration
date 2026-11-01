@@ -61,6 +61,10 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   claims by their stable `key`, and `test/flagships.test.mjs` fails if a card's wording drifts from the claims.
 - `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`
   (version, commit, build time) into the Pages build; `js/source-info.js` reads it (commit "local" when served locally).
+- `validate.html` + `js/teach/validation.js` (plan, environment, bundle; pure) + `js/teach/validate.js` (runner and
+  page) — the physical-GPU validation run. Bump `VALIDATION_PLAN.version` whenever its entries or settings change.
+  Bundles go in `data/validation/<env>/` (environments from `data/validation/matrix.json`); then run
+  `node tools/validation-summary.mjs --write` — `test/validation.test.mjs` fails if the README block is stale.
 - `learn.html` + `js/teach/path.js` (data) + `js/teach/learn.js` (renderer) — the learning path; it never loads
   WebGPU. New examples should be placed in a track step; `test/learn-path.test.mjs` requires every example to appear.
 - `index.html` — page structure. Each example is a
