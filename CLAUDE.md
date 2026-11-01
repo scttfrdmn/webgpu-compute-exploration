@@ -57,6 +57,8 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
   examples have content, `app-state.js` shares the device and instances with `main.js`, `stats.js` summarizes
   repeats (median, IQR, CV), `result-record.js` builds and validates schema v1 records (Download / Compare).
+- `js/teach/flagships.js` — data for the landing page's three reference investigations; each card cites `interpret()`
+  claims by their stable `key`, and `test/flagships.test.mjs` fails if a card's wording drifts from the claims.
 - `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`
   (version, commit, build time) into the Pages build; `js/source-info.js` reads it (commit "local" when served locally).
 - `learn.html` + `js/teach/path.js` (data) + `js/teach/learn.js` (renderer) — the learning path; it never loads

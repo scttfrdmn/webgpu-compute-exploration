@@ -10,6 +10,9 @@ All notable changes to this project are documented here. The format follows
 - Measurement protocol (#73): experiments repeat measurements (`ctx.measure`: warm-up + repeats) and
   report medians with the interquartile range, drawn as range bars; compile/upload/dispatch/readback
   phases where they apply. N-body adopts it.
+- Reference investigations section on the landing page (#79): matrix multiplication, N-body and parallel
+  sorting, each with its question, protocol, the predictions it tests and a caveat, linking straight into
+  Measure; the learning path points to them too.
 - Three flagship investigations brought to a common standard (#72, #75): matrix multiplication (new tiled
   workgroup-memory kernel and a blocked CPU baseline: CPU vs naive GPU vs tiled GPU, with phases), N-body and
   parallel sorting (now on the protocol). Each shows measured vs predicted — fitted log-log slopes with 95%
