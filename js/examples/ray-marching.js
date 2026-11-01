@@ -1,6 +1,9 @@
 // Ray Marching for 3D Fractals
 // Uses distance field ray marching to render volumetric fractals
 
+import { GpuTimer } from '../gpu-timer.js';
+import { readBuffer } from '../webgpu-utils.js';
+
 const RAY_MARCH_SHADER = `
 struct Uniforms {
     resolution: vec2<f32>,
@@ -255,9 +258,12 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f
 const RENDER_SHADER = FULLSCREEN_VERTEX + '\n' + RAY_MARCH_SHADER;
 
 class RayMarchingRenderer {
-    constructor(device, canvas) {
+    // canvas = null: compute-only (Measure tab, test/gpu/): the pipeline renders into an offscreen
+    // bgra8unorm texture of size `target` instead, and there are no mouse handlers
+    constructor(device, canvas, target = { width: 1000, height: 700 }) {
         this.device = device;
         this.canvas = canvas;
+        this.target = canvas ? null : target;
         this.running = false;
         this.time = 0;
 
@@ -270,7 +276,7 @@ class RayMarchingRenderer {
         this.autoRotate = true;
 
         this.setupRenderPipeline();
-        this.setupMouseControls();
+        if (canvas) this.setupMouseControls();
     }
 
     setupMouseControls() {
@@ -311,11 +317,19 @@ class RayMarchingRenderer {
     }
 
     setupRenderPipeline() {
-        this.context = this.canvas.getContext('webgpu');
-        this.context.configure({
-            device: this.device,
-            format: 'bgra8unorm'
-        });
+        if (this.canvas) {
+            this.context = this.canvas.getContext('webgpu');
+            this.context.configure({
+                device: this.device,
+                format: 'bgra8unorm'
+            });
+        } else {
+            this.targetTexture = this.device.createTexture({
+                size: [this.target.width, this.target.height],
+                format: 'bgra8unorm',
+                usage: GPUTextureUsage.RENDER_ATTACHMENT
+            });
+        }
 
         const shaderModule = this.device.createShaderModule({ code: RENDER_SHADER });
 
@@ -358,8 +372,9 @@ class RayMarchingRenderer {
         // maxSteps and fractalType are u32 in WGSL; written as floats they would read as ~1e9
         const uniforms = new Float32Array(16);
         const uniformsU32 = new Uint32Array(uniforms.buffer);
-        uniforms[0] = this.canvas.width;
-        uniforms[1] = this.canvas.height;
+        const size = this.canvas ?? this.target;
+        uniforms[0] = size.width;
+        uniforms[1] = size.height;
         uniforms[2] = this.time;
         uniforms[3] = this.power;
         uniformsU32[4] = this.maxSteps;
@@ -416,6 +431,7 @@ class RayMarchingRenderer {
     destroy() {
         this.running = false;
         this.uniformBuffer.destroy();
+        this.targetTexture?.destroy();
     }
 }
 
@@ -490,7 +506,167 @@ export async function initRayMarching(gpuDevice) {
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
-export function wgslModules() { return [{ name: 'render', code: RENDER_SHADER }]; }
+export function wgslModules() {
+    return [
+        { name: 'render', code: RENDER_SHADER },
+        { name: 'march-stats', code: MARCH_STATS_SHADER },
+    ];
+}
 
 // Exported for the CPU tests in test/ray-marching.test.mjs.
 export { RayMarchingRenderer };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/ray-marching.js) and test/gpu/ ----
+//
+// A fragment shader reports nothing but a color, so the Measure tab uses two pieces:
+//   * the shipped render pipeline, drawn into an offscreen texture (RayMarchingRenderer without a canvas)
+//     and timed, for the cost of a frame;
+//   * MARCH_STATS_SHADER: the shipped shader source plus one compute entry point that builds each pixel's
+//     ray exactly as fs_main does and runs the loop of rayMarch, recording how it ended.
+
+export const MAX_MARCH_STEPS = 256;           // the Quality slider's maximum
+export const MAX_MARCH_PIXELS = 1000 * 700;   // the canvas
+export const MAX_MEASURE_REPEATS = 10;
+export const FRACTALS = ['mandelbulb', 'julia', 'menger', 'mandelbox'];   // fractalType 0 … 3
+export const OUTCOME = { HIT: 0, ESCAPED: 1, EXHAUSTED: 2 };
+
+const MARCH_STATS_SHADER = RAY_MARCH_SHADER + `
+// Measure tab only. One invocation per pixel: the camera ray of fs_main for the pixel center (x + 0.5,
+// y + 0.5), then the loop of rayMarch with its exits recorded:
+//   x = t at the hit (or -1), y = distance evaluations, z = outcome (0 hit: d < 0.001; 1 escaped: t > 50;
+//   2 exhausted: maxSteps evaluations without either), w = the last distance estimate d.
+@group(0) @binding(1) var<storage, read_write> marchOut: array<vec4<f32>>;
+
+@compute @workgroup_size(8, 8)
+fn cs_march_stats(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = vec2<u32>(uniforms.resolution);
+    if (id.x >= size.x || id.y >= size.y) {
+        return;
+    }
+    let coords = vec2<f32>(id.xy) + vec2<f32>(0.5);
+    var uv = (coords - uniforms.resolution * 0.5) / uniforms.resolution.y;
+    uv.y = -uv.y;
+    var ro = vec3<f32>(0.0, 0.0, uniforms.cameraZoom);
+    ro = rotateX(ro, uniforms.cameraRotX);
+    ro = rotateY(ro, uniforms.cameraRotY + uniforms.time * 0.1);
+    let forward = normalize(vec3<f32>(0.0) - ro);
+    let right = normalize(cross(vec3<f32>(0.0, 1.0, 0.0), forward));
+    let up = cross(forward, right);
+    let rd = normalize(forward + uv.x * right + uv.y * up);
+
+    var t = 0.0;
+    var d = 0.0;
+    var steps = 0u;
+    var outcome = 2.0;
+    for (var i = 0u; i < uniforms.maxSteps; i++) {
+        steps = i + 1u;
+        d = sceneSDF(ro + rd * t);
+        if (d < 0.001) {
+            outcome = 0.0;
+            break;
+        }
+        if (t > 50.0) {
+            outcome = 1.0;
+            break;
+        }
+        t += d * 0.5;
+    }
+    marchOut[id.y * size.x + id.x] = vec4<f32>(select(-1.0, t, outcome == 0.0), f32(steps), outcome, d);
+}
+`;
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((p, q) => p - q);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// One view of fractal `fractal` (a FRACTALS name) at width × height with at most maxSteps march steps, from
+// the fixed camera of a fresh renderer (time 0, no rotation, zoom 3). Draws `warmup` untimed and `repeats`
+// timed frames, then (stats = true) one statistics dispatch. Resolves to { width, height, fractal, maxSteps,
+// gpuMs, wallMs, hit, escaped, exhausted, meanSteps, pixels? } with frame times as medians (gpuMs null
+// without timestamp-query), outcome fractions of all pixels, the mean number of distance evaluations per
+// pixel, and pixels (width × height × 4 floats, see MARCH_STATS_SHADER) when readback is true.
+export async function measureRayMarch(gpuDevice, { width = 1000, height = 700, fractal = 'mandelbulb', power = 8,
+    maxSteps = 128, warmup = 1, repeats = 3, stats = true, readback = false }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width * height > MAX_MARCH_PIXELS) {
+        throw new RangeError(`${width} × ${height} is outside 1 … ${MAX_MARCH_PIXELS} pixels`);
+    }
+    if (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > MAX_MARCH_STEPS) {
+        throw new RangeError(`maxSteps = ${maxSteps} is outside 1 … ${MAX_MARCH_STEPS}`);
+    }
+    const fractalType = FRACTALS.indexOf(fractal);
+    if (fractalType < 0) throw new RangeError(`unknown fractal ${fractal}`);
+    const renderer = new RayMarchingRenderer(device, null, { width, height });
+    Object.assign(renderer, { fractalType, power, maxSteps, autoRotate: false, time: 0 });
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
+    const bytes = 16 * width * height;
+    const out = stats ? device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC }) : null;
+    try {
+        renderer.updateUniforms();
+        const view = renderer.targetTexture.createView();
+        const timedRuns = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const total = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS) + timedRuns;
+        const gpu = [], wall = [];
+        for (let r = 0; r < total; r++) {
+            const timed = r >= total - timedRuns;
+            const encoder = device.createCommandEncoder();
+            const desc = { colorAttachments: [{ view, loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] };
+            const pass = encoder.beginRenderPass(timed ? timer.renderPassDescriptor(desc, 'frame') : desc);
+            pass.setPipeline(renderer.pipeline);
+            pass.setBindGroup(0, renderer.bindGroup);
+            pass.draw(6);
+            pass.end();
+            if (timed) timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timed ? timer.read() : null;
+            await device.queue.onSubmittedWorkDone();
+            if (!timed) continue;
+            wall.push(performance.now() - t0);
+            gpu.push((await timing)?.total ?? null);
+        }
+        const result = { width, height, fractal, maxSteps, gpuMs: median(gpu), wallMs: median(wall) };
+        if (!stats) return result;
+
+        const layout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            ],
+        });
+        const pipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+            compute: { module: device.createShaderModule({ code: MARCH_STATS_SHADER }), entryPoint: 'cs_march_stats' },
+        });
+        const bindGroup = device.createBindGroup({
+            layout,
+            entries: [{ binding: 0, resource: { buffer: renderer.uniformBuffer } }, { binding: 1, resource: { buffer: out } }],
+        });
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+        pass.end();
+        device.queue.submit([encoder.finish()]);
+        const pixels = await readBuffer(device, out, bytes);
+        const counts = [0, 0, 0];
+        let steps = 0;
+        for (let p = 0; p < width * height; p++) {
+            counts[pixels[4 * p + 2]] = (counts[pixels[4 * p + 2]] ?? 0) + 1;
+            steps += pixels[4 * p + 1];
+        }
+        const all = width * height;
+        Object.assign(result, {
+            hit: counts[OUTCOME.HIT] / all, escaped: counts[OUTCOME.ESCAPED] / all, exhausted: counts[OUTCOME.EXHAUSTED] / all,
+            meanSteps: steps / all,
+        });
+        if (readback) result.pixels = pixels;
+        return result;
+    } finally {
+        timer.destroy();
+        out?.destroy();
+        renderer.destroy();
+    }
+}

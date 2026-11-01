@@ -1,17 +1,23 @@
 // CPU references for the matrix-multiplication and image-blur examples.
 // Precision: float64 throughout (inputs may be f32 arrays; accumulation is in JS doubles).
 // Cost: matmulF64 is O(M·N·K) (512³ takes about a second in a browser; keep it ≤ 512 or check a
-// subset of rows); separableBlurPixel is O((2·half+1)²) per pixel, so spot-check pixels rather than
-// whole images for large radii.
+// subset of rows with matmulRowsF64, O(rows·N·K)); separableBlurPixel is O((2·half+1)²) per pixel, so
+// spot-check pixels rather than whole images for large radii.
 
 /** Textbook triple loop in float64, i-k-j order: A is MxN, B is NxK, both row-major; returns MxK. */
 export function matmulF64(A, B, M, N, K) {
-    const C = new Float64Array(M * K);
-    for (let i = 0; i < M; i++)
+    return matmulRowsF64(A, B, M, N, K, Array.from({ length: M }, (_, i) => i));
+}
+
+/** The same product for the listed rows of A only: returns rows.length x K (row r of the result is row rows[r]). */
+export function matmulRowsF64(A, B, M, N, K, rows) {
+    const C = new Float64Array(rows.length * K);
+    rows.forEach((i, r) => {
         for (let k = 0; k < N; k++) {
             const a = A[i * N + k];
-            for (let j = 0; j < K; j++) C[i * K + j] += a * B[k * K + j];
+            for (let j = 0; j < K; j++) C[r * K + j] += a * B[k * K + j];
         }
+    });
     return C;
 }
 
