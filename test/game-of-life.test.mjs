@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { GameOfLife, SEED_PATTERNS, wgslModules } from '../js/examples/game-of-life.js';
 import { mockDevice, stub } from './helpers/mock-gpu.mjs';
 import { typeLayout } from './helpers/wgsl-layout.mjs';
+import { lifeStep } from '../js/refs/life.js';
 
 const fakeCanvas = () => ({ width: 64, height: 64, getContext: () => stub('ctx') });
 
@@ -21,23 +22,10 @@ function makeGame(w, h) {
     return { device, game };
 }
 
-// Replica of main() + getCell(): i32 wrap (x + width) % width, row-major y * width + x.
-function replicaStep(grid, width, height) {
-    const out = new Uint32Array(width * height);
-    const getCell = (x, y) => {
-        const wx = (x + width) % width, wy = (y + height) % height;
-        return grid[wy * width + wx];
-    };
-    for (let gy = 0; gy < Math.ceil(height / 8) * 8; gy++)
-        for (let gx = 0; gx < Math.ceil(width / 8) * 8; gx++) {
-            if (gx >= width || gy >= height) continue;
-            const current = getCell(gx, gy);
-            let n = 0;
-            for (const [dx, dy] of [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]) n += getCell(gx + dx, gy + dy);
-            out[gy * width + gx] = current === 1 ? (n === 2 || n === 3 ? 1 : 0) : (n === 3 ? 1 : 0);
-        }
-    return out;
-}
+// Replica of main() + getCell(): i32 wrap (x + width) % width, row-major y * width + x. It lives in
+// js/refs/life.js as lifeStep (deployable, for in-browser comparisons); the 8x8 workgroup grid only
+// orders the cells, so the reference iterates them directly.
+const replicaStep = lifeStep;
 
 // Independent reference: a Map of live cells, counting neighbor contributions per live cell.
 function setStep(live, width, height) {

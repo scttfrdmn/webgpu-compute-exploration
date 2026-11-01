@@ -3,7 +3,7 @@
 // not the WGSL itself — see #51.
 //
 // The independent reference is wasm/src/lib.rs `compute_mandelbrot_cpu` (float64), transcribed to JS
-// below because js/wasm-pkg/ is a build artifact that is not present in CI's test job. The uniform
+// (js/refs/mandelbrot.js) because js/wasm-pkg/ is a build artifact that is not present in CI's test job. The uniform
 // bytes come from lib.rs `MandelbrotConfig::get_shader_params`, also transcribed (runWASMMandelbrot
 // itself needs the built WASM package and a DOM canvas, so it is not driven here).
 
@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { wgslModules } from '../js/examples/wasm-mandelbrot.js';
 import { structLayout, decodeStruct, moduleCode } from './helpers/wgsl-layout.mjs';
+import { mandelbrotEscape } from '../js/refs/mandelbrot.js';
 
 const mod = { wgslModules };
 const f = Math.fround;
@@ -22,26 +23,8 @@ function config(width, height) {
 }
 const shaderParams = c => new Float32Array([c.width, c.height, c.max_iterations, c.zoom, c.center_x, c.center_y]);
 
-// Transcription of lib.rs compute_mandelbrot_cpu (float64).
-function rustReference(c) {
-    const { width, height, max_iterations } = c;
-    const out = new Float32Array(width * height);
-    const scale = 4.0 / (c.zoom * Math.min(width, height));
-    for (let y = 0; y < height; y++)
-        for (let x = 0; x < width; x++) {
-            const cx = c.center_x + (x - width / 2.0) * scale;
-            const cy = c.center_y + (y - height / 2.0) * scale;
-            let zx = 0, zy = 0, it = 0;
-            while (zx * zx + zy * zy < 4.0 && it < max_iterations) {
-                const t = zx * zx - zy * zy + cx;
-                zy = 2.0 * zx * zy + cy;
-                zx = t;
-                it++;
-            }
-            out[y * width + x] = it;
-        }
-    return out;
-}
+// Transcription of lib.rs compute_mandelbrot_cpu (float64), in js/refs/mandelbrot.js.
+const rustReference = mandelbrotEscape;
 
 // Replica of the WGSL main(): params are f32 uniforms, all arithmetic in f32.
 function replica(params) {

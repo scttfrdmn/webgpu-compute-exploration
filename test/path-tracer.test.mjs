@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import { SCENES, SceneBuilder, intersectScene, cameraBasis, PathTracer, wgslModules } from '../js/examples/path-tracer.js';
 import { structLayout, decodeStruct } from './helpers/wgsl-layout.mjs';
 import { mockDevice } from './helpers/mock-gpu.mjs';
+import { furnaceRadiance, whiteFurnaceRadiance } from '../js/refs/path-tracer.js';
 
 const traceCode = wgslModules().find(m => m.name === 'trace').code;
 const displayCode = wgslModules().find(m => m.name === 'display').code;
@@ -584,7 +585,7 @@ function furnaceBox(rho, le) {
 
 test('replica: furnace box — tracePath (BSDF only, and NEE + MIS) is unbiased', (t) => {
     const rho = 0.5, le = 1, B = 5;
-    const expected = le * (1 - rho ** (B + 1)) / (1 - rho);
+    const expected = furnaceRadiance(rho, le, B);
     const scene = furnaceBox(rho, le);
     const prims = decodePrims(scene);
     assert.equal(scene.lightCount, 6);
@@ -616,7 +617,7 @@ test('replica: white furnace — a diffuse sphere under a uniform environment re
         const o = scale(randomUnit(r), 3);
         const target = scale(randomUnit(r), 0.9 * r());
         const L = tracePath(scene, prims, o, normalize(sub(target, o)), rand, { bounces: 5, useNEE: true, env });
-        maxErr = Math.max(maxErr, Math.abs(L - prims[0].albedo[0] * env));   // f32 albedo
+        maxErr = Math.max(maxErr, Math.abs(L - whiteFurnaceRadiance(prims[0].albedo[0], env)));   // f32 albedo
     }
     // Convex sphere: one bounce then escape; the cosine pdf cancels f·cos exactly.
     t.diagnostic(`max |L − ρ·L_env| ${maxErr.toExponential(2)}`);

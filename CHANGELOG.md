@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Explore / Understand / Measure tabs on every example (#54): deep links (`#<id>/understand`,
+  `#<id>/measure`), keyboard navigation, and leaving Explore stops the example. Understand pages are
+  Markdown with TeX math rendered to native MathML by a small built-in renderer (all text escaped,
+  URL allowlist). Measure runs user-started, capped, time-budgeted experiments on the visitor's GPU,
+  compares with CPU references in the browser, and charts the results; results join the device report.
+- `js/refs/`: the CPU references used by the tests, now deployable for the Measure tab.
+- Running simulations pause when their canvas scrolls off screen and resume when it comes back
+  (unless you paused them yourself or left the Explore tab); audio examples stop and stay stopped.
+
+### Changed
+- Styles moved from `index.html` to `css/site.css`.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added

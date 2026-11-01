@@ -3,10 +3,12 @@
 // makeSim / presetState: the shipped WaveEquation on a mock device and the walls + two time levels
 // its loadPreset() uploads. stepReplica: replica of cs_step (5-point Laplacian, u = 0 outside the
 // grid, damped leapfrog, sponge, walls, plane-wave source column; no rain), f32 storage.
-// energy: the leapfrog scheme's conserved discrete energy E(n+1/2).
+// energy: the leapfrog scheme's conserved discrete energy E(n+1/2), from js/refs/wave.js.
 
 import { mockDevice, stub } from './mock-gpu.mjs';
 import * as wave from '../../js/examples/wave-equation.js';
+
+export { energy } from '../../js/refs/wave.js';
 
 const { WaveEquation } = wave;
 
@@ -63,20 +65,3 @@ export function stepReplica(s, o) {
     // swap: u(t+1) becomes current
     const t = s.cur; s.cur = s.prev; s.prev = t;
 }
-
-// Discrete energy E(n+½) with u0 = u(n), u1 = u(n+1): ‖u1 − u0‖² − C²⟨u1, L u0⟩
-export function energy(u0, u1, W, H, C2) {
-    let kin = 0, pot = 0;
-    const at = (u, x, y) => (x < 0 || y < 0 || x >= W || y >= H) ? 0 : u[y * W + x];
-    for (let y = 0; y < H; y++) {
-        for (let x = 0; x < W; x++) {
-            const i = y * W + x;
-            const d = u1[i] - u0[i];
-            kin += d * d;
-            const lap = at(u0, x - 1, y) + at(u0, x + 1, y) + at(u0, x, y - 1) + at(u0, x, y + 1) - 4 * u0[i];
-            pot -= u1[i] * lap;
-        }
-    }
-    return kin + C2 * pot;
-}
-

@@ -50,6 +50,7 @@ const KNOWN_LIMITS = [
     'maxComputeWorkgroupSizeY', 'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension',
 ];
 
+const MAX_EXPERIMENT_ROWS = 30;
 const MAX_ERRORS = 20;
 
 // Swallow exceptions from any property read: a report should never break the page.
@@ -165,6 +166,7 @@ export async function buildDeviceReport({
     errors = [],
     deviceLost = null,
     unavailableReason = '',
+    experiments = [],
     env = {},
 } = {}) {
     const nav = env.navigator ?? globalThis.navigator;
@@ -284,6 +286,22 @@ export async function buildDeviceReport({
         push(fence(lines.slice(0, ONE_SHOT_LINES).join('\n')));
     }
     if (!anyOneShot) push('_none run_', '');
+
+    // Measure-tab experiments run this session (results only; settings as chosen by the user)
+    const results = safe(() => experiments.slice(), []);
+    push(`### Measure experiments this session (${results.length})`, '');
+    if (!results.length) push('_none run_', '');
+    for (const r of results) {
+        safe(() => {
+            const settings = Object.entries(r.settings ?? {}).map(([k, v]) => `${k}=${v}`).join(', ');
+            push(`**${r.exampleId} · ${r.title}** (${r.outcome}${settings ? `; ${settings}` : ''})`, '');
+            const cols = (r.columns ?? []).map(c => ({ key: c.key, label: c.label }));
+            const cell = (v) => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(4)) : String(v ?? ''));
+            push(`| ${cols.map(c => c.label).join(' | ')} |`, `| ${cols.map(() => '---').join(' | ')} |`);
+            for (const row of (r.rows ?? []).slice(0, MAX_EXPERIMENT_ROWS)) push(`| ${cols.map(c => cell(row[c.key])).join(' | ')} |`);
+            push('');
+        });
+    }
 
     // Errors
     const recent = safe(() => errors.slice(-MAX_ERRORS), []);
