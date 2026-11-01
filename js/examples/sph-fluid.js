@@ -761,12 +761,12 @@ export async function initSPHFluid(gpuDevice) {
 • Kernels: Poly6 (density), Spiky (pressure), Viscosity
 • Gravity: ${(simulation.gravity / 10).toFixed(0)}
 • Viscosity: ${simulation.viscosity.toFixed(0)}
-• Integration: Explicit Euler
+• Integration: semi-implicit (symplectic) Euler
 
 <span class="info">Performance:</span>
 • Frame: ${simulation.frameCount}${simulation.running ? ` · ${simulation.fps.toFixed(0)} FPS` : ''}
 • ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['density', 'forces', 'integrate', 'render'])}
-• Compute passes: 3 per frame (density, forces, integrate)
+• Compute passes: ${3 * simulation.substeps} per frame (${simulation.substeps} substeps × density, forces, integrate)
 • Neighbor search: O(N²) brute force
 • Note: Spatial hashing would improve performance significantly
 

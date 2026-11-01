@@ -677,7 +677,7 @@ export async function initBoids(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame: ${simulation.frameCount}
-• Neighbor checks: O(N²) = ${(simulation.numBoids * simulation.numBoids).toLocaleString()}
+• Neighbor checks: 3·N² = ${(3 * simulation.numBoids * simulation.numBoids).toLocaleString()} per step (one all-pairs loop per rule)
 • All calculations fully parallelized on GPU
 • Note: Spatial hashing would improve to O(N)
 

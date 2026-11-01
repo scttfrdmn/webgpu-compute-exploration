@@ -856,7 +856,6 @@ export async function initMolecularDynamics(gpuDevice) {
     });
 
     function updateOutput() {
-        const fps = simulation.running ? '~60' : '0';
         const interactions = (numAtoms * (numAtoms - 1)) / 2;
 
         output.innerHTML = `<span class="success">✓ Molecular Dynamics Active</span>
@@ -875,7 +874,6 @@ export async function initMolecularDynamics(gpuDevice) {
 • Timestep: 0.016 units
 
 <span class="info">Performance:</span>
-• Frame rate: ${fps} FPS
 • Simulation time: ${simulation.frameCount} steps
 • GPU compute: Fully parallelized force calculation
 • Rendering: Instanced 3D spheres
