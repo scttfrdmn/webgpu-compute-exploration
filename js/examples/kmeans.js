@@ -32,6 +32,11 @@
 //
 // Stats (storage, 80 bytes, cleared with clearBuffer before every iteration):
 //   offset  0 changed atomic<u32> · 4 inertia f32 · 8 empty u32 · 12 pad · 16 counts array<u32, 16>
+//
+// Compute-only use (the Measure tab, js/teach/experiments/kmeans.js, and test/gpu/): a KMeans with
+// canvas = null creates no render pipelines or canvas context and never draws. measureKMeans() loads
+// given points and initial centroids and runs Lloyd iterations with the shipped encodeIteration (one
+// command buffer each, timed), reading the 80-byte Stats after every iteration as the example does.
 
 import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
 
@@ -610,8 +615,10 @@ class KMeans {
         this.checkLimits();
         this.setupBuffers();
         this.setupComputePipelines();
-        this.setupRenderPipelines();
-        this.setupCanvas();
+        if (canvas) {
+            this.setupRenderPipelines();
+            this.setupCanvas();
+        }
     }
 
     checkLimits() {
@@ -629,8 +636,9 @@ class KMeans {
     setupBuffers() {
         const d = this.device;
         this.pointBuffer = d.createBuffer({ size: MAX_N * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-        this.labelBuffer = d.createBuffer({ size: MAX_N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-        this.centroidBuffer = d.createBuffer({ size: MAX_K * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+        // labels and centroids: COPY_SRC for measureKMeans' final readback
+        this.labelBuffer = d.createBuffer({ size: MAX_N * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+        this.centroidBuffer = d.createBuffer({ size: MAX_K * 8, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
         this.partialBuffer = d.createBuffer({ size: MAX_GROUPS * MAX_K * 16, usage: GPUBufferUsage.STORAGE });
         this.statsBuffer = d.createBuffer({
             size: STATS_SIZE,
@@ -946,6 +954,92 @@ class KMeans {
 
 // For the CPU tests in test/ (data generator, seeding, uniform writers via a mock device)
 export { KMeans, generatePoints, initCentroids, mulberry32, MAX_K, TILE, ASSIGN_WG, UPDATE_WG, MAX_GROUPS, TRAIL_LEN, ASPECT };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/kmeans.js) and test/gpu/ ----
+
+export { MAX_N, MAX_ITERATIONS };
+
+const medianOf = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Lloyd iterations of `points` (Float32Array, interleaved x, y; n ≤ MAX_N) from the initial
+// `centroids` (Float32Array 2k, 2 ≤ k ≤ MAX_K) with the shipped pipelines: one command buffer per
+// iteration (encodeIteration, timed as one pass), then the 80-byte Stats readback the example does.
+// Stops after `iterations` (≤ MAX_ITERATIONS), or earlier when no label changed if untilConverged.
+// between(), if given, is awaited after each iteration (the Measure runner passes ctx.step, which
+// throws to cancel). Resolves to { n, k, iterations, converged, history: [{ iteration, changed,
+// inertia, empty, gpuMs, wallMs }], inertia, gpuMs, wallMs (medians per iteration, wall = submit →
+// Stats mapped), centroids (Float32Array 2k), labels? (Uint32Array n, with readLabels) }. The inertia
+// of an iteration is Σ d² against the centroids that did its assignment (before its update).
+export async function measureKMeans(gpuDevice, { points, centroids, iterations = 20, untilConverged = true,
+    readLabels = false, between = null }) {
+    const n = points.length / 2, k = centroids.length / 2;
+    if (!Number.isInteger(n) || n < 2 || n > MAX_N) throw new RangeError(`n = ${n} is outside 2 … ${MAX_N}`);
+    if (!Number.isInteger(k) || k < 2 || k > MAX_K || k > n) throw new RangeError(`k = ${k} is outside 2 … ${MAX_K}`);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_ITERATIONS) {
+        throw new RangeError(`iterations = ${iterations} is outside 1 … ${MAX_ITERATIONS}`);
+    }
+    const device = gpuDevice.device ?? gpuDevice;
+    const sim = new KMeans(device, null);
+    const readBack = async (buffer, bytes) => {
+        const staging = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = device.createCommandEncoder();
+        encoder.copyBufferToBuffer(buffer, 0, staging, 0, bytes);
+        device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ);
+        const out = staging.getMappedRange().slice(0);
+        staging.unmap();
+        staging.destroy();
+        return out;
+    };
+    try {
+        sim.n = n;
+        sim.k = k;
+        sim.data = points;
+        const padded = new Float32Array(MAX_K * 2);
+        padded.set(centroids);
+        device.queue.writeBuffer(sim.pointBuffer, 0, points);
+        device.queue.writeBuffer(sim.centroidBuffer, 0, padded);
+        device.queue.writeBuffer(sim.labelBuffer, 0, sim.labelInit, 0, n);
+        device.queue.writeBuffer(sim.trailBuffer, 0, new Float32Array(MAX_K * TRAIL_LEN * 2));
+        await device.queue.onSubmittedWorkDone();
+        const history = [];
+        let converged = false;
+        for (let it = 1; it <= iterations; it++) {
+            const t0 = performance.now();
+            const encoder = device.createCommandEncoder();
+            sim.encodeIteration(encoder);
+            sim.gpuTimer.resolve(encoder);
+            device.queue.submit([encoder.finish()]);
+            const timing = sim.gpuTimer.read();
+            await sim.readbackBuffer.mapAsync(GPUMapMode.READ);
+            const bytes = sim.readbackBuffer.getMappedRange().slice(0);
+            sim.readbackBuffer.unmap();
+            const wallMs = performance.now() - t0;
+            const t = await timing;
+            const u32 = new Uint32Array(bytes), f32 = new Float32Array(bytes);
+            history.push({ iteration: it, changed: u32[0], inertia: f32[1], empty: u32[2], gpuMs: t?.passes.iterate ?? null, wallMs });
+            if (between) await between();
+            if (untilConverged && u32[0] === 0) {
+                converged = true;
+                break;
+            }
+        }
+        const last = history[history.length - 1];
+        const result = {
+            n, k, iterations: history.length, converged, history, inertia: last.inertia,
+            gpuMs: medianOf(history.map(h => h.gpuMs)),
+            wallMs: medianOf(history.map(h => h.wallMs)),
+            centroids: new Float32Array(await readBack(sim.centroidBuffer, 8 * k)),
+        };
+        if (readLabels) result.labels = new Uint32Array(await readBack(sim.labelBuffer, 4 * n));
+        return result;
+    } finally {
+        sim.destroy();
+    }
+}
 
 export async function initKMeans(gpuDevice) {
     const { device } = gpuDevice;

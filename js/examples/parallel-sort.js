@@ -32,6 +32,10 @@
 //
 // Per-dispatch values (k, j, shift) never share one uniform slot: writeBuffer runs before the
 // whole submit, so each dispatch gets its own 256-byte-aligned slot and a dynamic offset.
+//
+// Compute-only use (the Measure tab, js/teach/experiments/parallel-sort.js, and test/gpu/): a
+// ParallelSort with canvas = null creates no render pipeline or canvas context; measureSort() runs
+// the shipped runBenchmark() on it (sort, timing, readback and the check against the CPU sort).
 
 import { GpuTimer, GPU_TIME_NOTE, GPU_TIME_UNAVAILABLE } from '../gpu-timer.js';
 
@@ -591,8 +595,10 @@ class ParallelSort {
         });
 
         this.setupComputePipelines();
-        this.setupRenderPipeline();
-        this.setupCanvas();
+        if (canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+        }
     }
 
     setupComputePipelines() {
@@ -1059,6 +1065,27 @@ class ParallelSort {
         if (this.barBuffer) this.barBuffer.destroy();
         if (this.stageParamsBuffer) this.stageParamsBuffer.destroy();
         this.chartParamsBuffer.destroy();
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/parallel-sort.js) and test/gpu/ ----
+
+export const MEASURE_MAX_KEYS = RADIX_MAX_KEYS;   // 4,194,304 = the benchmark's largest N
+
+// One runBenchmark() of `algorithm` ('bitonic' | 'bitonic-shared' | 'radix') on n random keys of
+// dataType ('u32' | 'f32') on a compute-only ParallelSort: BENCH_RUNS sorts of the same input, one
+// readback, and a bit-for-bit comparison with TypedArray.prototype.sort. Resolves to runBenchmark's
+// result: { algorithm, n, padded, dataType, dispatches, cpuMs, readMs, mismatches, inversions, gpuTimes,
+// bestMs (wall, submit → done), timestamps, kernelTimes, bestKernelMs (GPU, null without timestamps) }.
+export async function measureSort(gpuDevice, { algorithm, n, dataType = 'u32' }) {
+    if (!ALGORITHMS[algorithm]) throw new RangeError(`unknown algorithm ${algorithm}`);
+    if (dataType !== 'u32' && dataType !== 'f32') throw new RangeError(`unknown key type ${dataType}`);
+    if (!Number.isInteger(n) || n < 1 || n > MEASURE_MAX_KEYS) throw new RangeError(`N = ${n} is outside 1 … ${MEASURE_MAX_KEYS}`);
+    const sorter = new ParallelSort(gpuDevice.device ?? gpuDevice, null);
+    try {
+        return await sorter.runBenchmark(algorithm, n, dataType);
+    } finally {
+        sorter.destroy();
     }
 }
 

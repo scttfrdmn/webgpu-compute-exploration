@@ -2,6 +2,7 @@
 // Based on "Particle-Based Fluid Simulation for Interactive Applications" by Müller et al.
 
 import { GpuTimer } from '../gpu-timer.js';
+import { readBuffer } from '../webgpu-utils.js';
 
 const COMPUTE_DENSITY_SHADER = `
 struct Particle {
@@ -316,13 +317,15 @@ class SPHFluidSimulation {
         this.substeps = 6;
         this.deltaTime = 1 / 60 / this.substeps;
 
+        // canvas = null: compute-only (Measure tab, test/gpu/), sized like index.html's 1000 × 700 canvas
+        const size = canvas ?? COMPUTE_ONLY_SIZE;
         this.boundsMin = [10, 10];
-        this.boundsMax = [canvas.width - 10, canvas.height - 10];
+        this.boundsMax = [size.width - 10, size.height - 10];
 
         this.initializeParticles();
         this.setupBuffers();
         this.setupComputePipelines();
-        this.setupRenderPipeline();
+        if (canvas) this.setupRenderPipeline();
     }
 
     // Density at an interior lattice point for unit mass, using the 2D Poly6 kernel
@@ -365,15 +368,16 @@ class SPHFluidSimulation {
     setupBuffers() {
         const particleBufferSize = this.maxParticles * 8 * 4;
 
+        // COPY_SRC: the Measure tab reads particles (positions and densities) back
         this.particleBuffers = [
             this.device.createBuffer({
                 size: particleBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
                 mappedAtCreation: true
             }),
             this.device.createBuffer({
                 size: particleBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
             })
         ];
 
@@ -757,12 +761,12 @@ export async function initSPHFluid(gpuDevice) {
 • Kernels: Poly6 (density), Spiky (pressure), Viscosity
 • Gravity: ${(simulation.gravity / 10).toFixed(0)}
 • Viscosity: ${simulation.viscosity.toFixed(0)}
-• Integration: Explicit Euler
+• Integration: semi-implicit (symplectic) Euler
 
 <span class="info">Performance:</span>
 • Frame: ${simulation.frameCount}${simulation.running ? ` · ${simulation.fps.toFixed(0)} FPS` : ''}
 • ${simulation.gpuTimer.frameText(simulation.running ? simulation.fps : 0, ['density', 'forces', 'integrate', 'render'])}
-• Compute passes: 3 per frame (density, forces, integrate)
+• Compute passes: ${3 * simulation.substeps} per frame (${simulation.substeps} substeps × density, forces, integrate)
 • Neighbor search: O(N²) brute force
 • Note: Spatial hashing would improve performance significantly
 
@@ -789,3 +793,124 @@ export function wgslModules() {
 
 // Exported for the CPU tests in test/sph-fluid.test.mjs.
 export { SPHFluidSimulation };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/sph-fluid.js) and test/gpu/ ----
+//
+// Both functions build an SPHFluidSimulation without a canvas (the same buffers, pipelines and bind
+// groups, the same dam-break start) and encode frames exactly as step() does: per substep a density,
+// a forces and an integrate pass. measureSPHFrame() times one frame per pass label; runSPH() runs whole
+// frames (one submit each) and reads back particle buffer 1 at evenly spaced frames. Buffer 1 holds the
+// output of the last density pass, so its positions and densities belong together (buffer 0 has the
+// positions after the integrate pass and the densities from before it).
+
+export const MAX_SPH_PARTICLES = 4000;   // the example's maximum (2,000 plus Add Water up to twice that)
+export const MAX_SPH_FRAMES = 300;       // 5 simulated seconds at 60 frames, 6 substeps each
+export const MAX_SAMPLES = 60;
+export const MAX_MEASURE_REPEATS = 10;
+
+const COMPUTE_ONLY_SIZE = { width: 1000, height: 700 };
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((p, q) => p - q);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+function computeOnlySPH(device, n, gasConstant) {
+    if (!Number.isInteger(n) || n < 1 || n > MAX_SPH_PARTICLES) throw new RangeError(`N = ${n} is outside 1 … ${MAX_SPH_PARTICLES}`);
+    const sim = new SPHFluidSimulation(device, null, n);
+    if (gasConstant !== undefined) {
+        if (!(gasConstant > 0)) throw new RangeError('the gas constant must be positive');
+        sim.gasConstant = gasConstant;
+    }
+    return sim;
+}
+
+// One frame (sim.substeps substeps) on `encoder`, as step() encodes it; timer may be null
+function encodeFrame(sim, encoder, timer) {
+    const workgroups = Math.ceil(sim.numParticles / 64);
+    for (let i = 0; i < sim.substeps; i++) {
+        for (const [label, pipeline, bindGroup] of [
+            ['density', sim.densityPipeline, sim.densityBindGroups[0]],
+            ['forces', sim.forcePipeline, sim.forceBindGroups[0]],
+            ['integrate', sim.integratePipeline, sim.integrateBindGroups[0]],
+        ]) {
+            const pass = encoder.beginComputePass(timer ? timer.computePassDescriptor(label) : undefined);
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(workgroups);
+            pass.end();
+        }
+    }
+}
+
+// The dam break with n particles: `warmup` untimed and `repeats` timed frames from the initial state.
+// Resolves to { n, substeps, gpuMs, passes: { density, forces, integrate }, wallMs } per frame (medians;
+// GPU times null without timestamp-query).
+export async function measureSPHFrame(gpuDevice, { n, warmup = 1, repeats = 3 }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    const sim = computeOnlySPH(device, n);
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 3 * sim.substeps, poolSize: 1 });
+    try {
+        sim.updateParams();
+        const timedRuns = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const total = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS) + timedRuns;
+        const runs = [];
+        for (let r = 0; r < total; r++) {
+            const timed = r >= total - timedRuns;
+            const encoder = device.createCommandEncoder();
+            encodeFrame(sim, encoder, timed ? timer : null);
+            if (timed) timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timed ? timer.read() : null;
+            await device.queue.onSubmittedWorkDone();
+            if (timed) runs.push({ wallMs: performance.now() - t0, result: await timing });
+        }
+        const pass = (label) => median(runs.map(r => r.result?.passes?.[label] ?? null));
+        return {
+            n, substeps: sim.substeps,
+            gpuMs: median(runs.map(r => r.result?.total ?? null)),
+            passes: { density: pass('density'), forces: pass('forces'), integrate: pass('integrate') },
+            wallMs: median(runs.map(r => r.wallMs)),
+        };
+    } finally {
+        timer.destroy();
+        sim.destroy();
+    }
+}
+
+// `frames` frames of the dam break with n particles and gas constant k, read back `samples` times at even
+// intervals (plus the start). between(), if given, is awaited after each sample (ctx.step in the Measure
+// runner, which throws to cancel). Resolves to { n, frames, substeps, dt, smoothingRadius, mass, restDensity,
+// gasConstant, wallMs, snapshots: [{ frame, time, particles }] } with particles n × 8 floats (position,
+// velocity, density, pressure, pad) from buffer 1, i.e. the state the last density pass saw.
+export async function runSPH(gpuDevice, { n, gasConstant, frames = 60, samples = 10, between = null }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    if (!Number.isInteger(frames) || frames < 1 || frames > MAX_SPH_FRAMES) throw new RangeError(`frames = ${frames} is outside 1 … ${MAX_SPH_FRAMES}`);
+    const sim = computeOnlySPH(device, n, gasConstant);
+    try {
+        sim.updateParams();
+        const count = Math.min(Math.max(samples, 1), MAX_SAMPLES, frames);
+        const read = () => readBuffer(device, sim.particleBuffers[1], 32 * n);
+        const snapshots = [{ frame: 0, time: 0, particles: Float32Array.from(sim.particles) }];
+        const t0 = performance.now();
+        let done = 0;
+        for (let s = 1; s <= count; s++) {
+            const target = Math.round(s * frames / count);
+            for (; done < target; done++) {
+                const encoder = device.createCommandEncoder();
+                encodeFrame(sim, encoder, null);
+                device.queue.submit([encoder.finish()]);
+                await device.queue.onSubmittedWorkDone();
+            }
+            snapshots.push({ frame: done, time: done / 60, particles: await read() });
+            if (between) await between();
+        }
+        return {
+            n, frames, substeps: sim.substeps, dt: sim.deltaTime, smoothingRadius: sim.smoothingRadius, mass: sim.mass,
+            restDensity: sim.restDensity, gasConstant: sim.gasConstant, wallMs: performance.now() - t0, snapshots,
+        };
+    } finally {
+        sim.destroy();
+    }
+}

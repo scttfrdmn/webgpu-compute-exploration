@@ -1,3 +1,6 @@
+import { GpuTimer } from '../gpu-timer.js';
+import { readBuffer } from '../webgpu-utils.js';
+
 const computeShader = `
 @group(0) @binding(0) var<storage, read> gridIn: array<u32>;
 @group(0) @binding(1) var<storage, read_write> gridOut: array<u32>;
@@ -194,21 +197,25 @@ class GameOfLife {
 
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
-        this.setupCanvas();
+        // canvas = null: compute-only (Measure tab, test/gpu/), no render pipeline and nothing drawn
+        if (this.canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+        }
     }
 
     setupBuffers() {
         const bufferSize = this.gridSize * 4;
 
+        // COPY_SRC: toggleCell() and the Measure tab copy the grid back to the CPU
         this.gridBuffers = [
             this.device.createBuffer({
                 size: bufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
             }),
             this.device.createBuffer({
                 size: bufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
             })
         ];
 
@@ -392,6 +399,7 @@ class GameOfLife {
     }
 
     render() {
+        if (!this.context) return;   // compute-only
         const commandEncoder = this.device.createCommandEncoder();
         const renderPass = commandEncoder.beginRenderPass({
             colorAttachments: [{
@@ -493,7 +501,8 @@ export async function initGameOfLife(gpuDevice) {
     canvas.addEventListener('click', (e) => {
         const rect = canvas.getBoundingClientRect();
         const x = Math.floor((e.clientX - rect.left) / rect.width * width);
-        const y = Math.floor((e.clientY - rect.top) / rect.height * height);
+        // The render shader draws row 0 at the bottom (uv.y = 0 at clip y = −1), so flip the screen y
+        const y = height - 1 - Math.min(height - 1, Math.floor((e.clientY - rect.top) / rect.height * height));
         game.toggleCell(x, y);
     });
 
@@ -532,3 +541,72 @@ export function wgslModules() {
 
 // Exported for the CPU tests in test/game-of-life.test.mjs.
 export { GameOfLife, SEED_PATTERNS };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/game-of-life.js) and test/gpu/ ----
+//
+// measureLife() builds a GameOfLife without a canvas (same buffers, pipeline and ping-pong bind groups as
+// the interactive example), uploads a grid and advances it `generations` steps. Unlike the example, which
+// submits one generation per animation frame, all generations go into one compute pass: WebGPU makes each
+// dispatch's storage writes visible to the next dispatch, so the ping-pong needs no other synchronization,
+// and the timestamps then measure the stencil itself rather than per-frame submission overhead.
+
+export const MAX_LIFE_SIDE = 2048;              // 4.2 M cells, 16 MB per grid buffer
+export const MAX_LIFE_GENERATIONS = 1000;       // per call (one pass)
+export const MAX_LIFE_WORK = 2048 * 2048 * 100; // cell updates per pass (100 generations of the largest grid)
+export const MAX_MEASURE_REPEATS = 10;
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((p, q) => p - q);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// grid: width × height Uint32Array of 0/1 (row-major, toroidal). Runs `warmup` untimed and `repeats` timed
+// batches of `generations` generations, each batch starting again from `grid`. Resolves to { width, height,
+// generations, gpuMs, wallMs, grid? } with times per batch (medians; gpuMs null without timestamp-query)
+// and grid the state after `generations` generations when readback is true.
+export async function measureLife(gpuDevice, { grid, width, height, generations = 1, warmup = 0, repeats = 1, readback = true }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 3 || v > MAX_LIFE_SIDE) throw new RangeError(`${name} = ${v} is outside 3 … ${MAX_LIFE_SIDE}`);
+    }
+    if (!Number.isInteger(generations) || generations < 1 || generations > MAX_LIFE_GENERATIONS) {
+        throw new RangeError(`generations = ${generations} is outside 1 … ${MAX_LIFE_GENERATIONS}`);
+    }
+    if (grid?.length !== width * height) throw new RangeError('grid must hold width × height cells');
+    if (generations * width * height > MAX_LIFE_WORK) throw new RangeError(`more than ${MAX_LIFE_WORK} cell updates in one pass`);
+    const game = new GameOfLife(device, null, width, height);
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
+    try {
+        const timedRuns = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const total = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS) + timedRuns;
+        const gpu = [], wall = [];
+        for (let r = 0; r < total; r++) {
+            const timed = r >= total - timedRuns;
+            game.currentBuffer = 0;
+            device.queue.writeBuffer(game.gridBuffers[0], 0, grid);
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('life') : undefined);
+            pass.setPipeline(game.computePipeline);
+            for (let g = 0; g < generations; g++) {
+                pass.setBindGroup(0, game.computeBindGroups[game.currentBuffer]);
+                pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+                game.currentBuffer = 1 - game.currentBuffer;
+            }
+            pass.end();
+            if (timed) timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timed ? timer.read() : null;
+            await device.queue.onSubmittedWorkDone();
+            if (!timed) continue;
+            wall.push(performance.now() - t0);
+            gpu.push((await timing)?.total ?? null);
+        }
+        const out = readback
+            ? await readBuffer(device, game.gridBuffers[game.currentBuffer], 4 * width * height, Uint32Array) : undefined;
+        return { width, height, generations, gpuMs: median(gpu), wallMs: median(wall), grid: out };
+    } finally {
+        timer.destroy();
+        game.destroy();
+    }
+}

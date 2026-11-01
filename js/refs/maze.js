@@ -2,7 +2,8 @@
 // Precision: exact (integer distances; INF = unreachable).
 // Cost: O(w·h) time and memory; a 2048² maze (4M cells) takes well under a second in a browser.
 
-// Cell bit flags (the example's cell encoding).
+// Cell bit flags: the single definition of the cell encoding. js/examples/maze.js imports these
+// (and generates its WGSL constants from them), so the example and this reference cannot drift apart.
 export const OPEN_N = 1, OPEN_E = 2, OPEN_S = 4, OPEN_W = 8, ON_PATH = 16;
 export const INF = 0xffffffff;
 

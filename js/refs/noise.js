@@ -5,8 +5,8 @@
 // Cost: perlinRef is 8 corners per sample, simplexRef 125 lattice points per sample; a 256² image
 // is ~8e6 lattice evaluations for simplex (well under a second in a browser).
 //
-// The simplex output scale and kernel radius² (`falloff`) are parameters: the example keeps them in
-// its WGSL only (the tests parse them from there).
+// The simplex output scale and kernel radius² (`falloff`) are parameters: js/examples/noise.js exports
+// them as SIMPLEX_SCALE and SIMPLEX_FALLOFF and splices them into its WGSL.
 
 /** PCG3D hash (Jarzynski & Olano 2020) on u32 lanes, as the shader's pcg3d. */
 function pcg3d(x, y, z) {
@@ -64,4 +64,20 @@ export function simplexRef(x, y, z, scale, falloff) {
         sum += corner(hashCorner(i, j, k), x - (i - t), y - (j - t), z - (k - t));
     }
     return scale * sum;
+}
+
+// Fractal Brownian motion over a base noise (float64), the same sum as the shader's fbm():
+// Σ gainᵒ · n(pₒ) / Σ gainᵒ with p₀ = p and pₒ₊₁ = lacunarity · pₒ + (19.1, 7.3, 3.7); ridged folds each
+// octave as 2(1 − |n|)² − 1. `base(x, y, z)` is perlinRef or a simplexRef bound to its scale and falloff.
+export function fbmRef(base, x, y, z, { octaves = 4, lacunarity = 2, gain = 0.5, ridged = false } = {}) {
+    let amplitude = 1, total = 0, norm = 0;
+    for (let o = 0; o < octaves; o++) {
+        let n = base(x, y, z);
+        if (ridged) { const r = 1 - Math.abs(n); n = 2 * r * r - 1; }
+        total += amplitude * n;
+        norm += amplitude;
+        amplitude *= gain;
+        x = x * lacunarity + 19.1; y = y * lacunarity + 7.3; z = z * lacunarity + 3.7;
+    }
+    return total / norm;
 }

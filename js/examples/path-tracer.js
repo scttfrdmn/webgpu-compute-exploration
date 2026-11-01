@@ -57,6 +57,12 @@
 //   offset 80  kind      vec4<u32>  shape (x), material (y)       -> Uint32 view [20], [21]
 // Emissive spheres and quads are sorted to the front: indices < lightCount are the lights that
 // next-event estimation samples.
+//
+// Compute-only use (the Measure tab, js/teach/experiments/path-tracer.js, and test/gpu/): a PathTracer
+// with canvas = null creates no canvas context or mouse handlers and never displays. measurePathTracer()
+// traces samples with the shipped cs_trace (one sample per pixel per dispatch, one dispatch per submit,
+// at most MEASURE_BATCH submits before it waits) at a small resolution and reads the accumulator back at
+// the requested sample counts.
 
 import { GpuTimer, GPU_TIME_UNAVAILABLE, formatMs } from '../gpu-timer.js';
 
@@ -984,8 +990,10 @@ class PathTracer {
 
         this.setupBuffers();
         this.setupPipelines();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     get targetSpp() {
@@ -1005,7 +1013,7 @@ class PathTracer {
     setupBuffers() {
         this.accumBuffer = this.device.createBuffer({
             size: FULL_WIDTH * FULL_HEIGHT * 16,   // vec4<f32> per pixel at the largest resolution
-            usage: GPUBufferUsage.STORAGE
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC   // COPY_SRC: read back by readImage()
         });
         this.primBuffer = this.device.createBuffer({
             size: MAX_PRIMS * PRIM_SIZE,
@@ -1312,6 +1320,59 @@ class PathTracer {
         }
     }
 
+    // ---- Compute-only use (canvas = null) ----
+    // `count` samples per pixel, each one dispatch in its own submit as in frame(), without the display
+    // pass, then the 4-byte ray counter. timer: a GpuTimer with maxPasses ≥ count, or null.
+    // Resolves to { gpuMs (all count dispatches; null without timestamp-query), wallMs, rays }.
+    async traceSamples(count, timer = null) {
+        const t0 = performance.now();
+        timer?.beginFrame();
+        for (let s = 0; s < count; s++) {
+            this.writeParams();
+            const encoder = this.device.createCommandEncoder();
+            if (s === 0) encoder.clearBuffer(this.counterBuffer);
+            const pass = encoder.beginComputePass(timer ? timer.computePassDescriptor('trace') : {});
+            pass.setPipeline(this.tracePipeline);
+            pass.setBindGroup(0, this.traceBindGroup);
+            pass.dispatchWorkgroups(Math.ceil(this.renderWidth / 8), Math.ceil(this.renderHeight / 8));
+            pass.end();
+            if (s === count - 1) {
+                encoder.copyBufferToBuffer(this.counterBuffer, 0, this.readbackBuffer, 0, 4);
+                timer?.resolve(encoder);
+            }
+            this.device.queue.submit([encoder.finish()]);
+            this.sampleCount++;
+        }
+        const timing = timer ? timer.read() : Promise.resolve(null);
+        await this.readbackBuffer.mapAsync(GPUMapMode.READ);
+        const rays = new Uint32Array(this.readbackBuffer.getMappedRange())[0];
+        this.readbackBuffer.unmap();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        return { gpuMs: result ? result.total : null, wallMs, rays };
+    }
+
+    // The accumulated mean radiance, (r, g, b) per pixel in row order (renderWidth × renderHeight × 3)
+    async readImage() {
+        const pixels = this.renderWidth * this.renderHeight;
+        const staging = this.device.createBuffer({ size: pixels * 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.accumBuffer, 0, staging, 0, pixels * 16);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            const sum = new Float32Array(staging.getMappedRange());
+            const image = new Float32Array(pixels * 3);
+            for (let i = 0; i < pixels; i++) {
+                const w = sum[4 * i + 3] || 1;
+                for (let c = 0; c < 3; c++) image[3 * i + c] = sum[4 * i + c] / w;
+            }
+            return image;
+        } finally {
+            staging.destroy();
+        }
+    }
+
     start() {
         if (this.running) return;
         this.running = true;
@@ -1360,11 +1421,13 @@ class PathTracer {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        window.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
-        this.canvas.removeEventListener('wheel', this.onWheel);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            window.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+            this.canvas.removeEventListener('wheel', this.onWheel);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        }
         this.accumBuffer.destroy();
         this.primBuffer.destroy();
         this.paramsBuffer.destroy();
@@ -1549,6 +1612,89 @@ ${tracer.gpuTimer.supported ? `• Rays per second of GPU trace time: ${gpuRays}
 
 // Exported for the CPU reference port used in testing
 export { SCENES, SceneBuilder, intersectScene, cameraBasis, PathTracer };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/path-tracer.js) and test/gpu/ ----
+
+export const MEASURE_MAX_PIXELS = 200 * 150;    // 1/16 of the full 800 × 600
+export const MEASURE_MAX_SPP = 2048;            // samples per pixel per measurePathTracer call
+export const MEASURE_BATCH = 8;                 // submits queued before waiting for the GPU
+export { MAX_BOUNCES };
+
+// Closed furnace box: the unit cube of six inward-facing diffuse quads, each with albedo ρ and
+// emission Le. Every path vertex sees Le, so a path of up to B bounces has expected radiance
+// Le · Σ_{k=0..B} ρ^k (js/refs/path-tracer.js furnaceRadiance), in every pixel, from any camera inside.
+export const FURNACE = {
+    rho: 0.5, le: 1,
+    camera: { target: [0.5, 0.5, 0.5], yaw: 0.4, pitch: 0.25, distance: 0.3, fov: 70, focus: 1, aperture: 0 },
+};
+
+export function furnaceScene(rho = FURNACE.rho, le = FURNACE.le) {
+    const m = { type: MAT_DIFFUSE, albedo: [rho, rho, rho], param: 0, emission: [le, le, le] };
+    return new SceneBuilder()
+        .quad([0, 0, 0], [0, 0, 1], [1, 0, 0], m)   // floor y = 0, normal +y
+        .quad([0, 1, 0], [1, 0, 0], [0, 0, 1], m)   // ceiling, −y
+        .quad([0, 0, 0], [1, 0, 0], [0, 1, 0], m)   // z = 0, +z
+        .quad([0, 0, 1], [0, 1, 0], [1, 0, 0], m)   // z = 1, −z
+        .quad([0, 0, 0], [0, 1, 0], [0, 0, 1], m)   // x = 0, +x
+        .quad([1, 0, 0], [0, 0, 1], [0, 1, 0], m)   // x = 1, −x
+        .build();
+}
+
+// Traces `scene` ('furnace' or a SCENES key) at width × height with `bounces` (default: the scene's),
+// next-event estimation on or off and a fixed seed, and reads the mean image back when the sample
+// count reaches each of `checkpoints` (increasing, ≤ MEASURE_MAX_SPP). between(), if given, is awaited
+// after every batch of MEASURE_BATCH samples (the Measure runner passes ctx.step, which throws to
+// cancel). Resolves to { width, height, bounces, checkpoints: [{ spp, image (Float32Array, rgb per
+// pixel), gpuMsPerSample (null without timestamp-query), wallMsPerSample, raysPerPixel }] }, with times
+// and ray counts averaged over the samples since the previous checkpoint.
+export async function measurePathTracer(gpuDevice, { scene = 'cornell', width = 100, height = 75, checkpoints = [1],
+    bounces = null, useNEE = true, seed = 1, between = null }) {
+    if (scene !== 'furnace' && !SCENES[scene]) throw new RangeError(`unknown scene ${scene}`);
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 8 || height < 8 || width > FULL_WIDTH
+        || height > FULL_HEIGHT || width * height > MEASURE_MAX_PIXELS) {
+        throw new RangeError(`${width} × ${height} is outside 8 × 8 … ${MEASURE_MAX_PIXELS} pixels`);
+    }
+    if (!checkpoints.length || checkpoints.some((c, i) => !Number.isInteger(c) || c < 1 || (i > 0 && c <= checkpoints[i - 1]))
+        || checkpoints[checkpoints.length - 1] > MEASURE_MAX_SPP) {
+        throw new RangeError(`checkpoints must increase within 1 … ${MEASURE_MAX_SPP}`);
+    }
+    if (bounces !== null && (!Number.isInteger(bounces) || bounces < 1 || bounces > MAX_BOUNCES)) {
+        throw new RangeError(`bounces = ${bounces} is outside 1 … ${MAX_BOUNCES}`);
+    }
+    const device = gpuDevice.device ?? gpuDevice;
+    const pt = new PathTracer(device, null);
+    const timer = new GpuTimer(device, { maxPasses: MEASURE_BATCH, poolSize: 1 });
+    try {
+        const def = scene === 'furnace'
+            ? { build: () => furnaceScene(), env: { type: 0 }, camera: FURNACE.camera, bounces: 5 }
+            : SCENES[scene];
+        Object.assign(pt, {
+            scene: def.build(), env: def.env, camera: { ...def.camera, target: def.camera.target.slice() },
+            maxBounces: bounces ?? def.bounces, useNEE, dofOn: false, clampMax: 0, seedValue: seed >>> 0,
+            renderWidth: width, renderHeight: height,
+        });
+        device.queue.writeBuffer(pt.primBuffer, 0, pt.scene.data);
+        const out = [];
+        for (const spp of checkpoints) {
+            let gpuSum = 0, gpuOk = true, wallSum = 0, rays = 0, since = 0;
+            while (pt.sampleCount < spp) {
+                const count = Math.min(MEASURE_BATCH, spp - pt.sampleCount);
+                const r = await pt.traceSamples(count, timer);
+                if (r.gpuMs === null) gpuOk = false; else gpuSum += r.gpuMs;
+                wallSum += r.wallMs;
+                rays += r.rays;
+                since += count;
+                if (between) await between();
+            }
+            out.push({ spp, image: await pt.readImage(), gpuMsPerSample: gpuOk ? gpuSum / since : null,
+                wallMsPerSample: wallSum / since, raysPerPixel: rays / (since * width * height) });
+        }
+        return { width, height, bounces: pt.maxBounces, checkpoints: out };
+    } finally {
+        timer.destroy();
+        pt.destroy();
+    }
+}
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

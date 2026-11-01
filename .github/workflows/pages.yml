@@ -28,7 +28,7 @@ jobs:
       - name: Assemble site
         run: |
           mkdir _site
-          cp -r index.html js css content assets data LICENSE package.json _site/
+          cp -r index.html learn.html js css content assets data LICENSE package.json _site/
           rm -f _site/js/wasm-pkg/.gitignore
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

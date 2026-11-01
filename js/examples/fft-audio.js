@@ -18,6 +18,12 @@
 //   offset 52  (padding to the struct's 8-byte alignment)
 // One copy per FFT stage sits at a dynamic offset of paramsStride bytes, so each butterfly
 // dispatch sees its own `stage` without a CPU round trip; the other passes use slot 0.
+//
+// Compute-only use (the Measure tab, js/teach/experiments/fft-audio.js, and test/gpu/): an
+// FFTAudioVisualizer with canvas = null creates no render pipeline or canvas context and never
+// opens an AudioContext; it also accepts the smaller sizes of MEASURE_FFT_SIZES. measureFFT() uploads
+// given samples, times the shipped window + butterfly dispatches (encodeFFT) and the analysis passes
+// (encodeAnalysis) as two timed passes, and reads the complex spectrum back.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -393,6 +399,7 @@ fn fs_main(frag: VertexOutput) -> @location(0) vec4<f32> {
 
 const MODES = ['Bars', 'Waveform', 'Spectrogram'];
 const FFT_SIZES = [1024, 2048, 4096];
+export const MEASURE_FFT_SIZES = [256, 512, 1024, 2048, 4096];   // compute-only instances (Measure tab)
 
 const PRESETS = {
     music:  { name: 'Music',        fftSize: 2048, smoothing: 0.6,  range: 90 },
@@ -644,8 +651,10 @@ class FFTAudioVisualizer {
 
         this.setupBuffers();
         this.setupComputePipelines();
-        this.setupRenderPipeline();
-        this.setupCanvas();
+        if (canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+        }
         this.setFFTSize(2048);
     }
 
@@ -653,7 +662,8 @@ class FFTAudioVisualizer {
         const storage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
         this.samplesBuffer = this.device.createBuffer({ size: MAX_N * 4, usage: storage });
         // Two complex (vec2<f32>) buffers that the FFT stages ping-pong between
-        this.complexBuffers = [0, 1].map(() => this.device.createBuffer({ size: MAX_N * 8, usage: storage }));
+        // (COPY_SRC: read back by measureFFT)
+        this.complexBuffers = [0, 1].map(() => this.device.createBuffer({ size: MAX_N * 8, usage: storage | GPUBufferUsage.COPY_SRC }));
         this.twiddleBuffer = this.device.createBuffer({ size: (MAX_N / 2) * 8, usage: storage });
         this.spectrumBuffer = this.device.createBuffer({ size: (MAX_N / 2 + 1) * 8, usage: storage });
         this.analysisBuffer = this.device.createBuffer({ size: (ANALYSIS_HEADER + NUM_ROWS) * 4, usage: storage });
@@ -754,7 +764,7 @@ class FFTAudioVisualizer {
 
     // Uploads the twiddle table for the new N and clears the smoothing state (bins changed meaning)
     setFFTSize(n) {
-        if (!FFT_SIZES.includes(n)) return;
+        if (!(this.canvas ? FFT_SIZES : MEASURE_FFT_SIZES).includes(n)) return;
         this.n = n;
         this.log2n = Math.round(Math.log2(n));
         this.timeData = new Float32Array(n);
@@ -786,8 +796,8 @@ class FFTAudioVisualizer {
             this.paramsF32[o + 7] = this.maxDb;
             this.paramsU32[o + 8] = this.mode;
             this.paramsU32[o + 9] = this.trigger;
-            this.paramsF32[o + 10] = this.canvas.width;
-            this.paramsF32[o + 11] = this.canvas.height;
+            this.paramsF32[o + 10] = this.canvas ? this.canvas.width : 0;
+            this.paramsF32[o + 11] = this.canvas ? this.canvas.height : 0;
             this.paramsF32[o + 12] = this.waveGain;
         }
         this.device.queue.writeBuffer(this.paramsBuffer, 0, this.params, 0, slots * this.paramsStride);
@@ -822,9 +832,23 @@ class FFTAudioVisualizer {
         this.writeParams(this.log2n);
         this.device.queue.writeBuffer(this.samplesBuffer, 0, this.timeData);
 
-        const n = this.n;
         const commandEncoder = this.device.createCommandEncoder();
         const pass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('fft'));
+        this.encodeFFT(pass);
+        this.encodeAnalysis(pass);
+        pass.end();
+
+        this.encodeRender(commandEncoder, true);
+        this.gpuTimer.resolve(commandEncoder);
+        this.device.queue.submit([commandEncoder.finish()]);
+        this.gpuTimer.read();
+        this.frames++;
+    }
+
+    // Window + bit reversal, then log2(N) butterfly stages (1 + log2(N) dispatches); the spectrum
+    // ends up in complexBuffers[log2n % 2]
+    encodeFFT(pass) {
+        const n = this.n;
         // Bind group 1 has dst = complexBuffers[0], where stage 0 reads
         pass.setPipeline(this.windowPipeline);
         pass.setBindGroup(0, this.computeBindGroups[1], [0]);
@@ -836,7 +860,11 @@ class FFTAudioVisualizer {
             pass.setBindGroup(0, this.computeBindGroups[s % 2], [s * this.paramsStride]);
             pass.dispatchWorkgroups(Math.ceil(n / 2 / WORKGROUP));
         }
+    }
 
+    // Magnitudes, bands + spectrogram column, beat detection (3 dispatches) on the FFT output
+    encodeAnalysis(pass) {
+        const n = this.n;
         // After log2(N) stages the spectrum is in complexBuffers[log2n % 2]: read it as src
         const finalGroup = this.computeBindGroups[this.log2n % 2];
         pass.setBindGroup(0, finalGroup, [0]);
@@ -846,13 +874,6 @@ class FFTAudioVisualizer {
         pass.dispatchWorkgroups(Math.ceil(NUM_ROWS / WORKGROUP));
         pass.setPipeline(this.beatPipeline);
         pass.dispatchWorkgroups(1);
-        pass.end();
-
-        this.encodeRender(commandEncoder, true);
-        this.gpuTimer.resolve(commandEncoder);
-        this.device.queue.submit([commandEncoder.finish()]);
-        this.gpuTimer.read();
-        this.frames++;
     }
 
     // timed: add timestamp writes (only frame() resolves the timer)
@@ -924,6 +945,97 @@ class FFTAudioVisualizer {
         this.analysisBuffer.destroy();
         this.spectrogramBuffer.destroy();
         this.paramsBuffer.destroy();
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/fft-audio.js) and test/gpu/ ----
+
+export const MAX_MEASURE_REPEATS = 20;   // timed (and, separately, warm-up) FFTs per measureFFT call
+
+const medianOf = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Reverses the low log2n bits of i: cs_window's reverseBits(i) >> (32 - log2n)
+export function bitReverse(i, log2n) {
+    let r = 0;
+    for (let b = 0; b < log2n; b++) r |= ((i >>> b) & 1) << (log2n - 1 - b);
+    return r >>> 0;
+}
+
+// FFT of `samples` (Float32Array, N ∈ MEASURE_FFT_SIZES) through the shipped pipelines, without a
+// canvas or audio: `warmup` untimed and `repeats` timed frames, each one submit of two timed compute
+// passes, 'fft' (window + log2(N) butterflies, encodeFFT) and 'analysis' (magnitude, bands, beat).
+// Resolves to { n, log2n, dispatches, gpuMs, analysisMs, wallMs, spectrum, windowed? }: medians over
+// the timed frames (GPU times null without timestamp-query; wall = submit → onSubmittedWorkDone),
+// spectrum = the complex FFT output (Float32Array 2N: re, im per bin, natural order), and with
+// windowed = true the GPU's windowed input (Float32Array N, natural order) from one more window pass.
+export async function measureFFT(gpuDevice, { samples, warmup = 1, repeats = 3, windowed = false }) {
+    const n = samples?.length;
+    if (!MEASURE_FFT_SIZES.includes(n)) throw new RangeError(`N = ${n} is not one of ${MEASURE_FFT_SIZES.join(', ')}`);
+    const device = gpuDevice.device ?? gpuDevice;
+    const viz = new FFTAudioVisualizer(device, null);
+    const readBack = async (buffer, bytes) => {
+        const staging = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = device.createCommandEncoder();
+        encoder.copyBufferToBuffer(buffer, 0, staging, 0, bytes);
+        device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ);
+        const out = new Float32Array(staging.getMappedRange().slice(0));
+        staging.unmap();
+        staging.destroy();
+        return out;
+    };
+    try {
+        viz.smoothing = 0;
+        viz.setFFTSize(n);
+        viz.timeData.set(samples);
+        const untimed = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS);
+        const timed = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const runs = [];
+        for (let r = 0; r < untimed + timed; r++) {
+            viz.writeParams(viz.log2n);
+            device.queue.writeBuffer(viz.samplesBuffer, 0, viz.timeData);
+            await device.queue.onSubmittedWorkDone();   // uploads land before the clock starts
+            const t0 = performance.now();
+            const encoder = device.createCommandEncoder();
+            const fftPass = encoder.beginComputePass(viz.gpuTimer.computePassDescriptor('fft'));
+            viz.encodeFFT(fftPass);
+            fftPass.end();
+            const analysisPass = encoder.beginComputePass(viz.gpuTimer.computePassDescriptor('analysis'));
+            viz.encodeAnalysis(analysisPass);
+            analysisPass.end();
+            viz.gpuTimer.resolve(encoder);
+            device.queue.submit([encoder.finish()]);
+            const timing = viz.gpuTimer.read();
+            await device.queue.onSubmittedWorkDone();
+            const wallMs = performance.now() - t0;
+            const t = await timing;
+            if (r >= untimed) runs.push({ wallMs, gpuMs: t?.passes.fft ?? null, analysisMs: t?.passes.analysis ?? null });
+        }
+        const result = {
+            n, log2n: viz.log2n, dispatches: 1 + viz.log2n + 3,
+            gpuMs: medianOf(runs.map(r => r.gpuMs)),
+            analysisMs: medianOf(runs.map(r => r.analysisMs)),
+            wallMs: medianOf(runs.map(r => r.wallMs)),
+            spectrum: await readBack(viz.complexBuffers[viz.log2n % 2], 8 * n),
+        };
+        if (windowed) {
+            // The window pass alone writes complexBuffers[0] in bit-reversed order
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass();
+            pass.setPipeline(viz.windowPipeline);
+            pass.setBindGroup(0, viz.computeBindGroups[1], [0]);
+            pass.dispatchWorkgroups(Math.ceil(n / WORKGROUP));
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+            const w = await readBack(viz.complexBuffers[0], 8 * n);
+            result.windowed = Float32Array.from({ length: n }, (_, i) => w[2 * bitReverse(i, viz.log2n)]);
+        }
+        return result;
+    } finally {
+        viz.destroy();
     }
 }
 

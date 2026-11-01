@@ -2231,6 +2231,73 @@ ${reverb.message ? `\n${reverb.message}\n` : ''}
 // Exported for the CPU tests (test/convolution-reverb.test.mjs): the View uniform writer.
 export { ConvolutionReverb };
 
+// ---- Compute-only API for the Measure tab (js/teach/experiments/convolution-reverb.js) and test/gpu/ ----
+// GPUConvolver has no DOM or Web Audio dependency; this drives it offline (no AudioContext, nothing
+// is played): the self-test, then a few streamed blocks of seeded noise, each submitted and read back
+// before the next, as the page streams them.
+
+export { BLOCK_SIZES, MAX_IR_FRAMES };
+export const MAX_MEASURE_BLOCKS = 64;     // streamed blocks per measureConvolver call
+
+const medianOf = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Convolves with the stereo IR (left, right; ≤ MAX_IR_FRAMES) at block size B ∈ BLOCK_SIZES: runs
+// selfTest() (every partition, ~5 blocks checked against a direct CPU convolution), then streams
+// `blocks` blocks of seeded noise (≤ MAX_MEASURE_BLOCKS) through processBlock, timing each round trip
+// and each block's compute pass. between(), if given, is awaited between the two phases.
+// Resolves to { blockSize, partitions, deadlineMs (B / sampleRate), gpuMs (median per block, null
+// without timestamp-query), wallMs (median round trip: upload, compute, wet block back on the CPU),
+// selfTest: selfTest()'s result, input: { left, right } and wet: { left, right } (the first `keep`
+// streamed blocks, concatenated) }.
+export async function measureConvolver(gpuDevice, { blockSize, left, right, sampleRate = 48000, blocks = 16, keep = 4,
+    seed = 7, between = null }) {
+    if (!BLOCK_SIZES.includes(blockSize)) throw new RangeError(`block size ${blockSize} is not one of ${BLOCK_SIZES.join(', ')}`);
+    if (!(left?.length > 0) || left.length !== right?.length || left.length > MAX_IR_FRAMES) {
+        throw new RangeError(`the IR must have 1 … ${MAX_IR_FRAMES} frames per channel`);
+    }
+    if (!Number.isInteger(blocks) || blocks < 1 || blocks > MAX_MEASURE_BLOCKS) {
+        throw new RangeError(`blocks = ${blocks} is outside 1 … ${MAX_MEASURE_BLOCKS}`);
+    }
+    keep = Math.min(Math.max(keep, 0), blocks);
+    const device = gpuDevice.device ?? gpuDevice;
+    const conv = new GPUConvolver(device);
+    const gpuTimes = [];
+    conv.gpuTimer.onResult = (r) => gpuTimes.push(r.total);
+    try {
+        conv.configure(blockSize);
+        conv.uploadIR(left, right, sampleRate);
+        const selfTest = await conv.selfTest();
+        if (between) await between();
+        const B = blockSize;
+        const rand = mulberry32(seed);
+        const input = { left: new Float32Array(keep * B), right: new Float32Array(keep * B) };
+        const wet = { left: new Float32Array(keep * B), right: new Float32Array(keep * B) };
+        const wall = [];
+        for (let k = 0; k < blocks; k++) {
+            const xl = Float32Array.from({ length: B }, () => rand() * 2 - 1);
+            const xr = Float32Array.from({ length: B }, () => rand() * 2 - 1);
+            const t0 = performance.now();
+            const out = await conv.processBlock(xl, xr);
+            wall.push(performance.now() - t0);
+            if (k < keep) {
+                input.left.set(xl, k * B); input.right.set(xr, k * B);
+                wet.left.set(out.left, k * B); wet.right.set(out.right, k * B);
+            }
+        }
+        await device.queue.onSubmittedWorkDone();
+        await new Promise(resolve => setTimeout(resolve, 0));   // let the last timestamp readbacks land
+        return {
+            blockSize, partitions: conv.partitions, deadlineMs: 1000 * B / sampleRate,
+            gpuMs: medianOf(gpuTimes), wallMs: medianOf(wall), selfTest, input, wet,
+        };
+    } finally {
+        conv.destroy();
+    }
+}
+
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
 export function wgslModules() {

@@ -18,6 +18,12 @@
 //   offset 68  (padding to the struct's 8-byte alignment)
 // One copy per substep sits at a dynamic offset of PARAMS_STRIDE bytes, so each substep sees its
 // own `step` (the source phase and rain hash depend on it) without a CPU round trip.
+//
+// Compute-only use (the Measure tab, js/teach/experiments/wave-equation.js, and test/gpu/): a
+// WaveEquation with canvas = null creates no render pipeline, canvas context or mouse handlers and
+// never draws. measureWave() loads a preset, runs cs_step with the shipped pipeline (the dispatches
+// of frame()) and reads both time levels back, so the discrete energy of js/refs/wave.js can be
+// computed on the CPU. It accepts Courant numbers above the CFL limit, which the Explore slider does not.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -341,15 +347,17 @@ class WaveEquation {
 
         this.setupBuffers();
         this.setupComputePipelines();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {   // canvas = null: compute only (see the top of the file)
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     setupBuffers() {
         this.heightBuffers = [0, 1].map(() => this.device.createBuffer({
             size: this.cellCount * 4, // f32 per cell
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC   // COPY_SRC: measureWave() readback
         }));
         this.wallBuffer = this.device.createBuffer({
             size: this.cellCount * 4, // u32 per cell
@@ -639,6 +647,52 @@ class WaveEquation {
         this.frame(this.substeps);
     }
 
+    // Compute only: `count` (≤ MAX_SUBSTEPS) time steps in one timed compute pass, the cs_step
+    // dispatches of frame() (no edit pass, no draw). Resolves when the GPU is done to
+    // { gpuMs (null without timestamp-query), wallMs }, wall = submit → onSubmittedWorkDone.
+    async timeSteps(count) {
+        const passes = Math.min(Math.max(count, 1), MAX_SUBSTEPS);
+        this.writeParams(passes, false, false);
+        this.gpuTimer.beginFrame();
+        const commandEncoder = this.device.createCommandEncoder();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
+        computePass.setPipeline(this.stepPipeline);
+        const wgX = Math.ceil(this.width / 8);
+        const wgY = Math.ceil(this.height / 8);
+        for (let i = 0; i < passes; i++) {
+            computePass.setBindGroup(0, this.computeBindGroups[this.currentBuffer], [i * this.paramsStride]);
+            computePass.dispatchWorkgroups(wgX, wgY);
+            this.currentBuffer = 1 - this.currentBuffer;
+        }
+        computePass.end();
+        this.gpuTimer.resolve(commandEncoder);
+        const t0 = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        const timing = this.gpuTimer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        this.steps += passes;
+        return { gpuMs: result ? result.total : null, wallMs };
+    }
+
+    // Compute only: [u(t), u(t − 1)] as Float32Arrays, copied into a temporary MAP_READ buffer
+    async readHeights() {
+        const size = this.cellCount * 4;
+        const staging = this.device.createBuffer({ size: 2 * size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.heightBuffers[this.currentBuffer], 0, staging, 0, size);
+        encoder.copyBufferToBuffer(this.heightBuffers[1 - this.currentBuffer], 0, staging, size, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            const both = staging.getMappedRange().slice(0);
+            return [new Float32Array(both, 0, this.cellCount), new Float32Array(both, size, this.cellCount)];
+        } finally {
+            staging.destroy();
+        }
+    }
+
     // timed: add timestamp writes (only frame() resolves the timer)
     encodeRender(commandEncoder, timed = false) {
         const desc = {
@@ -657,6 +711,7 @@ class WaveEquation {
     }
 
     render() {
+        if (!this.canvas) return;
         this.writeParams(1, false, false);
         const commandEncoder = this.device.createCommandEncoder();
         this.encodeRender(commandEncoder);
@@ -697,9 +752,11 @@ class WaveEquation {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            this.canvas.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+        }
         this.heightBuffers.forEach(b => b.destroy());
         this.wallBuffer.destroy();
         this.paramsBuffer.destroy();
@@ -835,4 +892,64 @@ export function wgslModules() {
 }
 
 // Exported for the CPU tests in test/wave-equation.test.mjs.
-export { WaveEquation, PARAMS_SIZE, SOURCE_PERIOD };
+export { WaveEquation, PARAMS_SIZE, SOURCE_PERIOD, MAX_SUBSTEPS, PRESETS };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/wave-equation.js) and test/gpu/ ----
+
+export const CFL_LIMIT = Math.SQRT1_2;    // C ≤ 1/√2 for the 5-point Laplacian in 2D
+export const MAX_MEASURE_SIDE = 2048;     // grid width and height per measureWave call
+export const MAX_MEASURE_STEPS = 4096;    // time steps per call (submitted MAX_SUBSTEPS at a time)
+export const MAX_MEASURE_COURANT = 1;
+
+// `steps` leapfrog steps of the damped wave equation on a width x height grid, starting from the
+// preset's walls and water (both time levels equal: the drop starts at rest), with Courant number
+// `courant` (may exceed the CFL limit) and damping γ·dt = `damping`; no rain, edges reflecting unless
+// the preset turns the sponge on. `warmup` untimed steps run first and are not counted. With
+// readEvery > 0, both time levels are read back at step 0 (after the warm-up) and every `readEvery`
+// steps, and onSample({ step, cur, prev }) is awaited; if it returns false the run stops early. between(), if given, is awaited after every submit (the Measure
+// runner passes ctx.step there, which throws to cancel). Resolves to { width, height, steps (done),
+// stopped, C2 (the f32 C² the shader used), gpuMs, wallMs, gpuMsPerStep, wallMsPerStep } over the
+// timed steps (GPU times null without timestamp-query).
+export async function measureWave(gpuDevice, { width, height, preset = 'open', courant = 0.5, damping = 0,
+    steps, warmup = 0, readEvery = 0, onSample = null, between = null }) {
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 16 || v > MAX_MEASURE_SIDE) throw new RangeError(`${name} = ${v} is outside 16 … ${MAX_MEASURE_SIDE}`);
+    }
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) {
+        throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    }
+    if (!Number.isInteger(warmup) || warmup < 0 || warmup > MAX_SUBSTEPS) throw new RangeError(`warmup = ${warmup} is outside 0 … ${MAX_SUBSTEPS}`);
+    if (!(courant > 0 && courant <= MAX_MEASURE_COURANT)) throw new RangeError(`courant = ${courant} is outside (0, ${MAX_MEASURE_COURANT}]`);
+    if (!(damping >= 0 && damping <= 0.02)) throw new RangeError(`damping = ${damping} is outside 0 … 0.02`);
+    if (!PRESETS[preset]) throw new RangeError(`unknown preset ${preset}`);
+    const sim = new WaveEquation(gpuDevice.device ?? gpuDevice, null, width, height);
+    try {
+        sim.loadPreset(preset);
+        Object.assign(sim, { courant, dampingGamma: damping, rain: false });
+        if (warmup > 0) await sim.timeSteps(warmup);
+        let done = 0, gpuMs = 0, wallMs = 0, timed = true, stopped = false;
+        if (readEvery > 0 && onSample) {
+            const [cur, prev] = await sim.readHeights();
+            if (await onSample({ step: 0, cur, prev }) === false) stopped = true;
+        }
+        while (done < steps && !stopped) {
+            const next = readEvery > 0 ? Math.min(steps, (Math.floor(done / readEvery) + 1) * readEvery) : steps;
+            const count = Math.min(next - done, MAX_SUBSTEPS);
+            const r = await sim.timeSteps(count);
+            done += count;
+            wallMs += r.wallMs;
+            if (r.gpuMs === null) timed = false; else gpuMs += r.gpuMs;
+            if (between) await between();
+            if (readEvery > 0 && onSample && done % readEvery === 0) {
+                const [cur, prev] = await sim.readHeights();
+                if (await onSample({ step: done, cur, prev }) === false) stopped = true;
+            }
+        }
+        return {
+            width, height, steps: done, stopped, C2: Math.fround(courant * courant), wallMs, gpuMs: timed ? gpuMs : null,
+            wallMsPerStep: done ? wallMs / done : null, gpuMsPerStep: timed && done ? gpuMs / done : null,
+        };
+    } finally {
+        sim.destroy();
+    }
+}

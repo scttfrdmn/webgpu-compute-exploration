@@ -50,6 +50,11 @@
 //   offset 36  simulate      u32        0 = only apply the brush     -> Uint32 view [9]
 //   offset 40  step          u32        step counter (offset, hash)  -> Uint32 view [10]
 //   offset 44  paintSeed     u32        frame counter for the brush  -> Uint32 view [11]
+//
+// Compute-only use (the Measure tab, js/teach/experiments/falling-sand.js, and test/gpu/): a FallingSand
+// with canvas = null creates no render pipeline, canvas context or mouse handlers and never draws.
+// measureSand() loads a grid, runs cs_main with the shipped pipeline (the dispatches of frame(),
+// without the brush) and reads the cells back, so material counts can be checked on the CPU.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -562,15 +567,17 @@ class FallingSand {
 
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {   // canvas = null: compute only (see the top of the file)
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     setupBuffers() {
         this.cellBuffer = this.device.createBuffer({
             size: this.cellCount * 4, // one u32 per cell
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC   // COPY_SRC: measureSand() readback
         });
 
         this.paramsBuffer = this.device.createBuffer({
@@ -755,6 +762,49 @@ class FallingSand {
         this.frame(this.stepsPerFrame);
     }
 
+    // Compute only: `count` (≤ MAX_STEPS) simulation steps in one timed compute pass, the dispatches
+    // of frame() without the brush or the draw. Resolves when the GPU is done to
+    // { gpuMs (null without timestamp-query), wallMs }, wall = submit → onSubmittedWorkDone.
+    async timeSteps(count) {
+        const passes = Math.min(Math.max(count, 1), MAX_STEPS);
+        this.writeParams(passes, true, false);
+        this.gpuTimer.beginFrame();
+        const commandEncoder = this.device.createCommandEncoder();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
+        computePass.setPipeline(this.computePipeline);
+        const wgX = Math.ceil((this.width / 2 + 1) / 8);
+        const wgY = Math.ceil((this.height / 2 + 1) / 8);
+        for (let k = 0; k < passes; k++) {
+            computePass.setBindGroup(0, this.computeBindGroup, [k * PARAMS_STRIDE]);
+            computePass.dispatchWorkgroups(wgX, wgY);
+        }
+        computePass.end();
+        this.gpuTimer.resolve(commandEncoder);
+        const t0 = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        const timing = this.gpuTimer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        this.steps += passes;
+        return { gpuMs: result ? result.total : null, wallMs };
+    }
+
+    // Compute only: the current cells (one u32 each), copied into a temporary MAP_READ buffer
+    async readCells() {
+        const size = this.cellCount * 4;
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.cellBuffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Uint32Array(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
+    }
+
     // timed: add timestamp writes (only frame() resolves the timer)
     encodeRender(commandEncoder, timed = false) {
         const desc = {
@@ -773,6 +823,7 @@ class FallingSand {
     }
 
     render() {
+        if (!this.canvas) return;
         this.writeParams(1, false, false);
         const commandEncoder = this.device.createCommandEncoder();
         this.encodeRender(commandEncoder);
@@ -813,10 +864,12 @@ class FallingSand {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
-        window.removeEventListener('mouseup', this.onMouseUp);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            this.canvas.removeEventListener('mousemove', this.onMouseMove);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+            window.removeEventListener('mouseup', this.onMouseUp);
+        }
         this.cellBuffer.destroy();
         this.paramsBuffer.destroy();
     }
@@ -916,7 +969,60 @@ export async function initFallingSand(gpuDevice) {
     return simulation;
 }
 
-export { FallingSand, buildSandbox };   // for test/falling-sand.test.mjs
+export { FallingSand, buildSandbox, MATERIALS, MAX_STEPS };   // for test/falling-sand.test.mjs
+export const MATERIAL_IDS = { EMPTY, STONE, SAND, WATER, OIL, FIRE, PLANT, ACID };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/falling-sand.js) and test/gpu/ ----
+
+export const MAX_MEASURE_CELLS = 2560 * 1920;   // cells per measureSand call (20 MB of u32)
+export const MAX_MEASURE_STEPS = 4096;          // steps per call
+
+// `steps` steps of the cellular automaton on a width x height grid (one u32 per cell, as buildSandbox
+// returns), `stepsPerSubmit` (1 … MAX_STEPS) dispatches per command buffer. `warmup` untimed steps run
+// first and are not counted. The cells are read back after each step count in `readAt` (≤ steps).
+// between(), if given, is awaited after every submit (the Measure runner passes ctx.step there, which
+// throws to cancel). Resolves to { width, height, steps, gpuMs, wallMs, gpuMsPerStep, wallMsPerStep,
+// samples: [{ step, cells }] } (GPU times null without timestamp-query; wall = submit → done, summed).
+export async function measureSand(gpuDevice, { width, height, grid, steps, stepsPerSubmit = MAX_STEPS, warmup = 0,
+    readAt = [], between = null }) {
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 4 || height < 4 || width % 2 || height % 2) {
+        throw new RangeError(`grid ${width} x ${height} must be even and at least 4 x 4`);
+    }
+    if (width * height > MAX_MEASURE_CELLS) throw new RangeError(`${width * height} cells exceed ${MAX_MEASURE_CELLS}`);
+    if (!grid || grid.length !== width * height) throw new RangeError('grid must hold width · height cells');
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) {
+        throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    }
+    if (!Number.isInteger(stepsPerSubmit) || stepsPerSubmit < 1 || stepsPerSubmit > MAX_STEPS) {
+        throw new RangeError(`stepsPerSubmit = ${stepsPerSubmit} is outside 1 … ${MAX_STEPS}`);
+    }
+    if (!Number.isInteger(warmup) || warmup < 0 || warmup > MAX_STEPS) throw new RangeError(`warmup = ${warmup} is outside 0 … ${MAX_STEPS}`);
+    const marks = [...new Set(readAt)].filter(k => Number.isInteger(k) && k >= 0 && k <= steps).sort((a, b) => a - b);
+    const sim = new FallingSand(gpuDevice.device ?? gpuDevice, null, width, height);
+    try {
+        sim.loadGrid(grid);
+        if (warmup > 0) await sim.timeSteps(warmup);
+        const samples = [];
+        let done = 0, gpuMs = 0, wallMs = 0, timed = true;
+        for (const target of [...marks, steps]) {
+            while (done < target) {
+                const count = Math.min(target - done, stepsPerSubmit);
+                const r = await sim.timeSteps(count);
+                done += count;
+                wallMs += r.wallMs;
+                if (r.gpuMs === null) timed = false; else gpuMs += r.gpuMs;
+                if (between) await between();
+            }
+            if (marks.includes(target) && !samples.some(s => s.step === target)) samples.push({ step: target, cells: await sim.readCells() });
+        }
+        return {
+            width, height, steps, wallMs, gpuMs: timed ? gpuMs : null,
+            wallMsPerStep: wallMs / steps, gpuMsPerStep: timed ? gpuMs / steps : null, samples,
+        };
+    } finally {
+        sim.destroy();
+    }
+}
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

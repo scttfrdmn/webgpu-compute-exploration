@@ -239,4 +239,110 @@ ${timer.supported ? `<span class="hint">${GPU_TIME_NOTE}</span>` : ''}`;
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.
-export function wgslModules() { return [{ name: 'compute', code: shaderCode }]; }
+export function wgslModules() {
+    return [
+        { name: 'compute', code: shaderCode },
+        // The Measure tab's σ variants (σ = 4 is the shipped module itself)
+        ...BLUR_SIGMAS.filter(s => s !== SHIPPED_SIGMA).map(s => ({ name: `compute-sigma${s}`, code: blurShaderCode(s) })),
+    ];
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/gaussian-blur.js) and test/gpu/ ----
+//
+// The shipped shader has σ and the kernel size as WGSL constants. blurShaderCode(σ) is that exact source
+// with those two lines replaced (kernel = 2·⌈3σ⌉ + 1 taps per axis, so ±3σ as in the shipped 25 × 25
+// at σ = 4); everything else, including the per-tap exp() and the edge renormalization, is unchanged.
+// measureBlur() uploads an image once, times the dispatch (GPU timestamps and submit → done) and reads
+// the result back.
+
+export { createTestImage };
+export const SHIPPED_SIGMA = 4;
+export const BLUR_SIGMAS = [1, 2, 4, 8];
+export const MAX_BLUR_SIDE = 2048;
+export const MAX_MEASURE_REPEATS = 10;
+
+export const kernelSizeFor = (sigma) => 2 * Math.ceil(3 * sigma) + 1;
+
+export function blurShaderCode(sigma) {
+    if (!BLUR_SIGMAS.includes(sigma)) throw new RangeError(`σ = ${sigma} is not one of ${BLUR_SIGMAS.join(', ')}`);
+    return shaderCode
+        .replace('const sigma = 4.0;', `const sigma = ${sigma.toFixed(1)};`)
+        .replace('const kernelSize = 25;', `const kernelSize = ${kernelSizeFor(sigma)};`);
+}
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((p, q) => p - q);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// image: width × height RGBA Float32Array (4 floats per pixel), sides ≤ MAX_BLUR_SIDE; sigma one of
+// BLUR_SIGMAS. Resolves to { width, height, sigma, kernelSize, taps, gpuMs, wallMs, output } where taps
+// = kernelSize² per pixel, medians over `repeats` timed dispatches (after `warmup`; ≤ 10 each), gpuMs
+// null without timestamp-query, and output the blurred image when readback is true.
+export async function measureBlur(gpuDevice, { image, width, height, sigma = SHIPPED_SIGMA, warmup = 1, repeats = 3, readback = true }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 1 || v > MAX_BLUR_SIDE) throw new RangeError(`${name} = ${v} is outside 1 … ${MAX_BLUR_SIDE}`);
+    }
+    if (image?.length !== 4 * width * height) throw new RangeError('image must hold width × height RGBA pixels');
+    const code = blurShaderCode(sigma);
+    const bytes = 16 * width * height;
+    const inputBuffer = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+    const outputBuffer = device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+    const dimensionsBuffer = device.createBuffer({ size: 8, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const readBack = device.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
+    try {
+        device.queue.writeBuffer(inputBuffer, 0, image);
+        device.queue.writeBuffer(dimensionsBuffer, 0, new Uint32Array([width, height]));
+        const layout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+            ],
+        });
+        const pipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+            compute: { module: device.createShaderModule({ code }), entryPoint: 'main' },
+        });
+        const bindGroup = device.createBindGroup({
+            layout,
+            entries: [inputBuffer, outputBuffer, dimensionsBuffer].map((buffer, binding) => ({ binding, resource: { buffer } })),
+        });
+        const timedRuns = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const total = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS) + timedRuns;
+        const gpu = [], wall = [];
+        for (let r = 0; r < total; r++) {
+            const timed = r >= total - timedRuns;
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('blur') : undefined);
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(Math.ceil(width / 8), Math.ceil(height / 8));
+            pass.end();
+            if (timed) timer.resolve(encoder);
+            const t0 = performance.now();
+            device.queue.submit([encoder.finish()]);
+            const timing = timed ? timer.read() : null;
+            await device.queue.onSubmittedWorkDone();
+            if (!timed) continue;
+            wall.push(performance.now() - t0);
+            gpu.push((await timing)?.total ?? null);
+        }
+        let output;
+        if (readback) {
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(outputBuffer, 0, readBack, 0, bytes);
+            device.queue.submit([encoder.finish()]);
+            await readBack.mapAsync(GPUMapMode.READ);
+            output = new Float32Array(readBack.getMappedRange().slice(0));
+            readBack.unmap();
+        }
+        const kernelSize = kernelSizeFor(sigma);
+        return { width, height, sigma, kernelSize, taps: kernelSize * kernelSize, gpuMs: median(gpu), wallMs: median(wall), output };
+    } finally {
+        timer.destroy();
+        for (const buffer of [inputBuffer, outputBuffer, dimensionsBuffer, readBack]) buffer.destroy();
+    }
+}

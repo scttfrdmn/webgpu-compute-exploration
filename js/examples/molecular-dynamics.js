@@ -1,4 +1,7 @@
 // Compute shader for molecular dynamics using Lennard-Jones potential
+import { GpuTimer } from '../gpu-timer.js';
+import { readBuffer } from '../webgpu-utils.js';
+
 const computeShader = `
 struct Atom {
     position: vec3<f32>,
@@ -106,6 +109,53 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     atomsOut[idx].velocity = newVel;
 }
 `;
+
+export const DELTA_TIME = 0.016;   // the interactive example's time step (LJ time units)
+
+// NVE variant for the Measure tab's energy experiment: the shipped kernel with the thermostat block
+// removed, so the integrator alone moves the energy. Everything else is the same source text.
+const THERMOSTAT_BLOCK = `    // Temperature scaling (simple thermostat)
+    let speed = length(newVel);
+    if (speed > 0.0) {
+        let targetSpeed = sqrt(params.temperature * 0.01);
+        newVel = newVel * (1.0 - 0.01 * (1.0 - targetSpeed / speed));
+    }
+`;
+export const computeShaderNVE = computeShader.replace(THERMOSTAT_BLOCK,
+    '    // NVE variant: no thermostat, the velocity is exactly the integrator\'s\n');
+
+// Simple cubic lattice filling the box (⌈N^{1/3}⌉ sites per axis, the last layer partly filled) with
+// velocity components uniform in ±0.005·T, packed as array<Atom> (8 floats: position, pad, velocity,
+// pad). rand defaults to Math.random (the interactive example); the Measure tab passes a seeded one.
+export function generateAtoms(numAtoms, boxSize, temperature, rand = Math.random) {
+    const atoms = new Float32Array(numAtoms * 8); // 3 pos + 1 padding + 3 vel + 1 padding
+
+    // Initialize in a grid
+    const gridSize = Math.ceil(Math.pow(numAtoms, 1/3));
+    const spacing = boxSize / gridSize;
+    const offset = -boxSize / 2 + spacing / 2;
+
+    let idx = 0;
+    for (let i = 0; i < gridSize && idx < numAtoms; i++) {
+        for (let j = 0; j < gridSize && idx < numAtoms; j++) {
+            for (let k = 0; k < gridSize && idx < numAtoms; k++) {
+                // Position
+                atoms[idx * 8 + 0] = offset + i * spacing;
+                atoms[idx * 8 + 1] = offset + j * spacing;
+                atoms[idx * 8 + 2] = offset + k * spacing;
+
+                // Velocity (random)
+                const temp = temperature * 0.01;
+                atoms[idx * 8 + 4] = (rand() - 0.5) * temp;
+                atoms[idx * 8 + 5] = (rand() - 0.5) * temp;
+                atoms[idx * 8 + 6] = (rand() - 0.5) * temp;
+
+                idx++;
+            }
+        }
+    }
+    return atoms;
+}
 
 // Vertex shader for rendering atoms
 const vertexShader = `
@@ -370,21 +420,24 @@ class Camera {
 }
 
 class MolecularDynamics {
-    constructor(device, canvas, numAtoms, boxSize) {
+    // canvas = null: compute-only (Measure tab, test/gpu/), no render pipelines or mouse handlers.
+    // options.thermostat = false compiles the NVE variant of the compute shader (computeShaderNVE).
+    constructor(device, canvas, numAtoms, boxSize, { thermostat = true } = {}) {
         this.device = device;
         this.canvas = canvas;
         this.numAtoms = numAtoms;
         this.boxSize = boxSize;
+        this.thermostat = thermostat;
         this.running = false;
         this.frameCount = 0;
         this.temperature = 30;
 
         this.camera = new Camera();
-        this.setupMouseControls();
+        if (canvas) this.setupMouseControls();
         this.initializeAtoms();
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
+        if (canvas) this.setupRenderPipeline();
     }
 
     setupMouseControls() {
@@ -437,46 +490,22 @@ class MolecularDynamics {
     }
 
     initializeAtoms() {
-        this.atoms = new Float32Array(this.numAtoms * 8); // 3 pos + 1 padding + 3 vel + 1 padding
-
-        // Initialize in a grid
-        const gridSize = Math.ceil(Math.pow(this.numAtoms, 1/3));
-        const spacing = this.boxSize / gridSize;
-        const offset = -this.boxSize / 2 + spacing / 2;
-
-        let idx = 0;
-        for (let i = 0; i < gridSize && idx < this.numAtoms; i++) {
-            for (let j = 0; j < gridSize && idx < this.numAtoms; j++) {
-                for (let k = 0; k < gridSize && idx < this.numAtoms; k++) {
-                    // Position
-                    this.atoms[idx * 8 + 0] = offset + i * spacing;
-                    this.atoms[idx * 8 + 1] = offset + j * spacing;
-                    this.atoms[idx * 8 + 2] = offset + k * spacing;
-
-                    // Velocity (random)
-                    const temp = this.temperature * 0.01;
-                    this.atoms[idx * 8 + 4] = (Math.random() - 0.5) * temp;
-                    this.atoms[idx * 8 + 5] = (Math.random() - 0.5) * temp;
-                    this.atoms[idx * 8 + 6] = (Math.random() - 0.5) * temp;
-
-                    idx++;
-                }
-            }
-        }
+        this.atoms = generateAtoms(this.numAtoms, this.boxSize, this.temperature);
     }
 
     setupBuffers() {
         const atomBufferSize = this.numAtoms * 8 * 4; // vec4 + vec4 per atom
 
+        // COPY_SRC: the Measure tab reads the atoms back to compute the energy on the CPU
         this.atomBuffers = [
             this.device.createBuffer({
                 size: atomBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
                 mappedAtCreation: true
             }),
             this.device.createBuffer({
                 size: atomBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
             })
         ];
 
@@ -497,7 +526,7 @@ class MolecularDynamics {
     }
 
     setupComputePipeline() {
-        const shaderModule = this.device.createShaderModule({ code: computeShader });
+        const shaderModule = this.device.createShaderModule({ code: this.thermostat === false ? computeShaderNVE : computeShader });
 
         const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
@@ -667,7 +696,7 @@ class MolecularDynamics {
     updateParams() {
         const params = new Float32Array([
             0, // numAtoms (u32, set below)
-            0.016, // deltaTime
+            this.deltaTime ?? DELTA_TIME, // deltaTime (the Measure tab sets this.deltaTime)
             this.boxSize,
             this.temperature
         ]);
@@ -765,8 +794,8 @@ class MolecularDynamics {
         this.atomBuffers.forEach(b => b.destroy());
         this.paramsBuffer.destroy();
         this.uniformBuffer.destroy();
-        this.boxParamsBuffer.destroy();
-        this.depthTexture.destroy();
+        this.boxParamsBuffer?.destroy();   // render resources are absent when compute-only
+        this.depthTexture?.destroy();
     }
 }
 
@@ -827,7 +856,6 @@ export async function initMolecularDynamics(gpuDevice) {
     });
 
     function updateOutput() {
-        const fps = simulation.running ? '~60' : '0';
         const interactions = (numAtoms * (numAtoms - 1)) / 2;
 
         output.innerHTML = `<span class="success">✓ Molecular Dynamics Active</span>
@@ -846,7 +874,6 @@ export async function initMolecularDynamics(gpuDevice) {
 • Timestep: 0.016 units
 
 <span class="info">Performance:</span>
-• Frame rate: ${fps} FPS
 • Simulation time: ${simulation.frameCount} steps
 • GPU compute: Fully parallelized force calculation
 • Rendering: Instanced 3D spheres
@@ -868,8 +895,86 @@ export function wgslModules() {
         { name: 'compute', code: computeShader },
         { name: 'render', code: renderShader },
         { name: 'box', code: boxShader },
+        { name: 'compute-nve', code: computeShaderNVE },
     ];
 }
 
 // Exported for the CPU tests in test/ (no behavior change)
 export { Mat4, Camera, MolecularDynamics };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/molecular-dynamics.js) and test/gpu/ ----
+//
+// measureMD() builds a MolecularDynamics without a canvas (same buffers, pipeline and ping-pong bind
+// groups), uploads caller-supplied atoms and runs `steps` steps of the compute shader, the shipped one
+// or (thermostat = false) its NVE variant. Steps go into compute passes of stepsPerSubmit(n) dispatches
+// (at most 100, and at most 2.5e8 pair terms), one submit each, so no single submission is long. Each chunk
+// is timed (GPU timestamps and submit → done). When samples > 0 the atoms are read back at evenly spaced
+// steps; the energy is then computed on the CPU (js/refs/molecular-dynamics.js), because the shader
+// computes forces but not the potential.
+
+export const MAX_MD_ATOMS = 5000;              // the Atoms slider's maximum
+export const MAX_MEASURE_STEPS = 4000;          // per call
+export const MAX_STEPS_PER_SUBMIT = 100;
+export const MAX_PAIRS_PER_SUBMIT = 2.5e8;      // N(N − 1) per step: 10 steps per submit at N = 5,000
+export const MAX_SAMPLES = 50;
+export const stepsPerSubmit = (n) => Math.max(1, Math.min(MAX_STEPS_PER_SUBMIT, Math.floor(MAX_PAIRS_PER_SUBMIT / (n * n))));
+export const MAX_DT = 0.02;
+
+// atoms: n × 8 floats (generateAtoms layout). Resolves to { n, steps, gpuMs, wallMs, gpuMsPerStep,
+// wallMsPerStep, snapshots: [{ step, time, atoms }] } where gpuMs / wallMs are summed over the chunks (GPU
+// time null without timestamp-query) and snapshots holds the initial state plus `samples` read-backs.
+// between(), if given, is awaited after each sample (the Measure runner passes ctx.step, which throws to
+// cancel).
+export async function measureMD(gpuDevice, { atoms, boxSize, dt = DELTA_TIME, temperature = 30, thermostat = true,
+    steps = 10, samples = 0, between = null }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    const n = atoms ? atoms.length / 8 : NaN;
+    if (!Number.isInteger(n) || n < 2 || n > MAX_MD_ATOMS) throw new RangeError(`N = ${n} is outside 2 … ${MAX_MD_ATOMS}`);
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    if (!(dt > 0 && dt <= MAX_DT)) throw new RangeError(`dt = ${dt} is outside (0, ${MAX_DT}]`);
+    if (!(boxSize > 5)) throw new RangeError('the box must be wider than twice the 2.5σ cutoff');
+    const count = Math.min(Math.max(samples, 0), MAX_SAMPLES, steps);
+    const sim = new MolecularDynamics(device, null, n, boxSize, { thermostat });
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
+    try {
+        Object.assign(sim, { deltaTime: dt, temperature, currentBuffer: 0 });
+        device.queue.writeBuffer(sim.atomBuffers[0], 0, atoms);
+        sim.updateParams();
+        const read = async () => readBuffer(device, sim.atomBuffers[sim.currentBuffer], 32 * n);
+        const snapshots = count > 0 ? [{ step: 0, time: 0, atoms: await read() }] : [];
+        let done = 0, gpuMs = 0, wallMs = 0, timedAll = true;
+        const targets = count > 0 ? Array.from({ length: count }, (_, s) => Math.round((s + 1) * steps / count)) : [steps];
+        for (const target of targets) {
+            while (done < target) {
+                const chunk = Math.min(stepsPerSubmit(n), target - done);
+                const encoder = device.createCommandEncoder();
+                const pass = encoder.beginComputePass(timer.computePassDescriptor('md'));
+                pass.setPipeline(sim.computePipeline);
+                for (let k = 0; k < chunk; k++) {
+                    pass.setBindGroup(0, sim.computeBindGroups[sim.currentBuffer]);
+                    pass.dispatchWorkgroups(Math.ceil(n / 64));
+                    sim.currentBuffer = 1 - sim.currentBuffer;
+                }
+                pass.end();
+                timer.resolve(encoder);
+                const t0 = performance.now();
+                device.queue.submit([encoder.finish()]);
+                const timing = timer.read();
+                await device.queue.onSubmittedWorkDone();
+                wallMs += performance.now() - t0;
+                const g = (await timing)?.total;
+                if (typeof g === 'number') gpuMs += g; else timedAll = false;
+                done += chunk;
+            }
+            if (count > 0) {
+                snapshots.push({ step: done, time: done * dt, atoms: await read() });
+                if (between) await between();
+            }
+        }
+        const gpu = timedAll ? gpuMs : null;
+        return { n, steps, gpuMs: gpu, wallMs, gpuMsPerStep: gpu === null ? null : gpu / steps, wallMsPerStep: wallMs / steps, snapshots };
+    } finally {
+        timer.destroy();
+        sim.destroy();
+    }
+}

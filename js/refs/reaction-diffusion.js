@@ -5,8 +5,9 @@
 // browser).
 //
 // The model constants are a parameter, not baked in: `c` = { DU, DV, DT, W_EDGE, W_CORNER }, where the
-// Laplacian is W_CENTER·centre + W_EDGE·edges + W_CORNER·corners with W_CENTER = -1. The example
-// keeps these in its WGSL only; the tests parse them from there.
+// Laplacian is W_CENTER·centre + W_EDGE·edges + W_CORNER·corners with W_CENTER = -1.
+// js/examples/reaction-diffusion.js exports them (DU, DV, DT, W_EDGE, W_CORNER) and splices them into
+// its WGSL.
 
 export const W_CENTER = -1;
 
@@ -20,12 +21,15 @@ export function stepReference(U, V, w, h, F, k, c) {
     const KERNEL = laplacianKernel(c.W_EDGE, c.W_CORNER);
     const U2 = new Float64Array(U.length), V2 = new Float64Array(V.length);
     const mod = (a, n) => ((a % n) + n) % n;
+    // Wrapped neighbour indices, computed once per call: rows[j + 1][y] = mod(y + j, h) · w, cols[i + 1][x] = mod(x + i, w)
+    const rows = [-1, 0, 1].map(j => Int32Array.from({ length: h }, (_, y) => mod(y + j, h) * w));
+    const cols = [-1, 0, 1].map(i => Int32Array.from({ length: w }, (_, x) => mod(x + i, w)));
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         let lu = 0, lv = 0;
-        for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) {
-            const n = mod(y + j, h) * w + mod(x + i, w);
-            lu += KERNEL[j + 1][i + 1] * U[n];
-            lv += KERNEL[j + 1][i + 1] * V[n];
+        for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) {
+            const n = rows[j][y] + cols[i][x];
+            lu += KERNEL[j][i] * U[n];
+            lv += KERNEL[j][i] * V[n];
         }
         const ci = y * w + x, r = U[ci] * V[ci] * V[ci];
         U2[ci] = Math.min(1, Math.max(0, U[ci] + DT * (DU * lu - r + F * (1 - U[ci]))));

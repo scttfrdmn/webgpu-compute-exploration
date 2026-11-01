@@ -80,6 +80,11 @@
 // links array<Links> (48 bytes per particle: the constraint indices of its four structural links
 // and the cell diagonal, its two tether pins and their rest distances, 3 pad), normals
 // array<vec4<f32>>, tornCount atomic<u32>. Seven storage buffers in the compute stage (limit 8).
+//
+// Compute-only use (the Measure tab, js/teach/experiments/cloth.js, and test/gpu/): a ClothSimulation
+// with canvas = null creates no render targets or mouse handlers and never draws. measureCloth() runs
+// the shipped compute pass (encodeCompute, MAX_SUBSTEPS substeps per command buffer, as in a frame),
+// times a few chunks and reads the positions back once at the end.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -987,15 +992,16 @@ export function pickParticle(positions, count, ray, pixelAngle) {
 }
 
 export class ClothSimulation {
-    constructor(device, canvas) {
+    // canvas = null: compute only ("Compute-only use" at the top of the file)
+    constructor(device, canvas, { gridN = 64, presetKey = 'corners' } = {}) {
         this.device = device;
         this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
         this.running = false;
         this.destroyed = false;
 
-        this.gridN = 64;
-        this.presetKey = 'corners';
+        this.gridN = gridN;
+        this.presetKey = presetKey;
         this.iterations = 8;
         this.stiffness = 1.0;
         this.windStrength = 0;
@@ -1043,8 +1049,10 @@ export class ClothSimulation {
         this.counterReadback = device.createBuffer({ size: 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
 
         this.setupPipelines();
-        this.setupTargets();
-        this.setupMouseControls();
+        if (canvas) {
+            this.setupTargets();
+            this.setupMouseControls();
+        }
         this.applyPresetSettings();
         this.buildGrid();
     }
@@ -1420,8 +1428,8 @@ export class ClothSimulation {
     }
 
     // Encodes `substeps` substeps (integrate, tethers, iterations × colors, collide), then normals
-    encodeCompute(encoder, substeps) {
-        const pass = encoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
+    encodeCompute(encoder, substeps, descriptor = this.gpuTimer.computePassDescriptor('sim')) {
+        const pass = encoder.beginComputePass(descriptor);
         const particleGroups = Math.ceil(this.cloth.count / WORKGROUP);
         pass.setBindGroup(0, this.computeBindGroup);
         for (let s = 0; s < substeps; s++) {
@@ -1521,7 +1529,39 @@ export class ClothSimulation {
 
     // Draws the current state (normals are recomputed so a fresh preset is lit correctly)
     render() {
+        if (!this.canvas) {
+            this.stepCompute(0);   // compute only: just the normals, as frame(0) computes them
+            return;
+        }
         this.frame(0);
+    }
+
+    // ---- Compute-only use (canvas = null) ----
+    // `substeps` substeps and the normals in one command buffer, like frame() without the render pass.
+    // timer: a GpuTimer for this one pass (or null). Returns the submitted work's promise.
+    stepCompute(substeps, timer = null) {
+        this.writeSimParams(substeps);
+        const encoder = this.device.createCommandEncoder();
+        this.encodeCompute(encoder, substeps, timer ? timer.computePassDescriptor('sim') : {});
+        timer?.resolve(encoder);
+        this.device.queue.submit([encoder.finish()]);
+        this.time += substeps * SUBSTEP_DT;
+        this.substepsTotal += substeps;
+        return timer ? timer.read() : null;
+    }
+
+    async readPositions() {
+        const size = this.cloth.count * 16;
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.positionBuffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Float32Array(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
     }
 
     start() {
@@ -1562,14 +1602,85 @@ export class ClothSimulation {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        window.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
-        this.canvas.removeEventListener('wheel', this.onWheel);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            window.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+            this.canvas.removeEventListener('wheel', this.onWheel);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        }
         this.destroyGridBuffers();
         for (const b of [this.simParamsBuffer, this.colorBuffer, this.cameraBuffer, this.counterBuffer,
-            this.counterReadback, this.msaaTexture, this.depthTexture]) b.destroy();
+            this.counterReadback, this.msaaTexture, this.depthTexture]) b?.destroy();
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/cloth.js) and test/gpu/ ----
+
+export const GRID_SIZES = [32, 48, 64, 96, 128];   // the Grid select's choices
+export const MAX_ITERATIONS = 30;                   // the Iterations slider's maximum
+export const MAX_MEASURE_SUBSTEPS = 960;            // 4 s of simulated time per measureCloth call
+export const MAX_MEASURE_TIMED = 64;                // timed substeps per call (in chunks of MAX_SUBSTEPS)
+
+const median = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Runs the cloth of `preset` on an n × n grid for `substeps` substeps (wind as the preset sets it,
+// tearing off), then `timed` more substeps in chunks of MAX_SUBSTEPS, each chunk one command buffer
+// timed on its own; reads the positions back once. between(), if given, is awaited after every
+// MAX_SUBSTEPS × 8 substeps (the Measure runner passes ctx.step there, which throws to cancel).
+// Resolves to { n, count, numConstraints, iterations, dispatchesPerSubstep, gpuMsPerSubstep (null
+// without timestamp-query), wallMsPerSubstep, simulatedSeconds, positions, constraintData } where
+// positions are the final (x, y, z, inverse mass) per particle.
+export async function measureCloth(gpuDevice, { n = 64, preset = 'corners', iterations = 8, stiffness = 1,
+    substeps = 480, timed = 32, between = null }) {
+    if (!GRID_SIZES.includes(n)) throw new RangeError(`grid ${n} is not one of ${GRID_SIZES.join(', ')}`);
+    if (!PRESETS[preset]) throw new RangeError(`unknown preset ${preset}`);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_ITERATIONS) {
+        throw new RangeError(`iterations = ${iterations} is outside 1 … ${MAX_ITERATIONS}`);
+    }
+    if (!Number.isInteger(substeps) || substeps < 0 || substeps > MAX_MEASURE_SUBSTEPS) {
+        throw new RangeError(`substeps = ${substeps} is outside 0 … ${MAX_MEASURE_SUBSTEPS}`);
+    }
+    if (!Number.isInteger(timed) || timed < MAX_SUBSTEPS || timed > MAX_MEASURE_TIMED) {
+        throw new RangeError(`timed = ${timed} is outside ${MAX_SUBSTEPS} … ${MAX_MEASURE_TIMED}`);
+    }
+    const device = gpuDevice.device ?? gpuDevice;
+    const sim = new ClothSimulation(device, null, { gridN: n, presetKey: preset });
+    Object.assign(sim, { iterations, stiffness: Math.min(Math.max(stiffness, 0.05), 1), tearOn: false });
+    const timer = new GpuTimer(device, { maxPasses: 1, poolSize: 1 });
+    try {
+        for (let done = 0; done < substeps;) {
+            const k = Math.min(MAX_SUBSTEPS, substeps - done);
+            sim.stepCompute(k);
+            done += k;
+            if (done % (8 * MAX_SUBSTEPS) === 0 || done === substeps) {
+                await device.queue.onSubmittedWorkDone();
+                if (between) await between();
+            }
+        }
+        const gpu = [], wall = [];
+        for (let done = 0; done + MAX_SUBSTEPS <= timed; done += MAX_SUBSTEPS) {
+            const t0 = performance.now();
+            const timing = sim.stepCompute(MAX_SUBSTEPS, timer);
+            await device.queue.onSubmittedWorkDone();
+            wall.push((performance.now() - t0) / MAX_SUBSTEPS);
+            const r = await timing;
+            gpu.push(r ? r.total / MAX_SUBSTEPS : null);
+        }
+        const positions = await sim.readPositions();
+        const cloth = sim.cloth;
+        return {
+            n, count: cloth.count, numConstraints: cloth.numConstraints, iterations,
+            dispatchesPerSubstep: (cloth.pinnedCount > 0 ? 3 : 2) + iterations * NUM_COLORS,
+            gpuMsPerSubstep: median(gpu), wallMsPerSubstep: median(wall),
+            simulatedSeconds: sim.time, positions, constraintData: cloth.constraintData,
+        };
+    } finally {
+        timer.destroy();
+        sim.destroy();
     }
 }
 

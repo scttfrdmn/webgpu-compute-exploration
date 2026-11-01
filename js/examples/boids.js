@@ -1,5 +1,10 @@
 // Boids Flocking Simulation
-// Based on Craig Reynolds' algorithm with spatial hashing for performance
+// Based on Craig Reynolds' algorithm. Neighbors are found by brute force: each boid loops over all N
+// boids once per rule (separation, alignment, cohesion), so a step costs 3·N² distance tests; there is
+// no spatial hashing.
+
+import { GpuTimer } from '../gpu-timer.js';
+import { readBuffer } from '../webgpu-utils.js';
 
 const COMPUTE_SHADER = `
 struct Boid {
@@ -319,15 +324,17 @@ class BoidsSimulation {
 
         this.behaviorMode = 0; // 0: normal, 1: predator, 2: scatter, 3: vortex
 
-        this.mousePos = [canvas.width / 2, canvas.height / 2];
+        // canvas = null: compute-only (Measure tab, test/gpu/) in a 1000 × 700 world like index.html's canvas
+        const size = canvas ?? COMPUTE_ONLY_SIZE;
+        this.mousePos = [size.width / 2, size.height / 2];
         this.mouseRadius = 150.0;
         this.mouseForce = 0.0;
 
-        this.setupMouseControls();
+        if (canvas) this.setupMouseControls();
         this.initializeBoids();
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
+        if (canvas) this.setupRenderPipeline();
     }
 
     setupMouseControls() {
@@ -358,10 +365,11 @@ class BoidsSimulation {
 
     initializeBoids() {
         this.boids = new Float32Array(this.numBoids * 4); // pos(2) + vel(2)
+        const size = this.canvas ?? COMPUTE_ONLY_SIZE;
 
         for (let i = 0; i < this.numBoids; i++) {
-            this.boids[i * 4 + 0] = Math.random() * this.canvas.width;
-            this.boids[i * 4 + 1] = Math.random() * this.canvas.height;
+            this.boids[i * 4 + 0] = Math.random() * size.width;
+            this.boids[i * 4 + 1] = Math.random() * size.height;
             this.boids[i * 4 + 2] = (Math.random() - 0.5) * this.maxSpeed;
             this.boids[i * 4 + 3] = (Math.random() - 0.5) * this.maxSpeed;
         }
@@ -370,15 +378,16 @@ class BoidsSimulation {
     setupBuffers() {
         const boidBufferSize = this.numBoids * 4 * 4;
 
+        // COPY_SRC: the Measure tab reads the boids back
         this.boidBuffers = [
             this.device.createBuffer({
                 size: boidBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
                 mappedAtCreation: true
             }),
             this.device.createBuffer({
                 size: boidBufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
             })
         ];
 
@@ -498,10 +507,11 @@ class BoidsSimulation {
         params[6] = this.cohesionWeight;
         params[7] = this.maxSpeed;
         params[8] = this.maxForce;
+        const size = this.canvas ?? COMPUTE_ONLY_SIZE;
         params[10] = 0; // boundsMin.x
         params[11] = 0; // boundsMin.y
-        params[12] = this.canvas.width; // boundsMax.x
-        params[13] = this.canvas.height; // boundsMax.y
+        params[12] = size.width; // boundsMax.x
+        params[13] = size.height; // boundsMax.y
         params[14] = this.mousePos[0];
         params[15] = this.mousePos[1];
         params[16] = this.mouseRadius;
@@ -667,7 +677,7 @@ export async function initBoids(gpuDevice) {
 
 <span class="info">Performance:</span>
 • Frame: ${simulation.frameCount}
-• Neighbor checks: O(N²) = ${(simulation.numBoids * simulation.numBoids).toLocaleString()}
+• Neighbor checks: 3·N² = ${(3 * simulation.numBoids * simulation.numBoids).toLocaleString()} per step (one all-pairs loop per rule)
 • All calculations fully parallelized on GPU
 • Note: Spatial hashing would improve to O(N)
 
@@ -692,3 +702,84 @@ export function wgslModules() {
 
 // Exported for the CPU tests in test/boids.test.mjs.
 export { BoidsSimulation };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/boids.js) and test/gpu/ ----
+//
+// measureBoids() builds a BoidsSimulation without a canvas (same buffers, pipeline, ping-pong bind groups
+// and default parameters, in a 1000 × 700 world), uploads caller-supplied boids and runs `steps` steps of
+// the compute shader in passes of stepsPerSubmit(n) dispatches (at most 60, and at most 1e9 distance tests),
+// one submit each, each timed by GPU timestamps and submit → done. With samples > 0 the boids are read back
+// at evenly spaced steps.
+
+export const MAX_BOIDS = 10000;          // the Boids slider's maximum
+export const MAX_MEASURE_STEPS = 2000;   // per call
+export const MAX_STEPS_PER_SUBMIT = 60;  // one second of the interactive example
+export const MAX_TESTS_PER_SUBMIT = 1e9; // distance tests (3N² per step): 3 steps per submit at N = 10,000
+export const MAX_SAMPLES = 50;
+export const stepsPerSubmit = (n) => Math.max(1, Math.min(MAX_STEPS_PER_SUBMIT, Math.floor(MAX_TESTS_PER_SUBMIT / (3 * n * n))));
+const COMPUTE_ONLY_SIZE = { width: 1000, height: 700 };
+export const WORLD = COMPUTE_ONLY_SIZE;
+
+// boids: n × 4 floats (position xy, velocity xy). behaviorMode 0 … 3 as in the example (0 = flocking).
+// Resolves to { n, steps, params, gpuMs, wallMs, gpuMsPerStep, wallMsPerStep, snapshots: [{ step, boids }] }
+// where params are the uniform values used (separationRadius … maxForce, bounds), times are sums over the
+// chunks (GPU time null without timestamp-query) and snapshots hold the start plus `samples` read-backs.
+// between(), if given, is awaited after each sample (ctx.step in the Measure runner, which throws to cancel).
+export async function measureBoids(gpuDevice, { boids, steps = 10, samples = 0, behaviorMode = 0, between = null }) {
+    const device = gpuDevice.device ?? gpuDevice;
+    const n = boids ? boids.length / 4 : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > MAX_BOIDS) throw new RangeError(`N = ${n} is outside 1 … ${MAX_BOIDS}`);
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    if (![0, 1, 2, 3].includes(behaviorMode)) throw new RangeError(`behaviorMode = ${behaviorMode} is not 0 … 3`);
+    const sim = new BoidsSimulation(device, null, n);
+    const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
+    try {
+        sim.behaviorMode = behaviorMode;
+        sim.currentBuffer = 0;
+        device.queue.writeBuffer(sim.boidBuffers[0], 0, boids);
+        sim.updateParams();
+        const params = {
+            separationRadius: sim.separationRadius, alignmentRadius: sim.alignmentRadius, cohesionRadius: sim.cohesionRadius,
+            separationWeight: sim.separationWeight, alignmentWeight: sim.alignmentWeight, cohesionWeight: sim.cohesionWeight,
+            maxSpeed: sim.maxSpeed, maxForce: sim.maxForce, boundsMin: [0, 0], boundsMax: [WORLD.width, WORLD.height],
+            mousePos: sim.mousePos, mouseRadius: sim.mouseRadius, mouseForce: sim.mouseForce, behaviorMode,
+        };
+        const count = Math.min(Math.max(samples, 0), MAX_SAMPLES, steps);
+        const read = () => readBuffer(device, sim.boidBuffers[sim.currentBuffer], 16 * n);
+        const snapshots = count > 0 ? [{ step: 0, boids: Float32Array.from(boids) }] : [];
+        const targets = count > 0 ? Array.from({ length: count }, (_, s) => Math.round((s + 1) * steps / count)) : [steps];
+        let done = 0, gpuMs = 0, wallMs = 0, timedAll = true;
+        for (const target of targets) {
+            while (done < target) {
+                const chunk = Math.min(stepsPerSubmit(n), target - done);
+                const encoder = device.createCommandEncoder();
+                const pass = encoder.beginComputePass(timer.computePassDescriptor('boids'));
+                pass.setPipeline(sim.computePipeline);
+                for (let k = 0; k < chunk; k++) {
+                    pass.setBindGroup(0, sim.computeBindGroups[sim.currentBuffer]);
+                    pass.dispatchWorkgroups(Math.ceil(n / 64));
+                    sim.currentBuffer = 1 - sim.currentBuffer;
+                }
+                pass.end();
+                timer.resolve(encoder);
+                const t0 = performance.now();
+                device.queue.submit([encoder.finish()]);
+                const timing = timer.read();
+                await device.queue.onSubmittedWorkDone();
+                wallMs += performance.now() - t0;
+                const g = (await timing)?.total;
+                if (typeof g === 'number') gpuMs += g; else timedAll = false;
+                done += chunk;
+            }
+            if (count > 0) {
+                snapshots.push({ step: done, boids: await read() });
+                if (between) await between();
+            }
+        }
+        const gpu = timedAll ? gpuMs : null;
+        return { n, steps, params, gpuMs: gpu, wallMs, gpuMsPerStep: gpu === null ? null : gpu / steps, wallMsPerStep: wallMs / steps, snapshots };
+    } finally {
+        timer.destroy();
+        sim.destroy();
+    }
+}

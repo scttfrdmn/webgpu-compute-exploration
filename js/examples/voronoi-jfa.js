@@ -20,6 +20,11 @@
 //   offset  0  pos    vec2<f32>  position in pixels                   -> Float32 view [4i], [4i+1]
 //   offset  8  color  u32        RGBA8, unpacked with unpack4x8unorm   -> Uint32 view [4i+2]
 //   offset 12  pad    u32        unused                                -> Uint32 view [4i+3]
+//
+// Compute-only use (the Measure tab, js/teach/experiments/voronoi.js, and test/gpu/): a VoronoiJFA
+// with canvas = null and a { width, height } grid creates no render pipeline, canvas context or mouse
+// handlers and never draws. measureJFA() times the shipped seed + flood passes (encodeCompute) on given
+// seeds, runs the shipped exactCheck() and can read the seed-index grid back.
 
 import { GpuTimer } from '../gpu-timer.js';
 
@@ -287,6 +292,32 @@ const LAYOUTS = {
 
 // Step sizes for one JFA run: N/2, N/4, ..., 1 with N the next power of two ≥ max(width, height),
 // plus one more step-1 pass for JFA+1
+// The seed pass stores one seed index per pixel, so two seeds in the same pixel would lose one seed's
+// whole cell. Clamp points into the grid and move any collision to the nearest free pixel (searching
+// outward in rings), which keeps the layout's look while giving every seed its own pixel.
+export function distinctPixels(points, w, h) {
+    const taken = new Set();
+    const out = [];
+    for (const [px, py] of points) {
+        let x = Math.min(Math.max(px, 0), w - 0.01), y = Math.min(Math.max(py, 0), h - 0.01);
+        let cx = Math.floor(x), cy = Math.floor(y);
+        if (taken.has(cy * w + cx)) {
+            search: for (let r = 1; r < Math.max(w, h); r++) {
+                for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                    const nx = cx + dx, ny = cy + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || taken.has(ny * w + nx)) continue;
+                    cx = nx; cy = ny; x = nx + 0.5; y = ny + 0.5;
+                    break search;
+                }
+            }
+        }
+        taken.add(cy * w + cx);
+        out.push([x, y]);
+    }
+    return out;
+}
+
 export function jfaSteps(width, height, plusOne) {
     let n = 1;
     while (n < Math.max(width, height)) n *= 2;
@@ -307,12 +338,13 @@ function packColor(h, s, l) {
 }
 
 class VoronoiJFA {
-    constructor(device, canvas) {
+    // grid: { width, height } of a compute-only instance (canvas = null)
+    constructor(device, canvas, grid = canvas) {
         this.device = device;
         this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
-        this.width = canvas.width;
-        this.height = canvas.height;
+        this.width = grid.width;
+        this.height = grid.height;
         this.pixelCount = this.width * this.height;
         this.running = false;
         this.destroyed = false;
@@ -346,15 +378,17 @@ class VoronoiJFA {
 
         this.setupBuffers();
         this.setupComputePipelines();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     setupBuffers() {
         this.idBuffers = [0, 1].map(() => this.device.createBuffer({
             size: this.pixelCount * 4, // u32 seed index per pixel
-            usage: GPUBufferUsage.STORAGE
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC   // COPY_SRC: read back by measureJFA
         }));
         this.seedBuffer = this.device.createBuffer({
             size: SEED_SIZE * MAX_SEEDS,
@@ -616,8 +650,7 @@ class VoronoiJFA {
             for (let i = 0; i < n; i++) points.push([Math.random() * w, Math.random() * h]);
         }
         this.layout = LAYOUTS[layout] ? layout : 'random';
-        this.seeds = points.map(([x, y]) => this.makeSeed(
-            Math.min(Math.max(x, 0), w - 0.01), Math.min(Math.max(y, 0), h - 0.01)));
+        this.seeds = distinctPixels(points, w, h).map(([x, y]) => this.makeSeed(x, y));
         this.dragIndex = -1;
         this.edited();
     }
@@ -635,7 +668,7 @@ class VoronoiJFA {
     }
 
     requestRender() {
-        if (this.running || this.renderPending || this.destroyed) return;
+        if (this.running || this.renderPending || this.destroyed || !this.canvas) return;
         this.renderPending = true;
         requestAnimationFrame(() => {
             this.renderPending = false;
@@ -751,7 +784,7 @@ class VoronoiJFA {
             this.device.queue.writeBuffer(this.counterBuffer, 0, new Uint32Array(2));
             const commandEncoder = this.device.createCommandEncoder();
             this.encodeCompute(commandEncoder);
-            this.encodeRender(commandEncoder);
+            if (this.canvas) this.encodeRender(commandEncoder);
             const pass = commandEncoder.beginComputePass();
             pass.setPipeline(this.exactPipeline);
             pass.setBindGroup(0, this.exactBindGroups[this.currentBuffer], [0]);
@@ -825,10 +858,12 @@ class VoronoiJFA {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
-        window.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+            window.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+        }
         this.idBuffers.forEach(b => b.destroy());
         this.seedBuffer.destroy();
         this.paramsBuffer.destroy();
@@ -839,6 +874,79 @@ class VoronoiJFA {
 
 // For the CPU tests in test/ (seed layouts, uniform writers via a mock device)
 export { VoronoiJFA, packColor, MAX_SEEDS };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/voronoi.js) and test/gpu/ ----
+
+export const MAX_MEASURE_SIDE = 2048;                    // grid width and height
+export const MAX_EXACT_WORK = 1024 * 768 * MAX_SEEDS;    // pixels × seeds of one exact check (the example's largest)
+export const MAX_MEASURE_REPEATS = 10;
+
+const medianOf = (values) => {
+    const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+    return v.length ? v[v.length >> 1] : null;
+};
+
+// Jump flooding of `seeds` (Float32Array, interleaved x, y in pixels; ≤ MAX_SEEDS) on a width × height
+// grid (≤ MAX_MEASURE_SIDE each) under `metric` (0 Euclidean, 1 Manhattan, 2 Chebyshev), with or without
+// the extra JFA+1 pass: `warmup` untimed and `repeats` timed runs of encodeCompute (clear, seed and
+// every flood pass in one compute pass, one submit each). check = true then runs the shipped
+// exactCheck() (GPU brute force, counters of wrong and differing pixels; only when width·height·seeds ≤
+// MAX_EXACT_WORK); readIds = true reads the seed-index grid back. Resolves to { width, height, seeds,
+// metric, plusOne, passes, gpuMs, wallMs, wrong?, differ?, ids? } (GPU ms null without timestamp-query).
+export async function measureJFA(gpuDevice, { width, height, seeds, metric = 0, plusOne = false,
+    warmup = 1, repeats = 3, check = false, readIds = false }) {
+    const count = seeds.length / 2;
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 1 || v > MAX_MEASURE_SIDE) throw new RangeError(`${name} = ${v} is outside 1 … ${MAX_MEASURE_SIDE}`);
+    }
+    if (!Number.isInteger(count) || count < 1 || count > MAX_SEEDS) throw new RangeError(`${count} seeds is outside 1 … ${MAX_SEEDS}`);
+    if (![0, 1, 2].includes(metric)) throw new RangeError(`unknown metric ${metric}`);
+    if (check && width * height * count > MAX_EXACT_WORK) throw new RangeError('exact check limited to width·height·seeds ≤ MAX_EXACT_WORK');
+    const device = gpuDevice.device ?? gpuDevice;
+    const jfa = new VoronoiJFA(device, null, { width, height });
+    try {
+        jfa.metric = metric;
+        jfa.plusOne = plusOne;
+        jfa.seeds = Array.from({ length: count }, (_, i) => ({ x: seeds[2 * i], y: seeds[2 * i + 1], vx: 0, vy: 0, color: 0 }));
+        const untimed = Math.min(Math.max(warmup, 0), MAX_MEASURE_REPEATS);
+        const timed = Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS);
+        const runs = [];
+        for (let r = 0; r < untimed + timed; r++) {
+            const t0 = performance.now();
+            const encoder = device.createCommandEncoder();
+            jfa.encodeCompute(encoder, true);
+            jfa.gpuTimer.resolve(encoder);
+            device.queue.submit([encoder.finish()]);
+            const timing = jfa.gpuTimer.read();
+            await device.queue.onSubmittedWorkDone();
+            const wallMs = performance.now() - t0;
+            const t = await timing;
+            if (r >= untimed) runs.push({ wallMs, gpuMs: t?.passes.jfa ?? null });
+        }
+        const result = {
+            width, height, seeds: count, metric, plusOne, passes: jfa.steps().length,
+            gpuMs: medianOf(runs.map(r => r.gpuMs)), wallMs: medianOf(runs.map(r => r.wallMs)),
+        };
+        if (check) {
+            const c = await jfa.exactCheck();   // recomputes the diagram, then the brute-force comparison
+            Object.assign(result, { wrong: c.wrong, differ: c.differ, checkMs: c.ms });
+        }
+        if (readIds) {
+            const bytes = width * height * 4;
+            const staging = device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+            const encoder = device.createCommandEncoder();
+            encoder.copyBufferToBuffer(jfa.idBuffers[jfa.currentBuffer], 0, staging, 0, bytes);
+            device.queue.submit([encoder.finish()]);
+            await staging.mapAsync(GPUMapMode.READ);
+            result.ids = new Uint32Array(staging.getMappedRange().slice(0));
+            staging.unmap();
+            staging.destroy();
+        }
+        return result;
+    } finally {
+        jfa.destroy();
+    }
+}
 
 export async function initVoronoiJFA(gpuDevice) {
     const { device } = gpuDevice;
