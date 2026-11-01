@@ -70,6 +70,12 @@ for (const id of MEASURE) {
             assert.ok(Number.isFinite(e.budgetMs) && e.budgetMs > 0 && e.budgetMs <= MAX_BUDGET_MS, `${where}: budgetMs ≤ ${MAX_BUDGET_MS}`);
             assert.ok(e.run && Object.prototype.toString.call(e.run) === '[object AsyncGeneratorFunction]', `${where}: run must be async function*`);
             assert.ok(Array.isArray(e.columns) && e.columns.length > 0, `${where}: columns`);
+            if (e.verify !== undefined) assert.equal(typeof e.verify, 'function', `${where}: verify must be a function`);
+            for (const c of e.columns) {
+                if (c.unit !== undefined) assert.equal(typeof c.unit, 'string', `${where}: column ${c.key} unit`);
+                assert.ok(!/(Lo|Hi)$/.test(c.key) || !e.columns.some(o => `${o.key}Lo` === c.key || `${o.key}Hi` === c.key),
+                    `${where}: column ${c.key} collides with the spread keys of another column`);
+            }
             const keys = new Set(e.columns.map(c => c.key));
             for (const chart of e.charts ?? []) {
                 assert.ok(keys.has(chart.x), `${where}: chart x "${chart.x}" is not a column`);

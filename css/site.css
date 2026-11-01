@@ -239,6 +239,21 @@ footer {
 .chart-dot { stroke: var(--surface); stroke-width: 2; }
 .chart-reference { fill: none; stroke: var(--muted); stroke-width: 1; }
 .chart-crosshair { stroke: var(--muted); stroke-width: 1; }
+.chart-range { stroke: var(--muted); stroke-width: 1; }
+.chart-range-key { display: inline-block; width: 7px; height: 10px; vertical-align: middle; margin-right: 6px;
+    border: solid var(--muted); border-width: 1px 0; background: linear-gradient(var(--muted), var(--muted)) center / 1px 100% no-repeat; }
+.experiment-protocol { margin: 4px 0; }
+.experiment-checks { list-style: none; margin: 6px 0; padding: 0; font-size: 0.88rem; }
+.experiment-checks li { margin: 2px 0; color: var(--muted); }
+.experiment-checks .check-status { display: inline-block; min-width: 7.5em; color: var(--text); font-weight: 600; }
+.experiment-record { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.experiment-compare { margin: 8px 0; }
+.experiment-compare table { border-collapse: collapse; font-size: 0.85rem; margin: 8px 0; }
+.experiment-compare th, .experiment-compare td { border: 1px solid var(--border); padding: 4px 8px; text-align: left;
+    vertical-align: top; }
+.experiment-compare td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.experiment-compare th { color: var(--muted); font-weight: 500; }
+.experiment-compare .error, .experiment-status.error { color: var(--error); }
 .chart-line.series-1 { stroke: var(--series-1); } .chart-dot.series-1 { fill: var(--series-1); }
 .chart-line.series-2 { stroke: var(--series-2); } .chart-dot.series-2 { fill: var(--series-2); }
 .chart-line.series-3 { stroke: var(--series-3); } .chart-dot.series-3 { fill: var(--series-3); }

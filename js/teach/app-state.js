@@ -5,7 +5,7 @@ const state = {
     gpuDevice: null,          // { device, adapter, timestamps } from getGPUDevice, once available
     deviceLost: false,
     instances: new Map(),     // canvas id -> resolved example instance (null if init failed)
-    experimentResults: [],    // last results per experiment, for the device report
+    experimentResults: [],    // last result record per experiment, for the device report
 };
 const listeners = new Map();  // event name -> Set of callbacks
 
@@ -39,11 +39,13 @@ export function exampleInstances() {
     return state.instances;
 }
 
-// Keeps the most recent result of each experiment (keyed by example + experiment id)
-export function recordExperimentResult(result) {
-    const key = `${result.exampleId}/${result.experimentId}`;
-    state.experimentResults = state.experimentResults.filter(r => `${r.exampleId}/${r.experimentId}` !== key);
-    state.experimentResults.push(result);
+// Keeps the most recent result record (schema v1, js/teach/result-record.js) of each experiment, keyed by
+// example + experiment id
+export function recordExperimentResult(record) {
+    const keyOf = (r) => `${r.experiment.exampleId}/${r.experiment.id}`;
+    const key = keyOf(record);
+    state.experimentResults = state.experimentResults.filter(r => keyOf(r) !== key);
+    state.experimentResults.push(record);
 }
 
 export function experimentResults() {

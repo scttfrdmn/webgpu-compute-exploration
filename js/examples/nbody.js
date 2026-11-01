@@ -124,6 +124,7 @@
 // command buffer) and reads the 16-byte energy sum between chunks. Both reuse the shipped pipelines.
 
 import { GpuTimer } from '../gpu-timer.js';
+import { PhaseClock } from '../phase-clock.js';
 
 export const WG = 256;
 export const MAX_BH = 262144;
@@ -2225,15 +2226,20 @@ const median = (values) => {
 
 // Force evaluation of `positions` (n × 4 floats: xyz, mass) by brute force or Barnes-Hut at θ, with
 // Plummer softening ε: `warmup` untimed evaluations, then `repeats` timed ones. Resolves to
-// { n, mode, theta, dispatches, gpuMs, wallMs, passes: { tree?, force }, interactionsPerBody } (medians
-// over the repeats; GPU times null without timestamp-query). Barnes-Hut's interaction counts are read
-// back (4 bytes per body); with accel = true also the accelerations (n × 4 floats: a.xyz, φ, body order).
+// { n, mode, theta, dispatches, gpuMs, wallMs, passes: { tree?, force }, interactionsPerBody, phases }
+// (medians over the repeats; GPU times null without timestamp-query). Barnes-Hut's interaction counts are
+// read back (4 bytes per body); with accel = true also the accelerations (n × 4 floats: a.xyz, φ, body
+// order). phases are wall-clock ms as defined in js/phase-clock.js: compile (pipelines and buffers),
+// upload (the bodies), dispatch (= wallMs: one evaluation, submit → done), readback (interaction counts
+// and accelerations). One call with warmup = 0, repeats = 1 is one independent measurement for
+// ctx.measure (js/teach/measure.js), which then takes care of warm-up and repeats.
 export async function measureForces(gpuDevice, { positions, mode = 'bh', theta = 0.5, softening = 0.05,
     warmup = 1, repeats = 1, accel = true }) {
     const n = positions.length / 4;
-    const sim = computeOnly(gpuDevice, n, { mode, theta, softening, dt: 0.01 });
+    const clock = new PhaseClock();
+    const sim = clock.time('compile', () => computeOnly(gpuDevice, n, { mode, theta, softening, dt: 0.01 }));
     try {
-        sim.loadBodies(positions, new Float32Array(4 * n));
+        clock.time('upload', () => sim.loadBodies(positions, new Float32Array(4 * n)));
         for (let r = 0; r < Math.min(warmup, MAX_MEASURE_REPEATS); r++) await sim.timeForces();
         const runs = [];
         for (let r = 0; r < Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS); r++) runs.push(await sim.timeForces());
@@ -2246,11 +2252,14 @@ export async function measureForces(gpuDevice, { positions, mode = 'bh', theta =
             passes: Object.fromEntries(labels.map(l => [l, median(runs.map(r => r.passes?.[l]))])),
             interactionsPerBody: n - 1,
         };
+        clock.add('dispatch', result.wallMs);
+        clock.add('readback', 0);
         if (mode === 'bh') {
-            const counts = await sim.readBack(sim.buffers.interactions, 4 * n);
+            const counts = await clock.time('readback', () => sim.readBack(sim.buffers.interactions, 4 * n));
             result.interactionsPerBody = counts.reduce((s, x) => s + x, 0) / n;
         }
-        if (accel) result.accel = await sim.readBack(sim.buffers.accel, 16 * n);
+        if (accel) result.accel = await clock.time('readback', () => sim.readBack(sim.buffers.accel, 16 * n));
+        result.phases = clock.phases;
         return result;
     } finally {
         sim.destroy();

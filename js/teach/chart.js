@@ -5,11 +5,55 @@
 // css/site.css), 2px lines, markers r=4 with a 2px surface ring, recessive 1px solid gridlines, a legend
 // plus direct end labels for 2+ series, text in text colors (never the series color), and a crosshair
 // tooltip that snaps to the nearest x and lists every series. The results table is the table view.
+//
+// Variability: when rows carry `<key>Lo` / `<key>Hi` (the interquartile range of repeated timings, see
+// js/teach/stats.js), each point of that series gets a thin vertical range bar with short caps, 1px in the
+// muted text color (never the series color alone), slightly offset per series so bars at the same x stay
+// apart; the axis covers the ranges, the legend says what the bars are, and the tooltip lists the range.
+// Series without those keys render exactly as before.
+
+import { rangeOf, hasRange, loKey, hiKey, SPREAD_LABEL } from './stats.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const MAX_SERIES = 4;
+const RANGE_DODGE = 4;      // px between range bars of different series at the same x
+const RANGE_CAP = 3;        // half-width of a cap, px
 
-// ---- Pure helpers (tested in test/teach-measure.test.mjs) ------------------------------------------
+// ---- Pure helpers (tested in test/teach-framework.test.mjs) -----------------------------------------
+
+// Keys whose spread widens the y extent: every <key>Lo / <key>Hi of the plotted series
+export function rangeExtentKeys(keys) {
+    return keys.flatMap(k => [loKey(k), hiKey(k)]);
+}
+
+// Range bars for the series `keys` (only those with a spread): [{ key, series, x, y1, y2 }] in pixels.
+// y1 is the low end. On a log axis a non-positive low end (e.g. a 0 ms quantized timestamp) is clamped to
+// yMin, the bottom of the axis.
+export function rangeBars(rows, xKey, keys, xScale, yScale, { logY = false, yMin = -Infinity } = {}) {
+    const ranged = keys.map((k, i) => [k, i]).filter(([k]) => hasRange(rows, k));
+    const bars = [];
+    ranged.forEach(([key, series], j) => {
+        const dodge = (j - (ranged.length - 1) / 2) * RANGE_DODGE;
+        for (const row of rows) {
+            const range = rangeOf(row, key);
+            if (!range || typeof row[xKey] !== 'number') continue;
+            let [lo, hi] = range;
+            if (logY) {
+                if (!(hi > 0)) continue;
+                if (!(lo > 0)) lo = yMin;
+            }
+            bars.push({ key, series, x: xScale(row[xKey]) + dodge, y1: yScale(lo), y2: yScale(hi) });
+        }
+    });
+    return bars;
+}
+
+// "1.23 (1.10–1.40)" for a value with a spread, the plain value otherwise
+export function formatWithRange(fmt, row, key) {
+    const range = rangeOf(row, key);
+    const v = fmt(row[key]);
+    return range ? `${v} (${fmt(range[0])}–${fmt(range[1])})` : v;
+}
 
 // Round, evenly spaced ticks covering [min, max]
 export function niceTicks(min, max, count = 5) {
@@ -103,14 +147,16 @@ export function renderLineChart(holder, spec) {
     const reference = typeof spec.reference === 'function' ? spec.reference(rows) : spec.reference;
     const refPoints = reference?.points ?? [];
     const xs = extent([...rows, ...refPoints.map(([x]) => ({ [spec.x]: x }))], [spec.x], spec.logX);
-    const ys = extent([...rows, ...refPoints.map(([, y]) => ({ __ref: y }))], [...keys, '__ref'], spec.logY);
+    const ranged = keys.some(k => hasRange(rows, k));
+    const ys = extent([...rows, ...refPoints.map(([, y]) => ({ __ref: y }))], [...keys, ...rangeExtentKeys(keys), '__ref'], spec.logY);
     if (!xs || !ys) return;
     const W = 560, H = 260, m = { l: 56, r: keys.length > 1 ? 96 : 20, t: 10, b: 40 };
     const xScale = makeScale({ ...xs, log: spec.logX }, [m.l, W - m.r]);
     const yScale = makeScale({ ...ys, log: spec.logY }, [H - m.b, m.t]);
 
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img',
-        'aria-label': `${caption.textContent}. Values are listed in the table below.` }, holder);
+        'aria-label': `${caption.textContent}. ${ranged ? `Points are medians; vertical bars show the ${SPREAD_LABEL} over repeats. ` : ''}`
+            + 'Values are listed in the table below.' }, holder);
 
     // Gridlines and ticks (recessive, solid)
     const yTicks = spec.logY ? logTicks(ys.min, ys.max) : niceTicks(ys.min, ys.max);
@@ -141,6 +187,12 @@ export function renderLineChart(holder, spec) {
             .textContent = reference.label;
     }
 
+    // Range bars (muted, 1px, with caps) under the series so the markers stay on top
+    for (const bar of rangeBars(rows, spec.x, keys, xScale, yScale, { logY: spec.logY, yMin: ys.min })) {
+        el('line', { x1: bar.x, x2: bar.x, y1: bar.y1, y2: bar.y2, class: 'chart-range' }, svg);
+        for (const y of [bar.y1, bar.y2]) el('line', { x1: bar.x - RANGE_CAP, x2: bar.x + RANGE_CAP, y1: y, y2: y, class: 'chart-range' }, svg);
+    }
+
     // Series: 2px line, markers with a surface ring, direct label at the line end
     keys.forEach((k, i) => {
         const pts = rows.filter(r => typeof r[k] === 'number' && Number.isFinite(r[k]) && (!spec.logY || r[k] > 0))
@@ -156,17 +208,25 @@ export function renderLineChart(holder, spec) {
         }
     });
 
-    // Legend for 2+ series (line keys, text in text color)
-    if (keys.length > 1) {
+    // Legend for 2+ series (line keys, text in text color), plus what the range bars are
+    if (keys.length > 1 || ranged) {
         const legend = document.createElement('div');
         legend.className = 'chart-legend';
-        keys.forEach((k, i) => {
+        if (keys.length > 1) keys.forEach((k, i) => {
             const item = document.createElement('span');
             const key = document.createElement('span');
             key.className = `chart-key series-${i + 1}`;
             item.append(key, label(k));
             legend.append(item);
         });
+        if (ranged) {
+            const item = document.createElement('span');
+            const key = document.createElement('span');
+            key.className = 'chart-range-key';
+            key.setAttribute('aria-hidden', 'true');
+            item.append(key, `median, bar = ${SPREAD_LABEL}`);
+            legend.append(item);
+        }
         holder.append(legend);
     }
 
@@ -177,7 +237,8 @@ export function renderLineChart(holder, spec) {
     tip.hidden = true;
     holder.append(tip);
     const column = (k) => spec.columns?.find(c => c.key === k);
-    const fmt = (k, v) => (column(k)?.format ? column(k).format(v) : (typeof v === 'number' ? formatTick(v) : String(v ?? '—')));
+    const fmt = (k, v) => (v === null || v === undefined || (typeof v === 'number' && !Number.isFinite(v)) ? '—'
+        : column(k)?.format ? column(k).format(v) : (typeof v === 'number' ? formatTick(v) : String(v)));
     const hit = el('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: 'transparent' }, svg);
     hit.addEventListener('pointermove', (event) => {
         const box = svg.getBoundingClientRect();
@@ -196,7 +257,7 @@ export function renderLineChart(holder, spec) {
             const keyMark = document.createElement('span');
             keyMark.className = `chart-key series-${i + 1}`;
             const value = document.createElement('strong');
-            value.textContent = fmt(k, best[k]);
+            value.textContent = formatWithRange((v) => fmt(k, v), best, k);
             line.append(keyMark, value, ` ${label(k)}`);
             tip.append(line);
         });

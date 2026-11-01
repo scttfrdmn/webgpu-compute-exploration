@@ -28,8 +28,11 @@ jobs:
       - name: Assemble site
         run: |
           mkdir _site
-          cp -r index.html learn.html js css content assets data LICENSE package.json _site/
+          cp -r index.html learn.html js css content assets data schema LICENSE package.json _site/
           rm -f _site/js/wasm-pkg/.gitignore
+      # The deployed revision, read by js/source-info.js for result records and the device report
+      - name: Write version.json
+        run: node tools/write-version.mjs _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
