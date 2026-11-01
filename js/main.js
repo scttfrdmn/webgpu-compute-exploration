@@ -27,6 +27,7 @@ import { initConvolutionReverb } from './examples/convolution-reverb.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 import { buildDeviceReport } from './device-report.js';
 import { setupTabs } from './teach/tabs.js';
+import { pauseExample, NO_AUTO_RESUME } from './example-control.js';
 import { setGPUDevice, setExampleInstance, markDeviceLost, experimentResults } from './teach/app-state.js';
 
 let gpuDevice = null;
@@ -200,6 +201,36 @@ function initInteractiveExamplesOnVisible() {
     for (const id of Object.keys(examples)) {
         observer.observe(document.getElementById(id));
     }
+    pauseWhenOffScreen(Object.keys(examples).filter(id => id !== 'canvas-fractal'));
+}
+
+// A running simulation pauses when its canvas leaves the screen and resumes when it comes back, but only
+// if this observer is what paused it (a user's own Pause, or leaving the Explore tab, sticks). Audio
+// examples are stopped and not restarted. Ray marching has its own visibility handling above.
+function pauseWhenOffScreen(canvasIds) {
+    const resumers = new Map();   // canvas id -> resume function, for examples paused by scrolling
+    const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            const id = entry.target.id;
+            const panel = entry.target.closest('.tab-panel-explore') ?? entry.target.closest('section');
+            if (!panel) continue;
+            if (!entry.isIntersecting) {
+                if (panel.hidden) continue;          // Explore tab hidden: the tabs already stopped it
+                const resume = pauseExample(panel);
+                const section = entry.target.closest('section');
+                if (resume && !NO_AUTO_RESUME.has(section?.id)) resumers.set(id, resume);
+            } else if (resumers.has(id)) {
+                const resume = resumers.get(id);
+                resumers.delete(id);
+                resume();
+            }
+        }
+    });
+    for (const id of canvasIds) observer.observe(document.getElementById(id));
+    // Leaving the Explore tab (or starting a Measure experiment) cancels a pending auto-resume
+    document.addEventListener('explorehidden', (event) => {
+        for (const canvas of event.target.querySelectorAll('canvas[id]')) resumers.delete(canvas.id);
+    });
 }
 
 // Examples hold references to the old device and have already bound their DOM listeners, so

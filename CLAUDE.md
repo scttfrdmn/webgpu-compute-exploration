@@ -32,6 +32,9 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 ## Layout
 - `js/main.js` — gets the GPU device, wires the one-shot buttons, and creates each interactive example when its
   canvas nears the viewport (IntersectionObserver). Nothing simulates until Start; ray marching runs only while visible.
+  A running example pauses when its canvas scrolls off screen and resumes when it returns, unless the user paused it
+  or left its Explore tab (audio examples are never auto-resumed). `js/example-control.js` `pauseExample` does the
+  pausing through the example's own buttons; new examples should have `-pause`/`-start` buttons or a primary toggle.
 - `js/webgpu-utils.js` — `getGPUDevice`, `createBuffer`, `readBuffer` helpers.
 - `js/device-report.js` — `buildDeviceReport` for the header's opt-in "Copy device report" button. It reads only a
   whitelist of plain number/boolean fields (`fps`, `running`, `steps`, `numParticles`, …) from example instances and

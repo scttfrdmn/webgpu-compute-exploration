@@ -7,7 +7,7 @@
 
 import { parseRoute, formatRoute, TABS } from './routes.js';
 import { UNDERSTAND, MEASURE, understandPath, SOURCE_BASE } from './registry.js';
-import { getExampleInstance } from './app-state.js';
+import { pauseExample } from '../example-control.js';
 
 const LABELS = { explore: 'Explore', understand: 'Understand', measure: 'Measure' };
 const sections = new Map();   // id -> { section, tabs: {tab: button}, panels: {tab: div}, current, loaded:Set }
@@ -111,18 +111,12 @@ function applyRoute(hash, { scroll }) {
     if (scroll && route.tab !== 'explore') sections.get(route.id).section.scrollIntoView({ block: 'start' });
 }
 
-// Stop a running example when its Explore panel is hidden. Prefer the example's own Pause/Stop button
-// so its labels and state stay consistent; fall back to the instance's pause() for toggle-style UIs.
+// Stop a running example when its Explore panel is hidden (it is not resumed automatically when the
+// user comes back to Explore; that is their choice).
 export function pauseExplore(panel) {
-    const button = panel.querySelector('button[id$="-pause"], button[id$="-stop"]');
-    if (button && !button.disabled) {
-        button.click();
-        return;
-    }
-    for (const canvas of panel.querySelectorAll('canvas[id]')) {
-        const instance = getExampleInstance(canvas.id);
-        if (instance?.running && typeof instance.pause === 'function') instance.pause();
-    }
+    pauseExample(panel);
+    // Lets the off-screen observer in main.js forget any pending auto-resume for this example
+    panel.dispatchEvent(new CustomEvent('explorehidden', { bubbles: true }));
 }
 
 async function loadUnderstand(id, panel) {

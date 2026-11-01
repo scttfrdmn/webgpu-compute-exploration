@@ -13,6 +13,8 @@ All notable changes to this project are documented here. The format follows
   URL allowlist). Measure runs user-started, capped, time-budgeted experiments on the visitor's GPU,
   compares with CPU references in the browser, and charts the results; results join the device report.
 - `js/refs/`: the CPU references used by the tests, now deployable for the Measure tab.
+- Running simulations pause when their canvas scrolls off screen and resume when it comes back
+  (unless you paused them yourself or left the Explore tab); audio examples stop and stay stopped.
 
 ### Changed
 - Styles moved from `index.html` to `css/site.css`.
