@@ -213,7 +213,10 @@ The CPU loop ran at 0.4 GFLOPS there, a sixth of what the same code reaches on o
 laptop, probably because the runner's few cores were shared with lavapipe work from tests running in
 parallel. At $n = 64$ the tiled kernel's phases were
 compile 0.18 ms (a pipeline-cache hit after the warm-up), upload 0.02 ms, dispatch 0.69 ms and readback
-0.16 ms; at $n = 1024$ the dispatch took 1.45 s and the 4 MB readback 17 ms. On a real GPU every
+0.16 ms; at $n = 1024$ the dispatch took 1.45 s and the 4 MB readback 17 ms. A later run of the same
+code on another runner measured 0.75 and 0.89 GFLOPS at $n = 1024$ (speed-up 1.18×, range 1.15 to 1.70),
+slopes 2.73 and 2.71, and the GPU ahead of the CPU only from $n = 256$: shared machines move these numbers
+by tens of per cent, which is why each is reported with its spread. On a real GPU every
 number in this table changes, most of all the GPU columns.
 
 ## Try this
