@@ -26,6 +26,17 @@ scaling).
 Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`. Content is being written example
 by example; tabs without content yet say so.
 
+- **Learning path** — [learn.html](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html) orders the examples into steps.
+
+### Learning path
+
+`learn.html` puts the 25 examples in order for each audience, in two tracks: **GPU programming** (dispatch and
+memory → stencils → reductions and atomics → scans and sorting → spatial trees → graph coloring → streaming and
+latency → ML → CPU/GPU split) and **computational science** (stencils and PDEs → stability and CFL → particles and
+integrators → stochastic growth → Monte Carlo → spectral methods → optimization → procedural fields). Each step says
+why it follows the previous one, gives one thing to try, and links to the examples' Explore, Understand and Measure
+tabs. Deep links select a track: `learn.html#gpu`, `learn.html#science`. The tracks are data in `js/teach/path.js`.
+
 ## Features
 
 ### 1. Vector Addition

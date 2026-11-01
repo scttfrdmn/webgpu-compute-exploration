@@ -260,3 +260,34 @@ footer {
 .understand .code-lang { position: absolute; top: 6px; right: 10px; font-size: 0.75rem; color: var(--muted); }
 .understand .table-wrap { overflow-x: auto; }
 .callout-label { color: var(--text); margin-right: 4px; }
+
+/* ---- Learning path (learn.html, js/teach/learn.js) ---- */
+.learn .track-tabs { margin-top: 28px; }
+.learn .track-tabs .tab { font-size: 1rem; padding: 8px 16px; }
+.track-panel:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.track-title { margin: 10px 0 6px; font-size: 1.4rem; }
+.track-intro { margin: 0 0 8px; max-width: 760px; color: var(--muted); }
+.steps { list-style: none; margin: 0; padding: 0; }
+.step-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 22px; margin: 16px 0;
+}
+.step-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.step-num {
+    color: var(--accent); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; font-variant-numeric: tabular-nums;
+}
+.step-title { margin: 0; font-size: 1.2rem; }
+.step-examples { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 6px; }
+.step-example { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.step-example-name { font-weight: 600; }
+.step-example-name .num { color: var(--accent); margin-right: 6px; font-variant-numeric: tabular-nums; }
+.step-example-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.step-example-links a {
+    text-decoration: none; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 0.85rem; color: var(--text);
+}
+.step-example-links a:hover { border-color: var(--accent); color: var(--accent); }
+.step-why { margin: 10px 0; max-width: 760px; }
+.step-try { max-width: 760px; }
+.step-why strong, .step-try strong { color: var(--text); }
