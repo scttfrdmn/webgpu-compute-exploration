@@ -75,3 +75,44 @@ export function rangeOf(row, key) {
 export function hasRange(rows, key) {
     return (rows ?? []).some(r => rangeOf(r, key) !== null);
 }
+
+// Two-sided 95% Student t quantiles for small degrees of freedom (df ≥ 30 uses 1.96 + 2.4/df)
+const T975 = [NaN, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160,
+    2.145, 2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045];
+export function t975(df) {
+    if (!(df >= 1)) return NaN;
+    return df < T975.length ? T975[Math.floor(df)] : 1.96 + 2.4 / df;
+}
+
+// Least-squares fit of log10(y) = slope · log10(x) + intercept, i.e. y ∝ x^slope. Points with non-positive or
+// non-finite x or y are skipped. Returns the slope with its standard error and a 95% confidence interval
+// (Student t, n − 2 degrees of freedom), the intercept and R²; slope fields are null with fewer than 3 points
+// for the interval (2 points give a slope but no uncertainty).
+export function fitPowerLaw(xs, ys) {
+    const pts = [];
+    for (let i = 0; i < Math.min(xs.length, ys.length); i++) {
+        const x = xs[i], y = ys[i];
+        if (Number.isFinite(x) && Number.isFinite(y) && x > 0 && y > 0) pts.push([Math.log10(x), Math.log10(y)]);
+    }
+    const n = pts.length;
+    const empty = { n, slope: null, intercept: null, slopeStdErr: null, ci95: null, r2: null };
+    if (n < 2) return empty;
+    const mx = pts.reduce((a, p) => a + p[0], 0) / n, my = pts.reduce((a, p) => a + p[1], 0) / n;
+    let sxx = 0, sxy = 0, syy = 0;
+    for (const [x, y] of pts) { sxx += (x - mx) ** 2; sxy += (x - mx) * (y - my); syy += (y - my) ** 2; }
+    if (sxx === 0) return empty;
+    const slope = sxy / sxx, intercept = my - slope * mx;
+    const ssRes = pts.reduce((a, [x, y]) => a + (y - (intercept + slope * x)) ** 2, 0);
+    const r2 = syy === 0 ? 1 : 1 - ssRes / syy;
+    if (n < 3) return { n, slope, intercept, slopeStdErr: null, ci95: null, r2 };
+    const slopeStdErr = Math.sqrt(ssRes / (n - 2) / sxx);
+    const half = t975(n - 2) * slopeStdErr;
+    return { n, slope, intercept, slopeStdErr, ci95: [slope - half, slope + half], r2 };
+}
+
+// Does a predicted exponent fall inside the fit's 95% interval (with an optional extra tolerance for model
+// approximations, e.g. ±0.15 when the prediction itself is only asymptotic)? null when there is no interval.
+export function slopeAgrees(fit, predicted, tolerance = 0) {
+    if (!fit.ci95) return null;
+    return predicted >= fit.ci95[0] - tolerance && predicted <= fit.ci95[1] + tolerance;
+}

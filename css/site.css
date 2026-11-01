@@ -306,3 +306,12 @@ footer {
 .step-why { margin: 10px 0; max-width: 760px; }
 .step-try { max-width: 760px; }
 .step-why strong, .step-try strong { color: var(--text); }
+.experiment-scope { font-size: 0.88rem; color: var(--muted); margin: 0 0 8px; }
+.experiment-scope strong { color: var(--text); font-weight: 500; }
+.experiment-scope ul { margin: 2px 0 6px 18px; padding: 0; }
+.experiment-interpretation h5 { margin: 12px 0 4px; font-size: 0.95rem; }
+.experiment-interpretation table { border-collapse: collapse; font-size: 0.85rem; }
+.experiment-interpretation th, .experiment-interpretation td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.verdict-agrees { color: var(--accent-2); }
+.verdict-disagrees { color: var(--error); }
+.verdict-undetermined { color: var(--muted); }

@@ -83,6 +83,11 @@ for (const id of MEASURE) {
                 for (const y of chart.y) assert.ok(keys.has(y), `${where}: chart y "${y}" is not a column`);
                 assert.equal(typeof chart.xLabel, 'string'); assert.equal(typeof chart.yLabel, 'string');
             }
+            if (e.interpret !== undefined) assert.equal(typeof e.interpret, 'function', `${where}: interpret must be a function`);
+            if (e.scope !== undefined) {
+                for (const k of Object.keys(e.scope)) assert.ok(['shows', 'doesNotShow'].includes(k), `${where}: scope.${k}`);
+                for (const list of Object.values(e.scope)) assert.ok(Array.isArray(list) && list.every(x => typeof x === 'string' && x.length), `${where}: scope lists of strings`);
+            }
             for (const s of e.settings ?? []) {
                 assert.ok(s.options.length > 0, `${where}: setting ${s.key} has options`);
                 if (s.default !== undefined) assert.ok(s.options.some(o => o.value === s.default), `${where}: ${s.key} default is an option`);

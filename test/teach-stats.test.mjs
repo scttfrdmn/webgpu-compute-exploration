@@ -87,3 +87,19 @@ test('PhaseClock: sync and async phases, sums repeated phases, records time on t
     clock.phases.compile = 99;
     assert.equal(clock.phases.compile, 5.5);
 });
+
+test('fitPowerLaw: recovers exponents with a 95% interval; slopeAgrees', async () => {
+    const { fitPowerLaw, slopeAgrees, t975 } = await import('../js/teach/stats.js');
+    const xs = [64, 128, 256, 512, 1024];
+    const exact = fitPowerLaw(xs, xs.map(x => 2e-6 * x ** 3));
+    assert.ok(Math.abs(exact.slope - 3) < 1e-12 && exact.r2 > 0.999999);
+    assert.ok(exact.slopeStdErr < 1e-9);
+    const noisy = fitPowerLaw(xs, xs.map((x, i) => x ** 2 * (1 + [0.05, -0.04, 0.03, -0.05, 0.02][i])));
+    assert.ok(noisy.ci95[0] < 2 && noisy.ci95[1] > 2, 'interval covers the true exponent');
+    assert.equal(slopeAgrees(noisy, 2), true);
+    assert.equal(slopeAgrees(noisy, 3), false);
+    assert.equal(fitPowerLaw([1, 2], [1, 4]).ci95, null);
+    assert.equal(slopeAgrees(fitPowerLaw([1, 2], [1, 4]), 2), null);
+    assert.equal(fitPowerLaw([0, -1, NaN], [1, 2, 3]).slope, null);
+    assert.equal(t975(3), 3.182); assert.ok(Math.abs(t975(100) - 1.984) < 0.01);
+});

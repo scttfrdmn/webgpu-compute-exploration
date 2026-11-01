@@ -4,51 +4,155 @@
   "title": "WebGPU Compute Exploration: Measure experiment result, version 1",
   "description": "One run of one Measure-tab experiment, as downloaded from the page or embedded in the device report. Built by js/teach/result-record.js and checked by its validator, which implements exactly the keywords used here (type, properties, required, additionalProperties, items, enum, const, minimum, minLength, minItems); test/result-record.test.mjs keeps the two in step.",
   "type": "object",
-  "required": ["schemaVersion", "generatedAt", "source", "experiment", "settings", "protocol", "verification",
-    "environment", "outcome", "columns", "rows"],
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "source",
+    "experiment",
+    "settings",
+    "protocol",
+    "verification",
+    "environment",
+    "outcome",
+    "columns",
+    "rows"
+  ],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "generatedAt": { "type": "string", "minLength": 1, "description": "ISO 8601 time the run finished" },
+    "schemaVersion": {
+      "const": 1
+    },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 time the run finished"
+    },
     "source": {
       "type": "object",
       "description": "The revision of the site that ran the experiment",
-      "required": ["version", "commit", "url"],
+      "required": [
+        "version",
+        "commit",
+        "url"
+      ],
       "additionalProperties": false,
       "properties": {
-        "version": { "type": "string", "minLength": 1, "description": "package.json version" },
-        "commit": { "type": "string", "minLength": 1, "description": "Git commit SHA injected at deploy, or \"local\" when served from a checkout" },
-        "url": { "type": ["string", "null"], "description": "Source tree at that commit; null for a local checkout" },
-        "builtAt": { "type": ["string", "null"], "description": "ISO 8601 deploy time" }
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "package.json version"
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Git commit SHA injected at deploy, or \"local\" when served from a checkout"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Source tree at that commit; null for a local checkout"
+        },
+        "builtAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO 8601 deploy time"
+        }
       }
     },
     "experiment": {
       "type": "object",
-      "required": ["exampleId", "id", "title"],
+      "required": [
+        "exampleId",
+        "id",
+        "title"
+      ],
       "additionalProperties": false,
       "properties": {
-        "exampleId": { "type": "string", "minLength": 1, "description": "Example section id, e.g. \"nbody\"" },
-        "id": { "type": "string", "minLength": 1, "description": "Experiment id within the example, e.g. \"scaling\"" },
-        "title": { "type": "string" }
+        "exampleId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Example section id, e.g. \"nbody\""
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Experiment id within the example, e.g. \"scaling\""
+        },
+        "title": {
+          "type": "string"
+        }
       }
     },
     "settings": {
       "type": "object",
       "description": "The experiment's settings as chosen for this run (setting key -> option value)",
-      "additionalProperties": { "type": ["string", "number", "boolean"] }
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
     },
     "protocol": {
       "type": "object",
       "description": "How timed quantities were measured",
-      "required": ["warmup", "repeats", "timing", "budgetMs", "statistic", "spread"],
+      "required": [
+        "warmup",
+        "repeats",
+        "timing",
+        "budgetMs",
+        "statistic",
+        "spread"
+      ],
       "additionalProperties": false,
       "properties": {
-        "warmup": { "type": ["integer", "null"], "minimum": 0, "description": "Discarded warm-up runs per timed point (null: the experiment does not use the shared protocol)" },
-        "repeats": { "type": ["integer", "null"], "minimum": 1, "description": "Independent timed runs per point (null: as above)" },
-        "timing": { "enum": ["timestamp-query", "wall-clock"], "description": "timestamp-query: GPU times (gpuMs) are available in addition to wall-clock times; wall-clock: only wall-clock times" },
-        "budgetMs": { "type": "number", "minimum": 0, "description": "Time budget, checked between steps (a step already submitted finishes)" },
-        "statistic": { "enum": ["median", "as-reported"], "description": "median: timed columns are medians over the repeats; as-reported: as the experiment computes them" },
-        "spread": { "enum": ["iqr", "none"], "description": "iqr: rows carry <key>Lo / <key>Hi = q1 / q3 (type-7 quantiles) for columns marked range" }
+        "warmup": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Discarded warm-up runs per timed point (null: the experiment does not use the shared protocol)"
+        },
+        "repeats": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "description": "Independent timed runs per point (null: as above)"
+        },
+        "timing": {
+          "enum": [
+            "timestamp-query",
+            "wall-clock"
+          ],
+          "description": "timestamp-query: GPU times (gpuMs) are available in addition to wall-clock times; wall-clock: only wall-clock times"
+        },
+        "budgetMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Time budget, checked between steps (a step already submitted finishes)"
+        },
+        "statistic": {
+          "enum": [
+            "median",
+            "as-reported"
+          ],
+          "description": "median: timed columns are medians over the repeats; as-reported: as the experiment computes them"
+        },
+        "spread": {
+          "enum": [
+            "iqr",
+            "none"
+          ],
+          "description": "iqr: rows carry <key>Lo / <key>Hi = q1 / q3 (type-7 quantiles) for columns marked range"
+        }
       }
     },
     "verification": {
@@ -57,47 +161,131 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["metric", "status"],
+        "required": [
+          "metric",
+          "status"
+        ],
         "additionalProperties": false,
         "properties": {
-          "metric": { "type": "string", "minLength": 1 },
-          "value": { "type": ["number", "null"] },
-          "tolerance": { "type": ["string", "null"], "description": "The bound the value must satisfy, as text, e.g. \"<= 7.1e-3\"" },
-          "reference": { "type": ["string", "null"], "description": "Where the bound comes from" },
-          "status": { "enum": ["pass", "fail", "not-checked"] }
+          "metric": {
+            "type": "string",
+            "minLength": 1
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tolerance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The bound the value must satisfy, as text, e.g. \"<= 7.1e-3\""
+          },
+          "reference": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where the bound comes from"
+          },
+          "status": {
+            "enum": [
+              "pass",
+              "fail",
+              "not-checked"
+            ]
+          }
         }
       }
     },
     "environment": {
       "type": "object",
-      "required": ["userAgent", "adapter", "features", "limits"],
+      "required": [
+        "userAgent",
+        "adapter",
+        "features",
+        "limits"
+      ],
       "additionalProperties": false,
       "properties": {
-        "userAgent": { "type": "string" },
+        "userAgent": {
+          "type": "string"
+        },
         "adapter": {
           "type": "object",
-          "required": ["vendor", "architecture", "device", "description", "isFallbackAdapter"],
+          "required": [
+            "vendor",
+            "architecture",
+            "device",
+            "description",
+            "isFallbackAdapter"
+          ],
           "additionalProperties": false,
           "properties": {
-            "vendor": { "type": "string" },
-            "architecture": { "type": "string" },
-            "device": { "type": "string" },
-            "description": { "type": "string" },
-            "isFallbackAdapter": { "type": ["boolean", "null"] }
+            "vendor": {
+              "type": "string"
+            },
+            "architecture": {
+              "type": "string"
+            },
+            "device": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "isFallbackAdapter": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
           }
         },
-        "features": { "type": "array", "items": { "type": "string" }, "description": "Features of the device the run used" },
-        "limits": { "type": "object", "additionalProperties": { "type": "number" }, "description": "A subset of the device limits relevant to compute" }
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Features of the device the run used"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "A subset of the device limits relevant to compute"
+        }
       }
     },
     "outcome": {
       "type": "object",
-      "required": ["status", "steps"],
+      "required": [
+        "status",
+        "steps"
+      ],
       "additionalProperties": false,
       "properties": {
-        "status": { "enum": ["done", "cancelled", "budget", "device-lost", "error"] },
-        "steps": { "type": "integer", "minimum": 0, "description": "Rows produced" },
-        "message": { "type": "string" }
+        "status": {
+          "enum": [
+            "done",
+            "cancelled",
+            "budget",
+            "device-lost",
+            "error"
+          ]
+        },
+        "steps": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Rows produced"
+        },
+        "message": {
+          "type": "string"
+        }
       }
     },
     "columns": {
@@ -105,13 +293,26 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["key", "label"],
+        "required": [
+          "key",
+          "label"
+        ],
         "additionalProperties": false,
         "properties": {
-          "key": { "type": "string", "minLength": 1 },
-          "label": { "type": "string" },
-          "unit": { "type": "string" },
-          "range": { "type": "boolean", "description": "Rows carry <key>Lo / <key>Hi" }
+          "key": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "range": {
+            "type": "boolean",
+            "description": "Rows carry <key>Lo / <key>Hi"
+          }
         }
       }
     },
@@ -119,7 +320,57 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": { "type": ["number", "string", "boolean", "null"] }
+        "additionalProperties": {
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "interpretation": {
+      "type": "array",
+      "description": "Optional: measured results set against theoretical predictions, each with whether they agree within the stated uncertainty",
+      "items": {
+        "type": "object",
+        "required": [
+          "claim",
+          "predicted",
+          "measured",
+          "agrees"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "claim": {
+            "type": "string",
+            "minLength": 1
+          },
+          "predicted": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The theoretical expectation, e.g. \"slope 3 (O(n^3))\""
+          },
+          "measured": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The measured value with its uncertainty, e.g. \"2.94 (95% CI 2.85–3.03)\""
+          },
+          "agrees": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "null when the data cannot decide (too few points, no interval)"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
       }
     }
   }

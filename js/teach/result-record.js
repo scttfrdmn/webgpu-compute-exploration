@@ -66,6 +66,25 @@ export function verificationOf(experiment, rows, settings) {
     }));
 }
 
+// Measured vs predicted claims from an experiment's optional interpret(rows, settings); never throws
+export function interpretationOf(experiment, rows, settings) {
+    if (typeof experiment.interpret !== 'function') return {};
+    let claims;
+    try {
+        claims = experiment.interpret(rows, settings) ?? [];
+    } catch (error) {
+        claims = [{ claim: 'interpretation', predicted: '—', measured: '—', agrees: null, note: `interpret() failed: ${error.message}` }];
+    }
+    if (!claims.length) return {};
+    return { interpretation: claims.map(c => ({
+        claim: String(c.claim || 'claim'),
+        predicted: String(c.predicted ?? '—') || '—',
+        measured: String(c.measured ?? '—') || '—',
+        agrees: typeof c.agrees === 'boolean' ? c.agrees : null,
+        note: c.note === undefined || c.note === null ? null : String(c.note),
+    })) };
+}
+
 // One check from a value and an inclusive bound, for experiments' verify()
 export function check(metric, value, { max = Infinity, min = -Infinity, tolerance, reference = null } = {}) {
     const ok = typeof value === 'number' && Number.isFinite(value);
@@ -110,6 +129,7 @@ export function buildResultRecord({ exampleId, experiment, settings = {}, rows =
             spread: columns.some(c => c.range) ? SPREAD : 'none',
         },
         verification: verification ?? verificationOf(experiment, rows, settings),
+        ...interpretationOf(experiment, rows, settings),
         environment: environmentOf(gpuDevice, userAgent),
         outcome: { status: outcome.status, steps: rows.length, ...(outcome.message ? { message: String(outcome.message) } : {}) },
         columns,

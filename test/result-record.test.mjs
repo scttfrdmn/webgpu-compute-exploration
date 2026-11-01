@@ -37,6 +37,7 @@ const experiment = {
     id: 'demo', title: 'Demo', budgetMs: 20000,
     columns: [{ key: 'n', label: 'N' }, { key: 'ms', label: 'wall ms', unit: 'ms' }, { key: 'err', label: 'error' }],
     verify: (rows) => [check('max error', Math.max(...rows.map(r => r.err)), { max: 1e-3, reference: 'CPU' })],
+    interpret: () => [{ claim: 'time grows linearly', predicted: 'slope 1', measured: '1.02 (95% CI 0.9–1.1)', agrees: true, note: 'two sizes only' }],
 };
 const rows = [
     { n: 1024, ms: 1.5, msLo: 1.2, msHi: 1.9, err: 1e-4 },
@@ -319,4 +320,16 @@ test('device report embeds each record as a compact JSON block', async () => {
     assert.equal(blocks.length, 1);
     assert.deepEqual(blocks[0], record);
     assert.ok(validateResultRecord(blocks[0], schema).valid);
+});
+
+test('interpretationOf: normalizes claims, survives a throwing interpret, omitted when absent', async () => {
+    const { interpretationOf } = await import('../js/teach/result-record.js');
+    assert.deepEqual(interpretationOf({}, [], {}), {});
+    assert.deepEqual(interpretationOf({ interpret: () => [] }, [], {}), {});
+    const out = interpretationOf({ interpret: () => [{ claim: 'c', predicted: 'p', measured: 'm', agrees: 'yes' }] }, [], {});
+    assert.deepEqual(out.interpretation, [{ claim: 'c', predicted: 'p', measured: 'm', agrees: null, note: null }]);
+    const thrown = interpretationOf({ interpret: () => { throw new Error('boom'); } }, [], {});
+    assert.equal(thrown.interpretation[0].agrees, null);
+    assert.match(thrown.interpretation[0].note, /boom/);
+    assert.deepEqual(validateResultRecord(sampleRecord(), schema), { valid: true, errors: [] });
 });

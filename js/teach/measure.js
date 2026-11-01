@@ -12,6 +12,8 @@
 //                emptyNote? }],                // shown when no series has a value (e.g. GPU ms without timestamps)
 //     baseline,                                  // optional text: what CI measured, for comparison
 //     verify?(rows, settings) → [{ metric, value, tolerance, reference, status: 'pass'|'fail'|'not-checked' }],
+//     interpret?(rows, settings) → [{ claim, predicted, measured, agrees: true|false|null, note? }],
+//     scope?: { shows: [string], doesNotShow: [string] },   // shown on the card before running
 //                                                // optional checks recorded with the result (see "Verification")
 //     async *run(ctx, settings) { ... yield row ... }   // one row per sweep step
 //   }
@@ -49,6 +51,12 @@
 // When GPU work goes through an example's compute-only export (e.g. measureForces in nbody.js), that
 // function owns its GpuTimer and returns gpuMs/wallMs; experiments that dispatch directly use
 // ctx.newTimer(). Columns like θ or dt that should print as written use `format: String`.
+//
+// Interpretation. interpret(rows, settings) sets the measurement against theory: each claim states the prediction
+// (e.g. "slope 3, O(n³)"), the measured value WITH its uncertainty (e.g. a fitPowerLaw slope and its 95% interval
+// from js/teach/stats.js), and whether they agree (slopeAgrees; null when the data cannot decide). It is about
+// meaning, not correctness — verify() is for pass/fail against references. scope.shows / scope.doesNotShow say
+// what a visitor may and may not conclude (e.g. "not a ranking of GPUs: one device, one browser, one run").
 //
 // Verification. verify(rows, settings) checks the rows (possibly a partial run) against independent
 // references and CI-derived bounds; return 'not-checked' for a check whose rows are missing. Without
@@ -225,6 +233,7 @@ function experimentCard(exampleId, experiment, panel) {
     question.className = 'experiment-question';
     question.textContent = experiment.question;
     card.append(title, question);
+    if (experiment.scope) card.append(scopeNote(experiment.scope));
 
     const controls = document.createElement('div');
     controls.className = 'controls';
@@ -287,7 +296,10 @@ function experimentCard(exampleId, experiment, panel) {
     const compare = document.createElement('div');
     compare.className = 'experiment-compare';
     compare.setAttribute('aria-live', 'polite');
-    card.append(charts, table, protocol, checks, recordBar, compare);
+    const interpretation = document.createElement('div');
+    interpretation.className = 'experiment-interpretation';
+    interpretation.hidden = true;
+    card.append(charts, table, protocol, checks, interpretation, recordBar, compare);
 
     runButtons.add(run);
     let rows = [];
@@ -351,6 +363,7 @@ function experimentCard(exampleId, experiment, panel) {
         recordExperimentResult(record);
         showProtocol(protocol, record);
         showChecks(checks, record.verification);
+        showInterpretation(interpretation, record.interpretation);
         recordBar.hidden = false;
     });
     cancel.addEventListener('click', () => controller?.abort());
@@ -403,6 +416,54 @@ function showProtocol(el, record) {
 }
 
 const STATUS_TEXT = { pass: 'PASS', fail: 'FAIL', 'not-checked': 'NOT CHECKED' };
+
+// "This shows / This does not show": what an experiment can and cannot tell you, shown before running
+function scopeNote(scope) {
+    const box = document.createElement('div');
+    box.className = 'experiment-scope';
+    for (const [key, heading] of [['shows', 'This shows'], ['doesNotShow', 'This does not show']]) {
+        if (!scope[key]?.length) continue;
+        const h = document.createElement('strong');
+        h.textContent = heading;
+        const ul = document.createElement('ul');
+        for (const item of scope[key]) {
+            const li = document.createElement('li');
+            li.textContent = item;
+            ul.append(li);
+        }
+        box.append(h, ul);
+    }
+    return box;
+}
+
+const AGREES_TEXT = (a) => (a === true ? 'agrees' : a === false ? 'disagrees' : 'undetermined');
+
+// Measured vs predicted: each claim with the theory's expectation, the measurement with its uncertainty,
+// and whether they agree — in words, never color alone
+function showInterpretation(el, claims) {
+    el.replaceChildren();
+    if (!claims?.length) { el.hidden = true; return; }
+    const heading = document.createElement('h5');
+    heading.textContent = 'Measured vs predicted';
+    const t = document.createElement('table');
+    cellsRow(t.createTHead().insertRow(), ['Claim', 'Predicted', 'Measured', 'Verdict'], true);
+    const body = t.createTBody();
+    const notes = document.createElement('ul');
+    notes.className = 'hint';
+    for (const c of claims) {
+        const tr = body.insertRow();
+        cellsRow(tr, [c.claim, c.predicted, c.measured, AGREES_TEXT(c.agrees)]);
+        tr.lastChild.className = `verdict verdict-${AGREES_TEXT(c.agrees)}`;
+        if (c.note) {
+            const li = document.createElement('li');
+            li.textContent = `${c.claim}: ${c.note}`;
+            notes.append(li);
+        }
+    }
+    el.append(heading, t);
+    if (notes.childElementCount) el.append(notes);
+    el.hidden = false;
+}
 
 function showChecks(list, verification) {
     list.replaceChildren();
