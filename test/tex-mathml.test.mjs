@@ -194,3 +194,12 @@ test('texErrors is empty for valid input', () => {
     assert.deepEqual(texErrors('E = mc^2'), []);
     assert.deepEqual(texErrors('\\Delta t \\le \\frac{h}{c\\sqrt{2}}'), []);
 });
+
+test('standalone \\lvert/\\rvert/\\lVert/\\rVert, \\bmod and \\pmod', () => {
+    for (const t of ['\\lvert x \\rvert', '\\lVert v \\rVert', 'a \\bmod b', 'a \\equiv b \\pmod{n}']) {
+        assert.deepEqual(texErrors(t), [], t);
+    }
+    assert.match(texToMathML('a \\bmod b'), /<mo>mod<\/mo>/);
+    assert.match(texToMathML('a \\pmod{n}'), /<mi mathvariant="normal">mod<\/mi>.*<mi>n<\/mi><mo>\)<\/mo>/);
+    assert.match(texToMathML('\\lVert v \\rVert'), /<mo>‖<\/mo><mi>v<\/mi><mo>‖<\/mo>/);
+});

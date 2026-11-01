@@ -57,6 +57,7 @@ const SYMBOL_MO = {
     cdots: '⋯', dots: '…', vdots: '⋮', ddots: '⋱', langle: '⟨', rangle: '⟩', lfloor: '⌊', rfloor: '⌋',
     lceil: '⌈', rceil: '⌉', circ: '∘', ast: '∗', star: '⋆', bullet: '∙', perp: '⊥', parallel: '∥',
     mid: '∣', vert: '|', Vert: '‖', colon: ':', oplus: '⊕', otimes: '⊗', odot: '⊙', prime: '′',
+    lvert: '|', rvert: '|', lVert: '‖', rVert: '‖', bmod: 'mod',
 };
 
 const BIG_OPS = {
@@ -339,6 +340,10 @@ class TexParser {
                 if (name === 'dfrac' || name === 'cfrac') return { xml: `<mstyle displaystyle="true">${frac}</mstyle>`, kind: 'ord' };
                 if (name === 'tfrac') return { xml: `<mstyle displaystyle="false">${frac}</mstyle>`, kind: 'ord' };
                 return { xml: frac, kind: 'ord' };
+            }
+            case 'pmod': {   // a \pmod{n} → a (mod n)
+                const n = this.parseArg('\\pmod');
+                return { xml: `<mrow><mspace width="0.5em"></mspace><mo>(</mo><mi mathvariant="normal">mod</mi><mspace width="0.3em"></mspace>${n}<mo>)</mo></mrow>`, kind: 'ord' };
             }
             case 'binom': {
                 const n = this.parseArg('\\binom'), k = this.parseArg('\\binom');

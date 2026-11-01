@@ -788,7 +788,7 @@ export async function initDLA3D(gpuDevice) {
 
 <span class="info">Configuration:</span>
 • Grid: ${gridSize}³ = ${(gridSize ** 3).toLocaleString()} cells
-• Active particles: ${numParticles.toLocaleString()}
+• Walkers: ${numParticles.toLocaleString()} (each sticks once, then retires)
 • Particles/frame: ${simulation.particlesPerFrame}
 • Stickiness: ${(simulation.stickiness * 100).toFixed(0)}%
 
