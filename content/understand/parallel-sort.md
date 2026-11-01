@@ -110,10 +110,12 @@ Each of the 8 passes is 3 dispatches, 24 in all; keys ping-pong between two buff
 
 ### Transfers and timing
 
-The benchmark uploads the keys, sorts the same input three times, and reads the result back once. The
+Each measured sort uploads the keys, sorts them in one compute pass, and reads the result back. The
 wall time is submit to `onSubmittedWorkDone`, and the GPU time (with `timestamp-query`) covers the sort
 pass alone. Neither includes the upload or the readback, which move $4n$ bytes each way and can take as
-long as the sort itself: sorting on the GPU pays when the keys are already there and stay there.
+long as the sort itself: sorting on the GPU pays when the keys are already there and stay there. The
+[Measure](#parallel-sort/measure) tab therefore times them as separate phases (upload, sort, readback,
+plus buffer creation and the one-time pipeline compile), so you can add them up yourself.
 
 ## Numerical behaviour
 
@@ -153,19 +155,73 @@ GPU radix sorts (Merrill and Grimshaw) use 8-bit digits, multi-level or decouple
 warp-level primitives to fix exactly these.
 
 **The CPU is a strong baseline.** A single core sorts a few million 32-bit keys in well under a
-second, with no transfers. On the CPU-emulated GPU in CI, wall times in ms were:
+second, with no transfers. On the CPU-emulated GPU in CI, median wall times in ms over 5 trials, with
+the interquartile range, were (u32 keys):
 
 | $N$ | bitonic | bitonic, workgroup memory | radix | CPU sort |
 |---|---|---|---|---|
-| 16,384 | 7.9 | 9.4 | 16.2 | 0.68 |
-| 65,536 | 17.4 | 27.9 | 51.1 | 3.1 |
-| 262,144 | 82.9 | 109.4 | 202.8 | 12.6 |
+| 16,384 | 14.3 (13.1–37.3) | 15.3 (9.8–15.4) | 30.6 (25.1–51.9) | 0.69 (0.68–0.73) |
+| 65,536 | 82.3 (51.6–101) | 59.5 (55.3–69.6) | 84.4 (83.7–112) | 3.35 (3.30–3.36) |
+| 262,144 | 168 (165–172) | 154 (147–167) | 245 (242–247) | 15.2 (14.7–15.6) |
+| 1,048,576 | 541 (538–590) | 660 (650–685) | 887 (883–894) | 67.6 (66.6–70.1) |
 
 All of them verified, and all of them upside down: there the "GPU" is a set of CPU cores, so the CPU's
-own sort wins, a barrier costs more than a global memory pass, and workgroup memory is ordinary cache.
+own sort wins by 8–20×, radix sort is slowest, and at $2^{20}$ keys global bitonic beats the
+workgroup-memory variant because a barrier costs more than a global memory pass and workgroup memory
+is ordinary cache. The spread at small $N$ is the noise of a shared CI machine, and a second CI run
+measured 714 / 837 / 1,378 / 75.8 ms at $2^{20}$: runs differ by more than the spread within one run,
+which is why one run is never a ranking. In the first run the fitted slopes over
+131,072 … 1,048,576 were 0.85 for global bitonic (predicted 1.15: flatter, because each of its 171–210
+dispatches has a fixed cost), 0.89 for radix (predicted 1.00) and 1.08 for the CPU sort (predicted 1.08).
 These numbers show what CI can check (correctness, dispatch counts), not how a GPU ranks the
 algorithms. On a real GPU the workgroup-memory variant should beat the global one, and the crossover
 with the CPU sort is the question the [benchmark](#parallel-sort/measure) answers for your hardware.
+
+### How to read the Measure results
+
+The [scaling experiment](#parallel-sort/measure) runs, for each $N$, one discarded warm-up and then 5
+independent trials (3 from $N = 2^{21}$, so that the sweep fits its 20 s budget). Each trial draws fresh
+keys from a fixed seed sequence, so trials differ from each other but a rerun repeats them exactly; times
+the browser's sort on a copy; and sorts the same keys with all three GPU algorithms, each checked against
+the CPU result bit for bit. Tables show the median with the interquartile range, charts a range bar.
+The **Measured vs predicted** table under the results then sets your numbers against the theory.
+
+**Slopes.** $\mathcal{O}(n \log^2 n)$ is not a straight line on log-log axes, so it cannot be compared
+with a fitted slope directly. The experiment turns each model into a number over *your* range: it
+evaluates the operation count at the measured $N$ and fits the same log-log line through it.
+
+| model | operation count | predicted slope, $N = 2^{19} \dots 2^{22}$ |
+|---|---|---|
+| bitonic, global | $N \cdot S(N)$ stages × keys | 1.14 (the local slope is $1 + 2/\ln N$) |
+| bitonic, workgroup memory | $N \cdot S(N)$ compare-exchanges … $N \cdot D(N)$ global traffic | 1.14 … 1.22 |
+| radix | $8N$ (8 passes) | 1.00 |
+| CPU sort | $N \log_2 N$ | 1.07 (the local slope is $1 + 1/\ln N$) |
+
+$D(N)$ is the workgroup variant's dispatch count, which grows faster than the number of stages. The fit
+uses the four largest $N$ of your run; its 95% interval comes from the scatter of those medians around a
+straight line (Student $t$ with 2 degrees of freedom, so it is wide), and the claim *agrees* when the
+interval reaches the prediction ± 0.05. A slope **below** the prediction does not mean a better
+algorithm: fixed costs per dispatch and per submit are still a large share of the time, so the GPU is
+not saturated yet. A slope **above** it means something grows faster than the work, such as the keys
+outgrowing a cache. Fewer than three sizes give no interval, and an interval wider than ± 0.2 cannot
+tell $\mathcal{O}(n)$ from $\mathcal{O}(n \log^2 n)$; both make the verdict "undetermined".
+
+**Crossovers.** A GPU sort counts as faster than the CPU sort at an $N$ only when the upper quartile of
+its wall time is below the CPU sort's lower quartile. The crossover is then bracketed between two sweep
+sizes; "none in range" and "not resolved" are results too. There is no device-independent prediction,
+so the verdict is always "undetermined": the crossing point moves with the GPU, the driver, the
+browser and the CPU. It also compares the sort alone with the CPU sort; the third chart shows upload
+and readback next to the radix sort time, and their sum is the fair comparison when the keys start and
+end on the CPU. Slopes and the ranking use GPU timestamps when your browser offers `timestamp-query`,
+otherwise wall times; crossovers always use wall times, like the CPU sort's.
+
+**Ranking.** At the largest $N$ the expected order, fastest first, is radix, bitonic with workgroup
+memory, global bitonic. Each neighbouring pair is decided only when their interquartile ranges do not
+overlap; one pair in the wrong order makes the verdict "disagrees". On the CPU-emulated GPU in CI the
+order is reversed, which is the measurement being right about that machine, not the theory being wrong.
+
+What none of this shows: other inputs (only uniform random keys are timed), other devices or browsers,
+or the best a CPU can do (the baseline is one thread of the browser's built-in sort).
 
 ## Try this
 
@@ -174,7 +230,9 @@ with the CPU sort is the question the [benchmark](#parallel-sort/measure) answer
 > $j$ apart, are compared next.
 
 - Run [the scaling experiment](#parallel-sort/measure) with u32 keys. At which $N$ does radix sort pass
-  the CPU sort on your GPU, and does bitonic sort with workgroup memory ever catch radix sort?
+  the CPU sort on your GPU, and does bitonic sort with workgroup memory ever catch radix sort? Check the
+  **Measured vs predicted** table: are the slopes flatter than predicted, and does the fitted range
+  move closer to the prediction when you raise **Largest N**?
 - Repeat with f32 keys: the encode and decode dispatches are cheap, so the curves should barely move.
 - Compare GPU time and wall time at the smallest $N$: the gap is launch and queue overhead, which
   is why every algorithm looks the same for small inputs.

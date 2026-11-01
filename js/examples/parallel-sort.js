@@ -38,6 +38,8 @@
 // the shipped runBenchmark() on it (sort, timing, readback and the check against the CPU sort).
 
 import { GpuTimer, GPU_TIME_NOTE, GPU_TIME_UNAVAILABLE } from '../gpu-timer.js';
+import { PhaseClock } from '../phase-clock.js';
+import { mulberry32 } from '../refs/random.js';
 
 const PARAMS_SIZE = 16;
 const CHART_PARAMS_SIZE = 32;
@@ -504,7 +506,23 @@ const ALGORITHMS = {
     'radix':          { name: 'LSD radix sort (4-bit digits)' },
 };
 
-const BENCH_RUNS = 3;
+const BENCH_RUNS = 3;               // sorts of the same input per Explore benchmark (best of 3)
+const MAX_BENCH_RUNS = 10;
+
+// Benchmark keys from a seeded generator (mulberry32), so a run can be repeated exactly:
+// full-range random u32, or f32 uniform in ±1e6 (finite; the bit patterns are uploaded unchanged)
+export function generateKeys(n, dataType, seed) {
+    const r = mulberry32(seed);
+    if (dataType === 'f32') {
+        const keys = new Float32Array(n);
+        for (let i = 0; i < n; i++) keys[i] = (r() * 2 - 1) * 1e6;
+        return keys;
+    }
+    const keys = new Uint32Array(n);
+    for (let i = 0; i < n; i++) keys[i] = (r() * 0x100000000) >>> 0;
+    return keys;
+}
+
 const MAX_STAGES_PER_FRAME = 16;
 
 function nextPowerOfTwo(n) {
@@ -865,9 +883,13 @@ class ParallelSort {
 
     // ---- Benchmark ----
 
-    // Sorts n random keys on the GPU BENCH_RUNS times, reads the result back once and checks it
-    // against Uint32Array/Float32Array.prototype.sort on a copy of the same input.
-    async runBenchmark(algorithm, n, dataType) {
+    // Sorts n random keys on the GPU `runs` times (default BENCH_RUNS), reads the result back once and
+    // checks it against Uint32Array/Float32Array.prototype.sort on a copy of the same input.
+    // Options: input (n keys of dataType; default: generateKeys with a random seed), expected (the
+    // CPU-sorted bit patterns of that input, as a Uint32Array; when given, the CPU sort is skipped and
+    // cpuMs is null), clock (a PhaseClock that receives compile = buffers and bind groups, upload =
+    // writeBuffer of the keys until the queue is idle, dispatch = each sort's submit -> done, readback).
+    async runBenchmark(algorithm, n, dataType, { input: given = null, expected = null, runs = BENCH_RUNS, clock = new PhaseClock() } = {}) {
         if (this.benchRunning) return this.benchResult;
         this.benchRunning = true;
         const device = this.device;
@@ -892,23 +914,28 @@ class ParallelSort {
                 throw new Error(`${bytes.toLocaleString()} bytes exceed this device's storage buffer limit (${maxBinding.toLocaleString()})`);
             }
 
-            // Input: full-range random u32, or f32 in ±1e6 (bit patterns uploaded unchanged)
-            let input;
-            if (dataType === 'f32') {
-                input = new Float32Array(n);
-                for (let i = 0; i < n; i++) input[i] = (Math.random() * 2 - 1) * 1e6;
-            } else {
-                input = new Uint32Array(n);
-                for (let i = 0; i < n; i++) input[i] = (Math.random() * 0x100000000) >>> 0;
+            const Keys = dataType === 'f32' ? Float32Array : Uint32Array;
+            if (given && !(given instanceof Keys && given.length === n)) {
+                throw new TypeError(`input must be a ${Keys.name} of ${n} keys`);
             }
-            const inputBits = new Uint32Array(input.buffer);
+            if (expected && !(expected instanceof Uint32Array && expected.length === n)) {
+                throw new TypeError(`expected must be a Uint32Array of ${n} bit patterns`);
+            }
+            const input = given ?? generateKeys(n, dataType, (Math.random() * 0x100000000) >>> 0);
+            const inputBits = new Uint32Array(input.buffer, input.byteOffset, n);
 
-            const cpuSorted = input.slice();
-            const cpuStart = performance.now();
-            cpuSorted.sort();
-            const cpuMs = performance.now() - cpuStart;
-            const cpuBits = new Uint32Array(cpuSorted.buffer);
+            let cpuMs = null;
+            let cpuBits = expected;
+            if (!cpuBits) {
+                const cpuSorted = input.slice();
+                const cpuStart = performance.now();
+                cpuSorted.sort();
+                cpuMs = performance.now() - cpuStart;
+                cpuBits = new Uint32Array(cpuSorted.buffer);
+            }
+            const sortRuns = Math.min(Math.max(Math.round(runs) || 1, 1), MAX_BENCH_RUNS);
 
+            const setupStart = performance.now();
             const storage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
             const keysA = makeBuffer(bytes, storage);
             const convertParams = makeBuffer(PARAMS_SIZE, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
@@ -994,12 +1021,15 @@ class ParallelSort {
             if (dataType === 'f32') dispatches += 2;
 
             const padding = padded > n ? new Uint32Array(padded - n).fill(PAD_KEY) : null;
+            clock.add('compile', performance.now() - setupStart);
             const gpuTimes = [];
             const kernelTimes = [];
-            for (let run = 0; run < BENCH_RUNS; run++) {
-                device.queue.writeBuffer(keysA, 0, inputBits);
-                if (padding) device.queue.writeBuffer(keysA, n * 4, padding);
-                await device.queue.onSubmittedWorkDone();   // uploads finish before the clock starts
+            for (let run = 0; run < sortRuns; run++) {
+                await clock.time('upload', async () => {
+                    device.queue.writeBuffer(keysA, 0, inputBits);
+                    if (padding) device.queue.writeBuffer(keysA, n * 4, padding);
+                    await device.queue.onSubmittedWorkDone();   // uploads finish before the clock starts
+                });
 
                 const start = performance.now();
                 const commandEncoder = device.createCommandEncoder();
@@ -1021,6 +1051,7 @@ class ParallelSort {
                 const timing = timer.read();
                 await device.queue.onSubmittedWorkDone();
                 gpuTimes.push(performance.now() - start);
+                clock.add('dispatch', gpuTimes[gpuTimes.length - 1]);
                 const result = await timing;
                 if (result) kernelTimes.push(result.total);
             }
@@ -1035,6 +1066,7 @@ class ParallelSort {
             const gpuBits = new Uint32Array(staging.getMappedRange().slice(0));
             staging.unmap();
             const readMs = performance.now() - readStart;
+            clock.add('readback', readMs);
 
             // Same bits as the CPU sort <=> sorted and a permutation of the input
             const gpuValues = dataType === 'f32' ? new Float32Array(gpuBits.buffer) : gpuBits;
@@ -1050,6 +1082,7 @@ class ParallelSort {
                 gpuTimes, bestMs: Math.min(...gpuTimes),
                 timestamps: timer.supported, kernelTimes,
                 bestKernelMs: kernelTimes.length ? Math.min(...kernelTimes) : null,
+                phases: clock.phases,
             };
             return this.benchResult;
         } finally {
@@ -1072,21 +1105,46 @@ class ParallelSort {
 
 export const MEASURE_MAX_KEYS = RADIX_MAX_KEYS;   // 4,194,304 = the benchmark's largest N
 
-// One runBenchmark() of `algorithm` ('bitonic' | 'bitonic-shared' | 'radix') on n random keys of
-// dataType ('u32' | 'f32') on a compute-only ParallelSort: BENCH_RUNS sorts of the same input, one
-// readback, and a bit-for-bit comparison with TypedArray.prototype.sort. Resolves to runBenchmark's
-// result: { algorithm, n, padded, dataType, dispatches, cpuMs, readMs, mismatches, inversions, gpuTimes,
-// bestMs (wall, submit → done), timestamps, kernelTimes, bestKernelMs (GPU, null without timestamps) }.
-export async function measureSort(gpuDevice, { algorithm, n, dataType = 'u32' }) {
+// One runBenchmark() of `algorithm` ('bitonic' | 'bitonic-shared' | 'radix') on n keys of dataType
+// ('u32' | 'f32') on a compute-only ParallelSort: `runs` sorts of the same input (default 1: one
+// independent measurement for the Measure protocol), one readback, and a bit-for-bit comparison with
+// TypedArray.prototype.sort.
+//   keys      the input (Uint32Array for u32, Float32Array for f32); default: random keys
+//   expected  the CPU-sorted bit patterns of keys (Uint32Array); default: sorted here (and timed: cpuMs)
+//   sorter    a compute-only ParallelSort to reuse (its pipelines are compiled once, see computeSorter);
+//             default: a new one, whose construction counts as compile
+// Resolves to runBenchmark's result: { algorithm, n, padded, dataType, dispatches, cpuMs (null when
+// `expected` was given), readMs, mismatches, inversions, gpuTimes, bestMs (wall, submit → done),
+// timestamps, kernelTimes, bestKernelMs (GPU, null without timestamps) } plus wallMs and gpuMs (medians
+// over the runs) and phases { compile, upload, dispatch, readback } in wall ms (js/phase-clock.js):
+// compile = pipeline creation (only when no sorter was given) + this sort's buffers and bind groups;
+// upload = writeBuffer of the keys until the queue is idle; dispatch = submit → onSubmittedWorkDone
+// of each sort (the wall time); readback = copy, mapAsync and the copy out.
+export async function measureSort(gpuDevice, { algorithm, n, dataType = 'u32', keys = null, expected = null, runs = 1, sorter = null }) {
     if (!ALGORITHMS[algorithm]) throw new RangeError(`unknown algorithm ${algorithm}`);
     if (dataType !== 'u32' && dataType !== 'f32') throw new RangeError(`unknown key type ${dataType}`);
     if (!Number.isInteger(n) || n < 1 || n > MEASURE_MAX_KEYS) throw new RangeError(`N = ${n} is outside 1 … ${MEASURE_MAX_KEYS}`);
-    const sorter = new ParallelSort(gpuDevice.device ?? gpuDevice, null);
+    if (!Number.isInteger(runs) || runs < 1 || runs > MAX_BENCH_RUNS) throw new RangeError(`runs = ${runs} is outside 1 … ${MAX_BENCH_RUNS}`);
+    const clock = new PhaseClock();
+    const own = sorter === null;
+    const s = own ? clock.time('compile', () => computeSorter(gpuDevice)) : sorter;
     try {
-        return await sorter.runBenchmark(algorithm, n, dataType);
+        const r = await s.runBenchmark(algorithm, n, dataType, { input: keys, expected, runs, clock });
+        return { ...r, wallMs: medianOf(r.gpuTimes), gpuMs: r.kernelTimes.length ? medianOf(r.kernelTimes) : null, phases: clock.phases };
     } finally {
-        sorter.destroy();
+        if (own) s.destroy();
     }
+}
+
+// A ParallelSort without a canvas (compute pipelines only) for repeated measureSort calls; destroy() it
+export function computeSorter(gpuDevice) {
+    return new ParallelSort(gpuDevice.device ?? gpuDevice, null);
+}
+
+function medianOf(values) {
+    const v = [...values].sort((a, b) => a - b);
+    const h = (v.length - 1) / 2;
+    return (v[Math.floor(h)] + v[Math.ceil(h)]) / 2;
 }
 
 export async function initParallelSort(gpuDevice) {
