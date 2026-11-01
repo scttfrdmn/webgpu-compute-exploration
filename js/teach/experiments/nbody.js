@@ -214,6 +214,7 @@ export function interpretThetaError(rows, { n, preset } = {}) {
     const errAgrees = slopeAgrees(err, THETA_ORDER, THETA_ORDER_TOLERANCE);
     const workAgrees = rangeVerdict(work, ...THETA_WORK_RANGE);
     const claims = [{
+        key: 'theta-error-order',
         claim: 'Median force error vs θ (log-log slope)',
         predicted: `${THETA_ORDER}: error ∝ θ² (the quadrupole term of a node's monopole about its center of mass, l/d ≤ θ); `
             + `accepted ${THETA_ORDER} ± ${THETA_ORDER_TOLERANCE} for the θ³ term at large θ`,
@@ -225,6 +226,7 @@ export function interpretThetaError(rows, { n, preset } = {}) {
                     + '(an f32 floor near 1e-6, or a fault in the tree build or opening test).'
                     : 'Steeper than θ²: higher multipoles dominate, or the error at small θ is unusually low; check the p99 column too.',
     }, {
+        key: 'theta-work',
         claim: 'Interactions per body vs θ (log-log slope)',
         predicted: 'falls, exponent between −3 and 0: θ⁻³ cells per tree level in the large-N, uniform-density limit; '
             + 'flatter at these N, where the near field and the ~log N levels add a θ-independent part (CI, Plummer 4,096: −1.47)',
@@ -238,6 +240,7 @@ export function interpretThetaError(rows, { n, preset } = {}) {
     const ratios = medians ? rows.map(r => r.median / medians[THETAS.indexOf(r.theta)]).filter(v => Number.isFinite(v) && v > 0) : [];
     const within = ratios.every(v => v >= 1 / REPLICA_FACTOR && v <= REPLICA_FACTOR);
     claims.push({
+        key: 'replica-match',
         claim: 'Your GPU vs the float64 CPU replica (same bodies)',
         predicted: `GPU median / replica median = 1 at every θ, within × / ÷ ${REPLICA_FACTOR} (f32 arithmetic, tree-build order)`,
         measured: ratios.length ? `ratio ${f2(Math.min(...ratios))} … ${f2(Math.max(...ratios))} over ${ratios.length} θ value${ratios.length === 1 ? '' : 's'}`
@@ -409,6 +412,7 @@ export function interpretScaling(rows) {
     const bhAgrees = slopeAgrees(bhFit, BH_ORDER, BH_ORDER_TOLERANCE);
     const skipped = rows.filter(r => r.n <= BRUTE_MAX_N && typeof r.bruteWall !== 'number').map(r => count(r.n));
     const claims = [{
+        key: 'brute-n2',
         claim: `Brute-force time vs N (log-log slope, ${brute.label})`,
         predicted: `${BRUTE_ORDER}: N − 1 interactions for each of N bodies, O(N²) (± ${BRUTE_ORDER_TOLERANCE} for fixed costs)`,
         measured: slopeText(bruteFit),
@@ -421,6 +425,7 @@ export function interpretScaling(rows) {
         skipped.length ? `Brute force was skipped at N = ${skipped.join(', ')} to leave budget for the Barnes-Hut points.` : null]
             .filter(Boolean).join(' ') || null,
     }, {
+        key: 'bh-nlogn',
         claim: `Barnes-Hut time vs N (log-log slope, ${bh.label})`,
         predicted: `about N log N: ${f2(NLOGN_EFFECTIVE)} over N = 1,024 … 65,536; accepted ${f2(BH_ORDER - BH_ORDER_TOLERANCE)} … `
             + `${f2(BH_ORDER + BH_ORDER_TOLERANCE)}, because interactions per body still grow faster than log N here`,
@@ -436,6 +441,7 @@ export function interpretScaling(rows) {
     const work = fitRows(rows, 'n', 'interactions');
     const workAgrees = rangeVerdict(work, 0, 1);
     claims.push({
+        key: 'bh-interactions',
         claim: 'Barnes-Hut interactions per body vs N (log-log slope)',
         predicted: `between 0 and 1: grows, but slower than brute force's N − 1 (→ log N for large N, ${f2(NLOGN_EFFECTIVE - 1)} here; CI: 0.37)`,
         measured: slopeText(work),
@@ -469,6 +475,7 @@ export function interpretScaling(rows) {
             : ' The prediction is not tested inside the sweep; the extrapolation assumes both slopes hold beyond it.';
     }
     claims.push({
+        key: 'bh-crossover',
         claim: 'Crossover N (Barnes-Hut faster from here)',
         predicted: 'exists: O(N²) overtakes O(N log N) at some N (CI, software GPU, wall ms: between 8,192 and 16,384)',
         measured, agrees, note,
@@ -478,6 +485,7 @@ export function interpretScaling(rows) {
     const shareFit = fitRows(shares, 'n', 'treeShare');
     const shareAgrees = rangeVerdict(shareFit, -Infinity, 0);
     claims.push({
+        key: 'tree-share',
         claim: 'Tree-build share of Barnes-Hut GPU time vs N',
         predicted: 'falls with N: the build is O(N) plus about 30 fixed dispatches, the traversal O(N log N)',
         measured: shares.length >= 2 ? `${pct(shares[0].treeShare)} at ${at(shares[0].n)} → ${pct(shares.at(-1).treeShare)} at `
@@ -597,6 +605,7 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
     if (mode !== 'bh') {
         const agrees = slopeAgrees(fit, DRIFT_ORDER, 0);
         return [{
+            key: 'drift-order',
             claim: 'Max |ΔE/E₀| vs dt, exact forces (log-log slope = order)',
             predicted: `${DRIFT_ORDER}: leapfrog is second order and symplectic, so the energy error stays in a band ∝ dt²`,
             measured: slopeText(fit),
@@ -614,6 +623,7 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
     const floor = drifts.length ? summarize(drifts).median : null;
     const inRange = floor === null ? null : floor >= FLOOR_RANGE[0] && floor <= FLOOR_RANGE[1];
     return [{
+        key: 'drift-bh-flat',
         claim: 'Max |ΔE/E₀| vs dt, Barnes-Hut θ = 0.5 (log-log slope)',
         predicted: `0: dt-independent, set by the tree's force error (accepted ± ${FLOOR_SLOPE_TOLERANCE} for a residual dt² part)`,
         measured: slopeText(fit),
@@ -623,6 +633,7 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
                 : fit.slope > 0 ? 'The error still falls with dt: on this run the leapfrog error is not negligible against the tree error.'
                     : 'The error grows as dt shrinks: more steps accumulate more tree error, so the floor is not a fixed level here.',
     }, {
+        key: 'drift-bh-floor',
         claim: 'Size of the Barnes-Hut floor',
         predicted: `${sci1(FLOOR_RANGE[0])} … ${sci1(FLOOR_RANGE[1])}: of the order of the tree's relative potential error at θ = 0.5 `
             + '(≈ 4e-3 per body), partly averaged out; far above the exact-force error (≤ 7.4e-5)',

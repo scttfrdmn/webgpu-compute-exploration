@@ -124,6 +124,7 @@ function slopeClaim(rows, path, timing) {
     if (allFit.slope !== null) notes.push(`Over all ${allFit.n} sizes the slope is ${allFit.slope.toFixed(2)}.`);
     if (!fit.ci95) notes.push('At least 3 sizes are needed for an uncertainty; with fewer, this claim stays undecided.');
     return {
+        key: `${path}-n3`,
         claim: `${LABEL[path]}: time grows like n³`,
         predicted: `log-log slope 3 (2n³ flops; ±${SLOPE_TOLERANCE} for cache effects)`,
         measured,
@@ -274,6 +275,7 @@ const threeWay = {
         // Tiled vs naive at the largest n
         const big = largest(rows, 'naiveMs', 'tiledMs');
         claims.push({
+            key: 'tiling-speedup',
             claim: 'Tiling speeds the GPU kernel up',
             predicted: `tiled faster (speedup > 1): ${TILED_T}× fewer global loads (arithmetic intensity ${TILED_T / 4} vs 0.25 flop/byte); typically 2–10× on real GPUs`,
             measured: big ? `${rangeText(big, 'speedup', v => `${v.toFixed(2)}×`)} at n = ${big.n}` : 'no size with both kernels',
@@ -285,6 +287,7 @@ const threeWay = {
 
         // The naive kernel's implied load bandwidth: 2 loads of 4 bytes per multiply-add
         claims.push({
+            key: 'naive-memory-bound',
             claim: 'The naive kernel is bound by memory traffic, not arithmetic',
             predicted: 'naive GFLOPS ≤ 0.25 × the bandwidth that serves its loads (8 bytes per multiply-add); tiled ≤ 4 × bandwidth',
             measured: big ? `naive: ${gbs(8 * big.n ** 3 / big.naiveMs / 1e6)} GB/s of loads, tiled: ${gbs(8 * big.n ** 3 / TILED_T / big.tiledMs / 1e6)} GB/s of global loads, at n = ${big.n}` : 'no size with both kernels',
@@ -311,6 +314,7 @@ const threeWay = {
                 + 'Where the crossover falls depends on the GPU, the CPU and the browser; undecided when the spreads overlap.';
         }
         claims.push({
+            key: 'gpu-beats-cpu',
             claim: 'The GPU beats one CPU core from some n on',
             predicted: `yes: GPU time is ≈ a fixed launch cost until the GPU is full, CPU time grows like n³ from the start (CPU measured up to n = ${CPU_MAX_N})`,
             measured, agrees, note,

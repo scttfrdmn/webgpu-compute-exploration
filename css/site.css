@@ -315,3 +315,31 @@ footer {
 .verdict-agrees { color: var(--accent-2); }
 .verdict-disagrees { color: var(--error); }
 .verdict-undetermined { color: var(--muted); }
+
+/* ---- Reference investigations (index.html cards, learn.html pointer; js/teach/flagships.js) ---- */
+.flagships > .hint { max-width: 760px; }
+.flagship-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+.flagship {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; display: flex; flex-direction: column;
+}
+.flagship h3 { margin: 0 0 6px; font-size: 1.15rem; }
+.flagship p { margin: 0 0 10px; }
+.flagship-question { color: var(--text); }
+.flagship-protocol { color: var(--muted); font-size: 0.9rem; }
+.flagship-protocol strong, .flagship-label { color: var(--text); font-weight: 600; font-size: 0.9rem; }
+.flagship-label { margin-bottom: 2px; }
+.flagship-predictions { margin: 0 0 10px 18px; padding: 0; font-size: 0.9rem; }
+.flagship-caveat { margin-top: 0; }
+.flagship .flagship-links { margin-top: auto; margin-bottom: 0; }
+.flagship-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.flagship-links a {
+    text-decoration: none; padding: 3px 11px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 0.88rem; color: var(--text);
+}
+.flagship-links a:hover { border-color: var(--accent); color: var(--accent); }
+.flagship-links a.flagship-run { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.flagship-pointer { margin-top: 28px; max-width: 900px; }
+.flagship-pointer h2 { margin: 0 0 6px; font-size: 1.1rem; }
+.flagship-pointer-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.flagship-pointer-item .flagship-links { margin: 4px 0 0; }

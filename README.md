@@ -31,6 +31,18 @@ by example; tabs without content yet say so.
 
 - **Learning path** — [learn.html](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html) orders the examples into steps.
 
+### Reference investigations
+
+Three examples are worked up to a common standard and featured at the top of the landing page: **matrix
+multiplication** (does time grow like n³, and does tiling beat the naive kernel?), **N-body gravity (Barnes-Hut)**
+(does the force error grow like θ², and where does the tree overtake the O(N²) direct sum?) and **parallel sorting**
+(radix O(N) vs bitonic O(N log² N), and a crossover with the browser's CPU sort). Each states its question, sweeps it
+with a fixed protocol (warm-up, repeats, medians and interquartile ranges), verifies the GPU results against an
+independent CPU reference (float64 products and forces, a bit-exact CPU sort), and tests its predictions against your
+measurements. Results are for your device and browser, not a GPU ranking. The cards are data in
+`js/teach/flagships.js`, which cites each prediction by the key of the `interpret()` claim that tests it; the
+learning path links to the same three.
+
 ### Learning path
 
 `learn.html` puts the 25 examples in order for each audience, in two tracks: **GPU programming** (dispatch and

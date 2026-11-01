@@ -24,7 +24,9 @@
             <h1>WebGPU <span>Compute</span> Exploration</h1>
             <p>Twenty-five interactive examples of GPU computing with WebGPU compute shaders written in WGSL, from basic
             parallel operations to real-time physics simulations and ray-marched fractals. Each interactive example is
-            set up as you scroll to it and runs when you press <strong>Start</strong>.</p>
+            set up as you scroll to it and runs when you press <strong>Start</strong>. Three of them are worked up as
+            <a href="#reference-investigations">reference investigations</a>: a question, a measurement protocol, a
+            check against an independent reference, and predictions you can test on your own GPU.</p>
             <div class="hero-links">
                 <div id="gpu-status" class="status">Checking WebGPU support…</div>
                 <a href="learn.html">Learning path</a>
@@ -78,6 +80,19 @@
     </nav>
 
     <main class="page">
+    <section class="flagships" id="reference-investigations" aria-labelledby="reference-investigations-title">
+        <h2 class="group-title" id="reference-investigations-title">Reference investigations</h2>
+        <p class="hint">Three examples set the standard for the rest: each asks one question, sweeps it with a fixed
+        protocol (warm-up, repeats, medians and interquartile ranges), verifies the GPU's answers against an
+        independent CPU reference, and tests its predictions against what your GPU measures. Nothing runs until you
+        press Run on a Measure tab.</p>
+        <div id="flagship-cards" class="flagship-cards">
+            <noscript><p class="hint">The cards are built with JavaScript. The three investigations are
+            <a href="#matrix-multiplication">Matrix Multiplication</a>, <a href="#nbody">N-Body Gravity</a> and
+            <a href="#parallel-sort">Parallel Sorting</a>.</p></noscript>
+        </div>
+    </section>
+
     <h2 class="group-title">Compute basics</h2>
 
     <section class="example" id="vector-addition">

@@ -12,7 +12,8 @@
 //                emptyNote? }],                // shown when no series has a value (e.g. GPU ms without timestamps)
 //     baseline,                                  // optional text: what CI measured, for comparison
 //     verify?(rows, settings) → [{ metric, value, tolerance, reference, status: 'pass'|'fail'|'not-checked' }],
-//     interpret?(rows, settings) → [{ claim, predicted, measured, agrees: true|false|null, note? }],
+//     interpret?(rows, settings) → [{ key?, claim, predicted, measured, agrees: true|false|null, note? }],
+//                                                // key: a stable id for the claim (js/teach/flagships.js cites it)
 //     scope?: { shows: [string], doesNotShow: [string] },   // shown on the card before running
 //                                                // optional checks recorded with the result (see "Verification")
 //     async *run(ctx, settings) { ... yield row ... }   // one row per sweep step

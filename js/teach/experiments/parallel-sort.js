@@ -124,10 +124,10 @@ function slopeNote(agrees, fit, lo, hi) {
 
 function slopeClaims(rows) {
     const claims = [];
-    const one = (claim, key, lo, hi, form, extra = '') => {
+    const one = (id, claim, key, lo, hi, form, extra = '') => {
         const { ns, fit } = fitTail(rows, key);
         if (ns.length < 2) {
-            claims.push({ claim, predicted: form, measured: '—', agrees: null, note: slopeNote(null) });
+            claims.push({ key: id, claim, predicted: form, measured: '—', agrees: null, note: slopeNote(null) });
             return;
         }
         const pLo = lo(ns), pHi = hi(ns);
@@ -135,6 +135,7 @@ function slopeClaims(rows) {
         const agrees = tooWide ? null
             : pLo === pHi ? slopeAgrees(fit, pLo, SLOPE_TOLERANCE) : intervalAgrees(fit, pLo, pHi, SLOPE_TOLERANCE);
         claims.push({
+            key: id,
             claim,
             predicted: `${form}: slope ${pLo === pHi ? pLo.toFixed(2) : `${pLo.toFixed(2)} … ${pHi.toFixed(2)}`} over ${rangeText(ns)}${extra} (± ${SLOPE_TOLERANCE})`,
             measured: `${fmtFit(fit)} from ${timing(key)} medians at ${ns.length} sizes`,
@@ -143,12 +144,12 @@ function slopeClaims(rows) {
         });
     };
     const fixed = (model) => (ns) => predictedSlope(model, ns);
-    one('Bitonic sort (global): time vs N', timeKey(rows, 'bitonic'), fixed(MODELS.bitonic), fixed(MODELS.bitonic),
+    one('bitonic-slope', 'Bitonic sort (global): time vs N', timeKey(rows, 'bitonic'), fixed(MODELS.bitonic), fixed(MODELS.bitonic),
         'O(N log² N), the slope of N·log₂N(log₂N+1)/2');
-    one('Bitonic sort (workgroup memory): time vs N', timeKey(rows, 'shared'), fixed(MODELS.sharedCompute), fixed(MODELS.sharedTraffic),
+    one('shared-slope', 'Bitonic sort (workgroup memory): time vs N', timeKey(rows, 'shared'), fixed(MODELS.sharedCompute), fixed(MODELS.sharedTraffic),
         'O(N log² N) compare-exchanges, global traffic N × dispatches', ' (compute-bound … traffic-bound)');
-    one('Radix sort: time vs N', timeKey(rows, 'radix'), fixed(MODELS.radix), fixed(MODELS.radix), 'O(N · 8 passes)');
-    one('CPU sort (TypedArray.prototype.sort): time vs N', 'cpuMs', fixed(MODELS.cpu), fixed(MODELS.cpu), 'O(N log N), the slope of N·log₂N');
+    one('radix-slope', 'Radix sort: time vs N', timeKey(rows, 'radix'), fixed(MODELS.radix), fixed(MODELS.radix), 'O(N · 8 passes)');
+    one('cpu-slope', 'CPU sort (TypedArray.prototype.sort): time vs N', 'cpuMs', fixed(MODELS.cpu), fixed(MODELS.cpu), 'O(N log N), the slope of N·log₂N');
     return claims;
 }
 
@@ -189,6 +190,7 @@ function crossoverClaims(rows) {
             between: () => `between N = ${fmtN(c.below.n)} and ${fmtN(c.above.n)}${c.overlap ? ' (spreads overlap at the lower one)' : ''}: ${both(c.below)}; ${both(c.above)}`,
         }[c.kind]();
         return {
+            key: `crossover-${k}`,
             claim: `Crossover: ${NAME[a]} (wall) becomes faster than the CPU sort`,
             predicted: 'device-dependent, no universal N; "none in range" is a valid outcome',
             measured,
@@ -205,7 +207,7 @@ function rankingClaim(rows) {
     const note = 'Each adjacent pair counts as decided only when the interquartile ranges do not overlap. On the CPU-emulated GPU in CI '
         + 'the order is inverted (global bitonic fastest, radix slowest): there barriers are expensive and workgroup memory is ordinary cache.';
     const full = rows.filter(r => ALGORITHMS.every(a => num(r[`${KEY[a]}Wall`]))).sort((a, b) => a.n - b.n);
-    if (!full.length) return { claim, predicted, measured: '—', agrees: null, note };
+    if (!full.length) return { key: 'ranking', claim, predicted, measured: '—', agrees: null, note };
     const row = full[full.length - 1];
     const gpu = ALGORITHMS.every(a => num(row[`${KEY[a]}Gpu`]));
     const keyOf = (a) => `${KEY[a]}${gpu ? 'Gpu' : 'Wall'}`;
@@ -219,6 +221,7 @@ function rankingClaim(rows) {
         else decided = false;                              // spreads overlap
     }
     return {
+        key: 'ranking',
         claim: `${claim} (N = ${fmtN(row.n)}, ${gpu ? 'GPU timestamps' : 'wall clock'})`,
         predicted,
         measured: `${order.map(a => `${NAME[a]} ${withIqr(row, keyOf(a))}`).join(' < ')}`,
