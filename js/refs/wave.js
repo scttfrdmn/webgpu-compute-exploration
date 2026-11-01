@@ -18,3 +18,13 @@ export function energy(u0, u1, W, H, C2) {
     }
     return kin + C2 * pot;
 }
+
+// Von Neumann analysis of the undamped scheme u(n+1) = 2u(n) − u(n−1) + C²·L u(n) with the 5-point
+// Laplacian: a Fourier mode with symbol λ = −4(sin²(kx/2) + sin²(ky/2)) ∈ [−8, 0] has amplification
+// factors g with g² − (2 + C²λ)g + 1 = 0. Both roots have |g| = 1 while |2 + C²λ| ≤ 2; the worst mode
+// is the checkerboard (λ = −8), so the scheme is stable iff 8C² ≤ 4, i.e. C ≤ 1/√2. Returns the
+// largest |g| over all modes: 1 when stable, (b + √(b² − 4))/2 with b = 8C² − 2 beyond the limit.
+export function growthFactor(C) {
+    const b = 8 * C * C - 2;
+    return b <= 2 ? 1 : (b + Math.sqrt(b * b - 4)) / 2;
+}

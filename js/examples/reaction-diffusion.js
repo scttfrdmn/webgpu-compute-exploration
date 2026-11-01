@@ -11,9 +11,26 @@
 //   offset 40  simulate    u32        0 = only apply the brush -> Uint32 view [10]
 //   offset 44  palette     u32        color ramp index        -> Uint32 view [11]
 
+//
+// Compute-only use (the Measure tab, js/teach/experiments/reaction-diffusion.js, and test/gpu/): a
+// ReactionDiffusion with canvas = null creates no render pipeline, canvas context or mouse handlers and
+// never draws; loadCells() fills it. measureSteps() runs Gray-Scott steps with the shipped pipeline
+// (the dispatches of frame()) and reads the cells back. The model constants below are spliced into
+// the WGSL, so js/refs/reaction-diffusion.js stepReference can use the same values in the browser.
+
 import { GpuTimer } from '../gpu-timer.js';
 
 const PARAMS_SIZE = 48;
+
+// Model constants (the WGSL gets them from here): diffusion rates, time step and the 3x3 Laplacian
+// weights (center -1, edge neighbors W_EDGE, corner neighbors W_CORNER; they sum to zero)
+export const DU = 1.0;
+export const DV = 0.5;
+export const DT = 1.0;
+export const W_EDGE = 0.2;
+export const W_CORNER = 0.05;
+// An f32 literal as written in WGSL source (1 -> "1.0", 0.05 -> "0.05")
+const wgslF32 = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
 const paramsStruct = `
 struct Params {
@@ -35,9 +52,9 @@ const computeShader = paramsStruct + `
 @group(0) @binding(1) var<storage, read_write> cellsOut: array<vec2<f32>>;
 @group(0) @binding(2) var<uniform> params: Params;
 
-const DU: f32 = 1.0;   // diffusion rate of U
-const DV: f32 = 0.5;   // diffusion rate of V (slower, which is what makes patterns form)
-const DT: f32 = 1.0;   // time step
+const DU: f32 = ${wgslF32(DU)};   // diffusion rate of U
+const DV: f32 = ${wgslF32(DV)};   // diffusion rate of V (slower, which is what makes patterns form)
+const DT: f32 = ${wgslF32(DT)};   // time step
 
 // Toroidal wrap: the grid has no edges
 fn cellAt(x: i32, y: i32) -> vec2<f32> {
@@ -78,7 +95,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let edges = cellAt(x - 1, y) + cellAt(x + 1, y) + cellAt(x, y - 1) + cellAt(x, y + 1);
         let corners = cellAt(x - 1, y - 1) + cellAt(x + 1, y - 1)
                     + cellAt(x - 1, y + 1) + cellAt(x + 1, y + 1);
-        let lap = -c + 0.2 * edges + 0.05 * corners;
+        let lap = -c + ${wgslF32(W_EDGE)} * edges + ${wgslF32(W_CORNER)} * corners;
 
         let u = c.x;
         let v = c.y;
@@ -174,6 +191,43 @@ const PRESETS = {
 const PALETTES = ['Ocean', 'Magma', 'Mono'];
 const MAX_SUBSTEPS = 32;
 
+// Small deterministic generator (mulberry32) for reproducible seeds in the Measure tab and tests
+export function seededRandom(seed) {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = Math.imul(a ^ (a >>> 15), a | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+// The initial state of seed(): U = 1, V = 0, plus max(4, cells / 10,000) random 10x10 patches of
+// U = 0.5, V = 0.25 ± 0.01 (toroidally wrapped). Returns (U, V) pairs as a Float32Array.
+export function seedCells(width, height, random = Math.random) {
+    const cellCount = width * height;
+    const data = new Float32Array(cellCount * 2);
+    for (let i = 0; i < cellCount; i++) {
+        data[i * 2] = 1.0;
+    }
+    const patches = Math.max(4, Math.round(cellCount / 10000));
+    const half = 5;
+    for (let p = 0; p < patches; p++) {
+        const cx = Math.floor(random() * width);
+        const cy = Math.floor(random() * height);
+        for (let dy = -half; dy < half; dy++) {
+            for (let dx = -half; dx < half; dx++) {
+                const x = (cx + dx + width) % width;
+                const y = (cy + dy + height) % height;
+                const i = y * width + x;
+                data[i * 2] = 0.5;
+                data[i * 2 + 1] = 0.25 + (random() - 0.5) * 0.02;
+            }
+        }
+    }
+    return data;
+}
+
 class ReactionDiffusion {
     constructor(device, canvas, width, height) {
         this.device = device;
@@ -208,16 +262,18 @@ class ReactionDiffusion {
 
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {   // canvas = null: compute only (see the top of the file)
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     setupBuffers() {
         const bufferSize = this.cellCount * 8; // vec2<f32> per cell
         this.cellBuffers = [0, 1].map(() => this.device.createBuffer({
             size: bufferSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC   // COPY_SRC: measureSteps() readback
         }));
 
         this.paramsBuffer = this.device.createBuffer({
@@ -353,29 +409,15 @@ class ReactionDiffusion {
 
     // Reset: U = 1, V = 0 everywhere, plus a few random square patches of U = 0.5, V = 0.25
     seed() {
-        const data = new Float32Array(this.cellCount * 2);
-        for (let i = 0; i < this.cellCount; i++) {
-            data[i * 2] = 1.0;
-        }
-        const patches = Math.max(4, Math.round(this.cellCount / 10000));
-        const half = 5;
-        for (let p = 0; p < patches; p++) {
-            const cx = Math.floor(Math.random() * this.width);
-            const cy = Math.floor(Math.random() * this.height);
-            for (let dy = -half; dy < half; dy++) {
-                for (let dx = -half; dx < half; dx++) {
-                    const x = (cx + dx + this.width) % this.width;
-                    const y = (cy + dy + this.height) % this.height;
-                    const i = y * this.width + x;
-                    data[i * 2] = 0.5;
-                    data[i * 2 + 1] = 0.25 + (Math.random() - 0.5) * 0.02;
-                }
-            }
-        }
+        this.loadCells(seedCells(this.width, this.height, Math.random));
+        this.render();
+    }
+
+    // Uploads (U, V) pairs (Float32Array of 2 · width · height) as the current state
+    loadCells(data) {
         this.currentBuffer = 0;
         this.device.queue.writeBuffer(this.cellBuffers[0], 0, data);
         this.steps = 0;
-        this.render();
     }
 
     // Runs `substeps` simulation steps (or one brush-only pass if substeps is 0), then draws
@@ -410,6 +452,50 @@ class ReactionDiffusion {
         this.frame(this.substeps);
     }
 
+    // Compute only: `count` (≤ MAX_SUBSTEPS) Gray-Scott steps in one timed compute pass, the
+    // dispatches of frame() without the brush or the draw. Resolves when the GPU is done to
+    // { gpuMs (null without timestamp-query), wallMs }, wall = submit → onSubmittedWorkDone.
+    async timeSteps(count) {
+        const passes = Math.min(Math.max(count, 1), MAX_SUBSTEPS);
+        this.writeParams(true, false);
+        this.gpuTimer.beginFrame();
+        const commandEncoder = this.device.createCommandEncoder();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('sim'));
+        computePass.setPipeline(this.computePipeline);
+        const wgX = Math.ceil(this.width / 8);
+        const wgY = Math.ceil(this.height / 8);
+        for (let i = 0; i < passes; i++) {
+            computePass.setBindGroup(0, this.computeBindGroups[this.currentBuffer]);
+            computePass.dispatchWorkgroups(wgX, wgY);
+            this.currentBuffer = 1 - this.currentBuffer;
+        }
+        computePass.end();
+        this.gpuTimer.resolve(commandEncoder);
+        const t0 = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        const timing = this.gpuTimer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        this.steps += passes;
+        return { gpuMs: result ? result.total : null, wallMs };
+    }
+
+    // Compute only: the current (U, V) pairs, copied into a temporary MAP_READ buffer
+    async readCells() {
+        const size = this.cellCount * 8;
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.cellBuffers[this.currentBuffer], 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Float32Array(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
+    }
+
     // timed: add timestamp writes (only frame() resolves the timer)
     encodeRender(commandEncoder, timed = false) {
         const desc = {
@@ -428,6 +514,7 @@ class ReactionDiffusion {
     }
 
     render() {
+        if (!this.canvas) return;
         this.writeParams(false, false);
         const commandEncoder = this.device.createCommandEncoder();
         this.encodeRender(commandEncoder);
@@ -468,9 +555,11 @@ class ReactionDiffusion {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        this.canvas.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            this.canvas.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+        }
         this.cellBuffers.forEach(b => b.destroy());
         this.paramsBuffer.destroy();
     }
@@ -590,7 +679,56 @@ export async function initReactionDiffusion(gpuDevice) {
     return simulation;
 }
 
-export { ReactionDiffusion, PRESETS };   // for test/reaction-diffusion.test.mjs
+export { ReactionDiffusion, PRESETS, MAX_SUBSTEPS };   // for test/reaction-diffusion.test.mjs
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/reaction-diffusion.js) and test/gpu/ ----
+
+export const MAX_MEASURE_SIDE = 2048;     // grid width and height per measureSteps call
+export const MAX_MEASURE_STEPS = 4096;    // Gray-Scott steps per call (submitted MAX_SUBSTEPS at a time)
+
+// `steps` Gray-Scott steps of a width x height torus with feed F and kill k, from `cells` ((U, V)
+// pairs) or else seedCells() with seededRandom(seed). `warmup` untimed steps run first and are not
+// counted. The state is read back after each step count in `readAt` (counted from 0, ≤ steps);
+// between(), if given, is awaited after every submit (the Measure runner passes ctx.step there, which
+// throws to cancel). Resolves to { width, height, steps, gpuMs, wallMs, gpuMsPerStep, wallMsPerStep,
+// samples: [{ step, cells }] } (GPU times null without timestamp-query; wall = submit → done, summed).
+export async function measureSteps(gpuDevice, { width, height, cells = null, seed = 1, feed = PRESETS.coral.feed,
+    kill = PRESETS.coral.kill, steps, warmup = 0, readAt = [], between = null }) {
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 8 || v > MAX_MEASURE_SIDE) throw new RangeError(`${name} = ${v} is outside 8 … ${MAX_MEASURE_SIDE}`);
+    }
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) {
+        throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    }
+    if (!Number.isInteger(warmup) || warmup < 0 || warmup > MAX_SUBSTEPS) throw new RangeError(`warmup = ${warmup} is outside 0 … ${MAX_SUBSTEPS}`);
+    if (cells && cells.length !== 2 * width * height) throw new RangeError('cells must hold 2 · width · height floats');
+    if (!(feed >= 0 && feed <= 0.1) || !(kill >= 0 && kill <= 0.1)) throw new RangeError('feed and kill must be in 0 … 0.1');
+    const marks = [...new Set(readAt)].filter(k => Number.isInteger(k) && k >= 0 && k <= steps).sort((a, b) => a - b);
+    const sim = new ReactionDiffusion(gpuDevice.device ?? gpuDevice, null, width, height);
+    Object.assign(sim, { feed, kill, preset: null });
+    try {
+        sim.loadCells(cells ?? seedCells(width, height, seededRandom(seed)));
+        if (warmup > 0) await sim.timeSteps(warmup);
+        const samples = [];
+        let done = 0, gpuMs = 0, wallMs = 0, timed = true;
+        for (const target of [...marks, steps]) {
+            while (done < target) {
+                const r = await sim.timeSteps(Math.min(target - done, MAX_SUBSTEPS));
+                done += Math.min(target - done, MAX_SUBSTEPS);
+                wallMs += r.wallMs;
+                if (r.gpuMs === null) timed = false; else gpuMs += r.gpuMs;
+                if (between) await between();
+            }
+            if (marks.includes(target) && !samples.some(s => s.step === target)) samples.push({ step: target, cells: await sim.readCells() });
+        }
+        return {
+            width, height, steps, wallMs, gpuMs: timed ? gpuMs : null,
+            wallMsPerStep: wallMs / steps, gpuMsPerStep: timed ? gpuMs / steps : null, samples,
+        };
+    } finally {
+        sim.destroy();
+    }
+}
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

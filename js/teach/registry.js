@@ -4,12 +4,22 @@
 
 // Examples with an Understand page at content/understand/<id>.md
 export const UNDERSTAND = new Set([
+    'dla',
+    'falling-sand',
     'nbody',
+    'noise',
+    'reaction-diffusion',
+    'wave-equation',
 ]);
 
 // Examples with experiments at js/teach/experiments/<id>.js (default export: array of experiments)
 export const MEASURE = new Set([
+    'dla',
+    'falling-sand',
     'nbody',
+    'noise',
+    'reaction-diffusion',
+    'wave-equation',
 ]);
 
 export function understandPath(id) {

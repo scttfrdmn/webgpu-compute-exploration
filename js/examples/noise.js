@@ -15,11 +15,23 @@
 //   offset 44  noiseType     u32        0 = Perlin, 1 = simplex               -> Uint32 view [11]
 //   offset 48  ridged        u32        1 = ridged fBm                        -> Uint32 view [12]
 //   offset 52  colorMode     u32        0 terrain, 1 clouds, 2 marble, 3 gray -> Uint32 view [13]
+//
+// Compute-only use (the Measure tab, js/teach/experiments/noise.js, and test/gpu/): a NoiseField with
+// canvas = null (and an explicit width and height) creates no render pipeline, canvas context or mouse
+// handlers and never draws. measureNoise() runs cs_main with the shipped pipeline and reads the field
+// back. SIMPLEX_SCALE and SIMPLEX_FALLOFF are spliced into the WGSL, so js/refs/noise.js simplexRef can
+// use the same values in the browser.
 
 import { GpuTimer } from '../gpu-timer.js';
 
 const PARAMS_SIZE = 56;
 const MAX_OCTAVES = 8;
+// Simplex noise: output scale (maps the corner sum to about [-1, 1], measured on the CPU) and the
+// squared kernel radius of each corner's (r² − |d|²)⁴ falloff (0.5 reaches the opposite face exactly)
+export const SIMPLEX_SCALE = 72.0;
+export const SIMPLEX_FALLOFF = 0.5;
+// An f32 literal as written in WGSL source (72 -> "72.0", 0.5 -> "0.5")
+const wgslF32 = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
 
 const paramsStruct = `
 struct Params {
@@ -106,7 +118,7 @@ fn perlin3(p: vec3<f32>) -> f32 {
 // sqrt(0.5) reaches exactly to the opposite face of each simplex, so the sum has no seams
 // (Gustavson's 0.6 leaves small discontinuities in 3D).
 fn simplexCorner(h: u32, d: vec3<f32>) -> f32 {
-    let t = 0.5 - dot(d, d);
+    let t = ${wgslF32(SIMPLEX_FALLOFF)} - dot(d, d);
     if (t <= 0.0) {
         return 0.0;
     }
@@ -119,7 +131,7 @@ fn simplexCorner(h: u32, d: vec3<f32>) -> f32 {
 // ranking the offset's components, and sum 4 corner contributions instead of 8.
 const F3: f32 = 1.0 / 3.0;   // skew factor (sqrt(n + 1) - 1) / n for n = 3
 const G3: f32 = 1.0 / 6.0;   // unskew factor (1 - 1 / sqrt(n + 1)) / n
-const SIMPLEX_SCALE: f32 = 72.0;  // maps the sum to about [-1, 1] (measured on the CPU)
+const SIMPLEX_SCALE: f32 = ${wgslF32(SIMPLEX_SCALE)};  // maps the sum to about [-1, 1] (measured on the CPU)
 
 fn simplex3(p: vec3<f32>) -> f32 {
     let s = (p.x + p.y + p.z) * F3;
@@ -339,12 +351,13 @@ const PRESETS = {
 const TIME_SPEED = 0.15;   // noise units of the time axis per second
 
 class NoiseField {
-    constructor(device, canvas) {
+    // canvas = null: compute only (see the top of the file), with the field size from `size`
+    constructor(device, canvas, size = {}) {
         this.device = device;
         this.gpuTimer = new GpuTimer(device, { maxPasses: 2 });
         this.canvas = canvas;
-        this.width = canvas.width;
-        this.height = canvas.height;
+        this.width = canvas ? canvas.width : size.width;
+        this.height = canvas ? canvas.height : size.height;
         this.running = false;
         this.destroyed = false;
 
@@ -364,9 +377,11 @@ class NoiseField {
 
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     // Copies a preset's noise and color settings (not the view)
@@ -385,7 +400,7 @@ class NoiseField {
     setupBuffers() {
         this.fieldBuffer = this.device.createBuffer({
             size: this.width * this.height * 4, // f32 per pixel
-            usage: GPUBufferUsage.STORAGE
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC   // COPY_SRC: measureNoise() readback
         });
         this.paramsBuffer = this.device.createBuffer({
             size: PARAMS_SIZE,
@@ -560,6 +575,42 @@ class NoiseField {
         this.gpuTimer.read();
     }
 
+    // Compute only: one timed compute pass over the field (the dispatch of frame(), no draw). Resolves
+    // when the GPU is done to { gpuMs (null without timestamp-query), wallMs }, wall = submit → done.
+    async timeField() {
+        this.writeParams();
+        this.gpuTimer.beginFrame();
+        const commandEncoder = this.device.createCommandEncoder();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('noise'));
+        computePass.setPipeline(this.computePipeline);
+        computePass.setBindGroup(0, this.computeBindGroup);
+        computePass.dispatchWorkgroups(Math.ceil(this.width / 8), Math.ceil(this.height / 8));
+        computePass.end();
+        this.gpuTimer.resolve(commandEncoder);
+        const t0 = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        const timing = this.gpuTimer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        return { gpuMs: result ? result.total : null, wallMs };
+    }
+
+    // Compute only: the field (one f32 per pixel, row-major), copied into a temporary MAP_READ buffer
+    async readField() {
+        const size = this.width * this.height * 4;
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(this.fieldBuffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Float32Array(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
+    }
+
     // Noise evaluations per pixel: one fBm, or three with domain warping
     noiseCallsPerPixel() {
         return this.octaves * (this.warp > 0 ? 3 : 1);
@@ -603,10 +654,12 @@ class NoiseField {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        window.removeEventListener('mousemove', this.onMouseMove);
-        window.removeEventListener('mouseup', this.onMouseUp);
-        this.canvas.removeEventListener('wheel', this.onWheel);
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            window.removeEventListener('mousemove', this.onMouseMove);
+            window.removeEventListener('mouseup', this.onMouseUp);
+            this.canvas.removeEventListener('wheel', this.onWheel);
+        }
         this.fieldBuffer.destroy();
         this.paramsBuffer.destroy();
     }
@@ -741,7 +794,45 @@ export async function initNoise(gpuDevice) {
     return noise;
 }
 
-export { NoiseField, PRESETS };   // for test/noise.test.mjs
+export { NoiseField, PRESETS, MAX_OCTAVES };   // for test/noise.test.mjs
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/noise.js) and test/gpu/ ----
+
+export const MAX_MEASURE_SIDE = 2048;    // field width and height per measureNoise call
+export const MAX_MEASURE_REPEATS = 10;   // timed evaluations of the field per call
+
+// The field of a width x height view (by default one world unit tall, centered on the origin, as after
+// Reset view) with the given noise settings: `warmup` untimed and `repeats` timed compute passes.
+// Resolves to { width, height, gpuMs, wallMs (medians), evaluations (noise calls per pass), field? }
+// with the field (Float32Array, row-major) read back when readback is true.
+export async function measureNoise(gpuDevice, { width, height, noiseType = 0, frequency = 2.5, octaves = 4,
+    lacunarity = 2.0, gain = 0.5, warp = 0, ridged = false, time = 0, center = [0, 0], unitsPerPixel = null,
+    warmup = 1, repeats = 1, readback = false }) {
+    for (const [name, v] of [['width', width], ['height', height]]) {
+        if (!Number.isInteger(v) || v < 8 || v > MAX_MEASURE_SIDE) throw new RangeError(`${name} = ${v} is outside 8 … ${MAX_MEASURE_SIDE}`);
+    }
+    if (!Number.isInteger(octaves) || octaves < 1 || octaves > MAX_OCTAVES) throw new RangeError(`octaves = ${octaves} is outside 1 … ${MAX_OCTAVES}`);
+    if (noiseType !== 0 && noiseType !== 1) throw new RangeError(`noiseType = ${noiseType} is not 0 (Perlin) or 1 (simplex)`);
+    if (!(frequency > 0 && frequency <= 64) || !(warp >= 0 && warp <= 4)) throw new RangeError('frequency or warp out of range');
+    const field = new NoiseField(gpuDevice.device ?? gpuDevice, null, { width, height });
+    try {
+        Object.assign(field, { noiseType, frequency, octaves, lacunarity, gain, warp, ridged, time, colorMode: 3,
+            center: center.slice(), unitsPerPixel: unitsPerPixel ?? 1 / height });
+        for (let r = 0; r < Math.min(warmup, MAX_MEASURE_REPEATS); r++) await field.timeField();
+        const runs = [];
+        for (let r = 0; r < Math.min(Math.max(repeats, 1), MAX_MEASURE_REPEATS); r++) runs.push(await field.timeField());
+        const median = (values) => {
+            const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((a, b) => a - b);
+            return v.length === values.length && v.length ? v[v.length >> 1] : null;
+        };
+        const result = { width, height, gpuMs: median(runs.map(r => r.gpuMs)), wallMs: median(runs.map(r => r.wallMs)),
+            evaluations: width * height * field.noiseCallsPerPixel() };
+        if (readback) result.field = await field.readField();
+        return result;
+    } finally {
+        field.destroy();
+    }
+}
 
 // Every WGSL module this example compiles, exactly as passed to createShaderModule.
 // tools/validate-wgsl.mjs validates these in CI.

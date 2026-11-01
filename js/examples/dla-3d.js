@@ -1,5 +1,12 @@
 // 3D Diffusion Limited Aggregation
 // Particles perform random walks in 3D space until they stick to the aggregate structure
+//
+// Compute-only use (the Measure tab, js/teach/experiments/dla.js, and test/gpu/): a DLA3D with
+// canvas = null creates no render pipeline, depth texture or mouse handlers and never draws.
+// measureDLA() seeds walkers deterministically, runs the shipped walk/stick pipeline (the dispatches of
+// step()) and reads the walkers and the grid back, so the aggregate can be analysed on the CPU.
+
+import { GpuTimer } from '../gpu-timer.js';
 
 const PARTICLE_UPDATE_SHADER = `
 struct Particle {
@@ -350,12 +357,12 @@ class DLA3D {
         this.camera.target = [gridSize / 2, gridSize / 2, gridSize / 2];
         this.camera.distance = gridSize * 1.5;
 
-        this.setupMouseControls();
+        if (canvas) this.setupMouseControls();   // canvas = null: compute only (see the top of the file)
         this.initializeParticles();
         this.initializeGrid();
         this.setupBuffers();
         this.setupComputePipeline();
-        this.setupRenderPipeline();
+        if (canvas) this.setupRenderPipeline();
     }
 
     setupMouseControls() {
@@ -395,7 +402,8 @@ class DLA3D {
         });
     }
 
-    initializeParticles() {
+    // random: a [0, 1) generator (deterministic ones are used by measureDLA and the tests)
+    initializeParticles(random = Math.random) {
         // position(3) + rngState(1, u32 via a Uint32Array view; nonzero = still walking)
         this.particles = new Float32Array(this.numParticles * 4);
         const particlesU32 = new Uint32Array(this.particles.buffer);
@@ -404,13 +412,13 @@ class DLA3D {
         const spawnRadius = this.gridSize * 0.45;
 
         for (let i = 0; i < this.numParticles; i++) {
-            const theta = Math.random() * Math.PI * 2;
-            const phi = Math.random() * Math.PI;
+            const theta = random() * Math.PI * 2;
+            const phi = random() * Math.PI;
 
             this.particles[i * 4 + 0] = center + spawnRadius * Math.sin(phi) * Math.cos(theta);
             this.particles[i * 4 + 1] = center + spawnRadius * Math.sin(phi) * Math.sin(theta);
             this.particles[i * 4 + 2] = center + spawnRadius * Math.cos(phi);
-            particlesU32[i * 4 + 3] = 1 + Math.floor(Math.random() * 0xFFFFFFFE); // rngState
+            particlesU32[i * 4 + 3] = 1 + Math.floor(random() * 0xFFFFFFFE); // rngState
         }
     }
 
@@ -465,7 +473,7 @@ class DLA3D {
     setupBuffers() {
         this.particleBuffer = this.device.createBuffer({
             size: this.particles.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,   // COPY_SRC: measureDLA() readback
             mappedAtCreation: true
         });
         new Float32Array(this.particleBuffer.getMappedRange()).set(this.particles);
@@ -473,7 +481,7 @@ class DLA3D {
 
         this.gridBuffer = this.device.createBuffer({
             size: this.grid.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
             mappedAtCreation: true
         });
         new Uint32Array(this.gridBuffer.getMappedRange()).set(this.grid);
@@ -617,6 +625,47 @@ class DLA3D {
         this.device.queue.submit([commandEncoder.finish()]);
     }
 
+    // Compute only: `count` (≤ MAX_STEPS_PER_SUBMIT) walk steps for every walker in one timed compute
+    // pass, the dispatches of step(). Resolves when the GPU is done to { gpuMs (null without
+    // timestamp-query), wallMs }, wall = submit → onSubmittedWorkDone.
+    async timeSteps(count) {
+        const passes = Math.min(Math.max(count, 1), MAX_STEPS_PER_SUBMIT);
+        if (!this.gpuTimer) this.gpuTimer = new GpuTimer(this.device, { maxPasses: 1 });
+        this.time += 0.016;
+        this.updateParams();
+        this.gpuTimer.beginFrame();
+        const commandEncoder = this.device.createCommandEncoder();
+        const computePass = commandEncoder.beginComputePass(this.gpuTimer.computePassDescriptor('walk'));
+        computePass.setPipeline(this.computePipeline);
+        computePass.setBindGroup(0, this.computeBindGroup);
+        for (let i = 0; i < passes; i++) {
+            computePass.dispatchWorkgroups(Math.ceil(this.numParticles / 64));
+        }
+        computePass.end();
+        this.gpuTimer.resolve(commandEncoder);
+        const t0 = performance.now();
+        this.device.queue.submit([commandEncoder.finish()]);
+        const timing = this.gpuTimer.read();
+        await this.device.queue.onSubmittedWorkDone();
+        const wallMs = performance.now() - t0;
+        const result = await timing;
+        return { gpuMs: result ? result.total : null, wallMs };
+    }
+
+    // Compute only: copies `size` bytes of a storage buffer into a temporary MAP_READ buffer (as u32)
+    async readBack(buffer, size) {
+        const staging = this.device.createBuffer({ size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = this.device.createCommandEncoder();
+        encoder.copyBufferToBuffer(buffer, 0, staging, 0, size);
+        this.device.queue.submit([encoder.finish()]);
+        try {
+            await staging.mapAsync(GPUMapMode.READ);
+            return new Uint32Array(staging.getMappedRange().slice(0));
+        } finally {
+            staging.destroy();
+        }
+    }
+
     render() {
         this.updateUniforms();
 
@@ -681,7 +730,8 @@ class DLA3D {
         this.paramsBuffer.destroy();
         this.uniformBuffer.destroy();
         this.gridSizeBuffer.destroy();
-        this.depthTexture.destroy();
+        this.depthTexture?.destroy();
+        this.gpuTimer?.destroy();
     }
 }
 
@@ -780,3 +830,93 @@ export function wgslModules() {
 
 // Exported for the CPU tests in test/ (no behavior change)
 export { Mat4, Camera, DLA3D };
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/dla.js) and test/gpu/ ----
+
+export const MAX_STEPS_PER_SUBMIT = 50;      // the Explore slider's maximum walk steps per frame
+export const MAX_MEASURE_GRID = 128;         // grid side per measureDLA call (8 MB of u32 cells)
+export const MAX_MEASURE_WALKERS = 262144;
+export const MAX_MEASURE_STEPS = 40000;      // walk steps per call
+
+// Small deterministic generator (mulberry32) for reproducible walkers
+export function seededRandom(seed) {
+    let a = seed >>> 0;
+    return () => {
+        a = (a + 0x6d2b79f5) >>> 0;
+        let t = Math.imul(a ^ (a >>> 15), a | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+// Grows an aggregate from `seedType` with `walkers` random walkers (spawned from seededRandom(rngSeed))
+// and the given stickiness, for at most `steps` walk steps, `stepsPerSubmit` per command buffer;
+// `warmup` untimed steps run first and are not counted. Every `checkEvery` steps (a multiple of
+// stepsPerSubmit; 0 = only at the end) the walkers are read back (16 bytes each) and the stuck ones
+// counted; the run stops early once a fraction `stopAt` of them has stuck. between(), if given, is
+// awaited after every submit (the Measure runner passes ctx.step there, which throws to cancel).
+// Resolves to { gridSize, walkers, stickiness, steps (done), stuck, progress: [{ step, stuck }],
+// seedCells, grid (Uint32Array of gridSize³ cells if readGrid, else null), gpuMs, wallMs, gpuMsPerStep,
+// wallMsPerStep } (GPU times null without timestamp-query; wall = submit → done, summed).
+export async function measureDLA(gpuDevice, { gridSize = 64, walkers = 5000, stickiness = 0.5, seedType = 'center',
+    rngSeed = 1, steps, stepsPerSubmit = MAX_STEPS_PER_SUBMIT, warmup = 0, checkEvery = 0, stopAt = 1, readGrid = true,
+    between = null }) {
+    if (!Number.isInteger(gridSize) || gridSize < 16 || gridSize > MAX_MEASURE_GRID) {
+        throw new RangeError(`gridSize = ${gridSize} is outside 16 … ${MAX_MEASURE_GRID}`);
+    }
+    if (!Number.isInteger(walkers) || walkers < 1 || walkers > MAX_MEASURE_WALKERS) {
+        throw new RangeError(`walkers = ${walkers} is outside 1 … ${MAX_MEASURE_WALKERS}`);
+    }
+    if (!Number.isInteger(steps) || steps < 1 || steps > MAX_MEASURE_STEPS) {
+        throw new RangeError(`steps = ${steps} is outside 1 … ${MAX_MEASURE_STEPS}`);
+    }
+    if (!Number.isInteger(stepsPerSubmit) || stepsPerSubmit < 1 || stepsPerSubmit > MAX_STEPS_PER_SUBMIT) {
+        throw new RangeError(`stepsPerSubmit = ${stepsPerSubmit} is outside 1 … ${MAX_STEPS_PER_SUBMIT}`);
+    }
+    if (!Number.isInteger(warmup) || warmup < 0 || warmup > MAX_STEPS_PER_SUBMIT) {
+        throw new RangeError(`warmup = ${warmup} is outside 0 … ${MAX_STEPS_PER_SUBMIT}`);
+    }
+    if (!(stickiness > 0 && stickiness <= 1)) throw new RangeError(`stickiness = ${stickiness} is outside (0, 1]`);
+    if (!['center', 'line', 'circle', 'multiple'].includes(seedType)) throw new RangeError(`unknown seed ${seedType}`);
+    const sim = new DLA3D(gpuDevice.device ?? gpuDevice, null, gridSize, walkers);
+    try {
+        sim.stickiness = stickiness;
+        sim.initializeParticles(seededRandom(rngSeed));
+        sim.initializeGrid(seedType);
+        sim.device.queue.writeBuffer(sim.particleBuffer, 0, sim.particles);
+        sim.device.queue.writeBuffer(sim.gridBuffer, 0, sim.grid);
+        if (warmup > 0) await sim.timeSteps(warmup);
+        const countStuck = async () => {
+            const p = await sim.readBack(sim.particleBuffer, 16 * walkers);
+            let n = 0;
+            for (let i = 0; i < walkers; i++) if (p[4 * i + 3] === 0) n++;
+            return n;
+        };
+        const progress = [];
+        let done = 0, gpuMs = 0, wallMs = 0, timed = true, stuck = null;
+        while (done < steps) {
+            const count = Math.min(stepsPerSubmit, steps - done);
+            const r = await sim.timeSteps(count);
+            done += count;
+            wallMs += r.wallMs;
+            if (r.gpuMs === null) timed = false; else gpuMs += r.gpuMs;
+            if (between) await between();
+            if (checkEvery > 0 && done % checkEvery === 0) {
+                stuck = await countStuck();
+                progress.push({ step: done, stuck });
+                if (stuck >= stopAt * walkers) break;
+            }
+        }
+        if (!progress.length || progress[progress.length - 1].step !== done) {
+            stuck = await countStuck();
+            progress.push({ step: done, stuck });
+        }
+        return {
+            gridSize, walkers, stickiness, steps: done, stuck, progress, seedCells: sim.aggregatedCount,
+            grid: readGrid ? await sim.readBack(sim.gridBuffer, 4 * gridSize ** 3) : null,
+            wallMs, gpuMs: timed ? gpuMs : null, wallMsPerStep: wallMs / done, gpuMsPerStep: timed ? gpuMs / done : null,
+        };
+    } finally {
+        sim.destroy();
+    }
+}
