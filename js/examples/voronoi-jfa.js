@@ -292,6 +292,32 @@ const LAYOUTS = {
 
 // Step sizes for one JFA run: N/2, N/4, ..., 1 with N the next power of two ≥ max(width, height),
 // plus one more step-1 pass for JFA+1
+// The seed pass stores one seed index per pixel, so two seeds in the same pixel would lose one seed's
+// whole cell. Clamp points into the grid and move any collision to the nearest free pixel (searching
+// outward in rings), which keeps the layout's look while giving every seed its own pixel.
+export function distinctPixels(points, w, h) {
+    const taken = new Set();
+    const out = [];
+    for (const [px, py] of points) {
+        let x = Math.min(Math.max(px, 0), w - 0.01), y = Math.min(Math.max(py, 0), h - 0.01);
+        let cx = Math.floor(x), cy = Math.floor(y);
+        if (taken.has(cy * w + cx)) {
+            search: for (let r = 1; r < Math.max(w, h); r++) {
+                for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+                    const nx = cx + dx, ny = cy + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || taken.has(ny * w + nx)) continue;
+                    cx = nx; cy = ny; x = nx + 0.5; y = ny + 0.5;
+                    break search;
+                }
+            }
+        }
+        taken.add(cy * w + cx);
+        out.push([x, y]);
+    }
+    return out;
+}
+
 export function jfaSteps(width, height, plusOne) {
     let n = 1;
     while (n < Math.max(width, height)) n *= 2;
@@ -624,8 +650,7 @@ class VoronoiJFA {
             for (let i = 0; i < n; i++) points.push([Math.random() * w, Math.random() * h]);
         }
         this.layout = LAYOUTS[layout] ? layout : 'random';
-        this.seeds = points.map(([x, y]) => this.makeSeed(
-            Math.min(Math.max(x, 0), w - 0.01), Math.min(Math.max(y, 0), h - 0.01)));
+        this.seeds = distinctPixels(points, w, h).map(([x, y]) => this.makeSeed(x, y));
         this.dragIndex = -1;
         this.edited();
     }

@@ -131,3 +131,14 @@ test('uniform layouts: Params and Seed writers match WGSL', (t) => {
     assert.ok(37 <= MAX_SEEDS);
     t.diagnostic(`${steps.length} Params slots at stride ${jfa.paramsStride}, 37 Seed records decoded OK`);
 });
+
+test('distinctPixels gives every seed its own pixel and leaves free seeds untouched', async () => {
+    const { distinctPixels } = await import('../js/examples/voronoi-jfa.js');
+    const pts = [[5.2, 5.7], [5.9, 5.1], [5.5, 5.5], [100.3, 7.8], [-3, 2], [2000, 2000]];
+    const out = distinctPixels(pts, 64, 48);
+    const keys = out.map(([x, y]) => `${Math.floor(x)},${Math.floor(y)}`);
+    assert.equal(new Set(keys).size, pts.length);
+    assert.deepEqual(out[0], [5.2, 5.7]);                  // first claimant keeps its exact position
+    for (const [x, y] of out) assert.ok(x >= 0 && x < 64 && y >= 0 && y < 48);
+    for (const [x, y] of out.slice(1, 3)) assert.ok(Math.hypot(x - 5.5, y - 5.5) < 2, 'collisions move to a neighbor');
+});
