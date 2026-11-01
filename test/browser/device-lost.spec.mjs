@@ -2,8 +2,10 @@
 // which runs the site's real handleDeviceLost path without losing the software GPU itself.
 import { test, expect, openSite, tab, panel, experimentCard, expectSelected, controllableDeviceLoss } from './fixtures.mjs';
 
+// Enabled controls of the examples themselves (Explore panels). Measure panels are checked through their
+// Run buttons: their setting selects and hidden Copy CSV buttons do no GPU work.
 const enabledControls = (page) => page.evaluate(() =>
-    [...document.querySelectorAll('.example button:not(.tab), .example input, .example select')]
+    [...document.querySelectorAll('.tab-panel-explore :is(button, input, select)')]
         .filter(c => !c.disabled).map(c => c.id || c.textContent.trim()));
 
 test('a lost device disables the examples, keeps tabs usable and offers a reload', async ({ page }) => {
@@ -40,4 +42,5 @@ test('a lost device disables the examples, keeps tabs usable and offers a reload
         await page.waitForTimeout(500);
     }
     expect(await enabledControls(page)).toEqual([]);
+    for (const run of await page.locator('.experiment button.primary').all()) await expect(run).toBeDisabled();
 });
