@@ -1,6 +1,6 @@
 {
   "name": "webgpu-compute-exploration",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "25 interactive WebGPU compute shader examples in WGSL: simulations (SPH, cloth, N-body Barnes-Hut, waves, reaction-diffusion), parallel algorithms (sorting, k-means, Voronoi, BFS), rendering (path tracing, ray marching), signal processing (FFT, convolution reverb), and a CNN trained in the browser",
   "type": "module",
   "scripts": {

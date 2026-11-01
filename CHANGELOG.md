@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
 ### Added
 - Explore / Understand / Measure tabs on every example (#54): deep links (`#<id>/understand`,
   `#<id>/measure`), keyboard navigation, and leaving Explore stops the example. Understand pages are
@@ -263,7 +265,8 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.2.0...v0.3.0
