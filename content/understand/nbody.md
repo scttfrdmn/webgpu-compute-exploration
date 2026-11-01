@@ -205,10 +205,10 @@ than three give no interval), or the interval straddles the edge of a predicted 
 
 | Experiment | Claim | Prediction | CI, software GPU |
 |---|---|---|---|
-| θ vs error | median force error vs $\theta$ | slope 2 ± 0.25 (quadrupole term, $l/d \le \theta$; the $\theta^3$ term steepens it a little) | 2.09 (2.02 … 2.16) |
-| θ vs error | interactions per body vs $\theta$ | slope between −3 and 0 | −1.47 (−1.51 … −1.42) |
-| Scaling | brute-force time vs $N$ | slope 2 ± 0.1 | 1.93 (1.78 … 2.07) |
-| Scaling | Barnes-Hut time vs $N$ | 1.0 … 1.3 ($N \log_2 N$ alone gives 1.11 here) | 1.10 (1.00 … 1.20) |
+| θ vs error | median force error vs $\theta$ | slope 2 ± 0.25 (quadrupole term, $l/d \le \theta$; the $\theta^3$ term steepens it a little) | 2.09 (2.01 … 2.16) |
+| θ vs error | interactions per body vs $\theta$ | slope between −3 and 0 | −1.46 (−1.50 … −1.42) |
+| Scaling | brute-force time vs $N$ | slope 2 ± 0.1 | 1.86 (1.56 … 2.15) |
+| Scaling | Barnes-Hut time vs $N$ | 1.0 … 1.3 ($N \log_2 N$ alone gives 1.11 here) | 1.11 (1.04 … 1.17) |
 | Scaling | crossover | exists; where is device-dependent | between 8,192 and 16,384 |
 | Energy | max $\lvert\Delta E/E_0\rvert$ vs $\Delta t$, brute force | slope 2 | 2.25 (1.87 … 2.64) |
 | Energy | the same, Barnes-Hut $\theta = 0.5$ | slope 0 ± 0.2, floor $10^{-4}$ … $10^{-2}$ | 0.04 (0.01 … 0.07), floor 6.5e-4 |

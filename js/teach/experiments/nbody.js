@@ -137,7 +137,8 @@ const thetaError = {
     ],
     baseline: `CI (shipped shader on a software GPU, Plummer N = 4,096): median ${CI_MEDIAN_AT_HALF.toExponential(1)} at `
         + 'θ = 0.5; 1.5e-3 / 2.6e-3 / 4.2e-3 / 8.6e-3 / 1.5e-2 / 2.6e-2 at θ = 0.3 … 1.2, close to θ², with 997 → 134 '
-        + `interactions per body (brute force: 4,095). Errors are checked on ${SAMPLE} bodies against a float64 direct sum.`,
+        + `interactions per body (brute force: 4,095). Errors are checked on ${SAMPLE} bodies against a float64 direct sum. `
+        + 'Fitted slopes (95% CI): error vs θ 2.09 (2.01 … 2.16), interactions vs θ −1.46 (−1.50 … −1.42).',
     async *run(ctx, { n, preset }) {
         const N = Math.min(n, BH_MAX_N);
         const { positions } = generateBodies(preset, N, SOFTENING, SEED);
@@ -281,8 +282,10 @@ const scaling = {
     ],
     baseline: 'Brute force does exactly N − 1 interactions per body; Barnes-Hut at θ = 0.5 does a few hundred to about a '
         + 'thousand (248 at N = 1,024, 1,140 at 65,536 in CI) plus a 30-dispatch tree build, so it loses at small N and wins '
-        + 'at large N. In CI, on a CPU-emulated GPU, the wall times cross between N = 8,192 (brute force about 15% faster) '
-        + `and 16,384 (Barnes-Hut about 25% faster). Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here `
+        + 'at large N. In CI, on a CPU-emulated GPU (no timestamp-query, so wall ms), the wall times cross between N = 8,192 '
+        + '(brute force about 30% faster) and 16,384 (Barnes-Hut about 10% faster; log-interpolated ≈ 14,000), and the fitted '
+        + 'slopes (95% CI) were 1.86 (1.56 … 2.15) for brute force, 1.11 (1.04 … 1.17) for Barnes-Hut and 0.36 (0.30 … 0.43) '
+        + `for interactions per body. Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here `
         + '(the example allows 32,768). Where the crossover falls depends on the GPU, driver and browser: read it from '
         + 'your medians and their spread, not from one number. Compile is pipeline and buffer creation after the warm-up '
         + '(usually a pipeline-cache hit); the cold compile is in the discarded warm-up.',
@@ -361,7 +364,7 @@ export function skipBrute(n, prevN, perCall, remainingMs) {
 //   Barnes-Hut: O(N log N). Over N = 1,024 … 65,536, N log₂ N has an effective power-law slope of 1.11. At these N
 //   the interactions per body grow faster than log N (CI: ∝ N^0.37), which would push the traversal towards 1.4,
 //   while the O(N) tree build and fixed per-dispatch costs pull the total down; so the prediction is a band,
-//   1.0 … 1.3 (slopeAgrees with 1.15 ± 0.15), not a number. CI (software GPU, wall ms): 1.10 (1.00 … 1.20).
+//   1.0 … 1.3 (slopeAgrees with 1.15 ± 0.15), not a number. CI (software GPU, wall ms): 1.11 (1.04 … 1.17).
 //   Crossover: O(N²) must overtake O(N log N) at some N; where depends on the device. CI: 8,192 … 16,384.
 //   Tree-build share: the build is O(N) plus ~30 fixed dispatches, the traversal O(N log N), so the share falls.
 export const BRUTE_ORDER = 2, BRUTE_ORDER_TOLERANCE = 0.1;
@@ -526,6 +529,7 @@ const energyDrift = {
     baseline: `CI (software GPU, brute force, Plummer N = 2,048, t = ${DRIFT_TIME}): max |ΔE/E₀| 3.4e-5 / 5.5e-6 / 1.3e-6 / `
         + '3.0e-7 at dt = 0.04 / 0.02 / 0.01 / 0.005, about 4× per halving (dt²). With Barnes-Hut at θ = 0.5 it stays at '
         + '6.4e-4 to 6.9e-4 for every dt: the force and potential error of the tree dominates. The f32 energy sum itself is good to about 1e-7. '
+        + 'Fitted slopes (95% CI): brute force 2.25 (1.87 … 2.64), Barnes-Hut 0.04 (0.01 … 0.07), floor 6.5e-4. '
         + 'Each dt is one run (a single wall time, not a median over repeats).',
     async *run(ctx, { n, mode, preset }) {
         const N = Math.min(n, mode === 'brute' ? BRUTE_MAX_N : BH_MAX_N);
