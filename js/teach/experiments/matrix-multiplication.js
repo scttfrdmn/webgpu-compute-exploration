@@ -299,8 +299,10 @@ const threeWay = {
         if (common) {
             const best = common.tiledMs <= common.naiveMs ? 'tiled' : 'naive';
             const gpuLo = common[`${best}MsLo`], gpuHi = common[`${best}MsHi`];
-            const faster = rows.filter(r => r.cpuMs > 0 && Math.min(r.naiveMs, r.tiledMs) < r.cpuMs).map(r => r.n);
-            const from = rows.filter(r => r.cpuMs > 0).map(r => r.n).find(n => rows.filter(r => r.cpuMs > 0 && r.n >= n).every(r => faster.includes(r.n)));
+            // sizes with all three times (a GPU time quantized to 0 says nothing about the ranking)
+            const both = rows.filter(r => r.cpuMs > 0 && r.naiveMs > 0 && r.tiledMs > 0);
+            const faster = both.filter(r => Math.min(r.naiveMs, r.tiledMs) < r.cpuMs).map(r => r.n);
+            const from = both.map(r => r.n).find(n => both.filter(r => r.n >= n).every(r => faster.includes(r.n)));
             measured = `${from ? `GPU faster from n = ${from} on` : `CPU faster at n = ${common.n}`}; at n = ${common.n}: ${LABEL[best]} `
                 + `${rangeText(common, `${best}Ms`, ms)} ms vs CPU ${rangeText(common, 'cpuMs', ms)} ms`;
             agrees = gpuHi < common.cpuMsLo ? true : gpuLo > common.cpuMsHi ? false : null;
