@@ -35,18 +35,21 @@
 // land before the submitted dispatches run, so each dispatch needs its own slot for its bfsStep.
 // The render pass binds slot 0 (non-dynamic); only the per-dispatch bfsStep differs between slots.
 
+// Compute-only use (the Measure tab, js/teach/experiments/maze.js, and test/gpu/): a MazeSolver with
+// canvas = null creates no render pipeline, canvas context or mouse handlers and never draws.
+// measureBFS() uploads a given maze and runs the shipped cs_bfs_step dispatches in batches (one
+// command buffer each, timed), with the example's 12-byte termination readback after every batch.
+
 import { GpuTimer } from '../gpu-timer.js';
+// The cell encoding (passage bits, path bit, unreached distance) is defined once, next to the CPU
+// reference that reads the same buffers; the WGSL constants below are generated from it.
+import { INF, OPEN_N, OPEN_E, OPEN_S, OPEN_W, ON_PATH } from '../refs/maze.js';
+
+export { INF, OPEN_N, OPEN_E, OPEN_S, OPEN_W, ON_PATH };
 
 const PARAMS_SIZE = 32;
 const MAX_STEPS_PER_FRAME = 512;
 const READBACK_INTERVAL = 4;   // frames between termination checks while solving
-
-const INF = 0xffffffff;
-const OPEN_N = 1;
-const OPEN_E = 2;
-const OPEN_S = 4;
-const OPEN_W = 8;
-const ON_PATH = 16;
 
 const paramsStruct = `
 struct Params {
@@ -59,12 +62,12 @@ struct Params {
     markerRadius: f32,
 }
 
-const INF: u32 = 0xffffffffu;
-const OPEN_N: u32 = 1u;
-const OPEN_E: u32 = 2u;
-const OPEN_S: u32 = 4u;
-const OPEN_W: u32 = 8u;
-const ON_PATH: u32 = 16u;
+const INF: u32 = 0x${INF.toString(16)}u;
+const OPEN_N: u32 = ${OPEN_N}u;
+const OPEN_E: u32 = ${OPEN_E}u;
+const OPEN_S: u32 = ${OPEN_S}u;
+const OPEN_W: u32 = ${OPEN_W}u;
+const ON_PATH: u32 = ${ON_PATH}u;
 `;
 
 const computeShader = paramsStruct + `
@@ -565,9 +568,11 @@ class MazeSolver {
         });
 
         this.setupComputePipeline();
-        this.setupRenderPipeline();
-        this.setupCanvas();
-        this.setupMouseControls();
+        if (canvas) {
+            this.setupRenderPipeline();
+            this.setupCanvas();
+            this.setupMouseControls();
+        }
     }
 
     resetSolveState() {
@@ -653,6 +658,7 @@ class MazeSolver {
                 { binding: 3, resource: { buffer: this.paramsBuffer, offset: 0, size: PARAMS_SIZE } }
             ]
         });
+        if (!this.renderLayout) return;   // compute-only instance
         this.renderBindGroup = this.device.createBindGroup({
             layout: this.renderLayout,
             entries: [
@@ -734,7 +740,7 @@ class MazeSolver {
     writeParams(slots) {
         const wordsPerSlot = this.paramsStride / 4;
         const solved = this.phase === 'solved' ? 1 : 0;
-        const markerRadius = Math.max(this.scale * 1.2, this.canvas.width / 70);
+        const markerRadius = this.canvas ? Math.max(this.scale * 1.2, this.canvas.width / 70) : 0;
         for (let k = 0; k < slots; k++) {
             const o = k * wordsPerSlot;
             this.paramsU32[o + 0] = this.width;
@@ -906,13 +912,105 @@ class MazeSolver {
         this.running = false;
         this.destroyed = true;
         this.gpuTimer.destroy();
-        this.canvas.removeEventListener('mousedown', this.onMouseDown);
-        this.canvas.removeEventListener('contextmenu', this.onContextMenu);
-        this.wallBuffer.destroy();
-        this.distBuffer.destroy();
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.onMouseDown);
+            this.canvas.removeEventListener('contextmenu', this.onContextMenu);
+        }
+        this.wallBuffer?.destroy();
+        this.distBuffer?.destroy();
         this.statsBuffer.destroy();
         this.statsStaging.destroy();
         this.paramsBuffer.destroy();
+    }
+}
+
+// ---- Compute-only API for the Measure tab (js/teach/experiments/maze.js) and test/gpu/ ----
+
+export const MAX_MEASURE_CELLS = 1024 * 768;     // the largest maze size (1023 × 767) fits
+export const MAX_MEASURE_LEVELS = 100000;        // BFS dispatches per measureBFS call
+
+// Breadth-first search of the maze `cells` (Uint32Array of passage bits, width × height) from `start` to
+// `goal` with the shipped cs_bfs_step pipeline: batches of `levelsPerSubmit` (1 … 512) level dispatches
+// in one compute pass and command buffer, each followed by the example's termination readback (cells
+// reached, largest distance, dist[goal]: 12 bytes). Stops when the goal has a distance, when a level
+// adds no cell (unreachable), or after MAX_MEASURE_LEVELS dispatches. between(), if given, is awaited
+// after each batch (the Measure runner passes ctx.step, which throws to cancel). Resolves to
+// { width, height, start, goal, found, levels (dist[goal], or null), visited, dispatches, submits,
+// gpuMs, wallMs, dist }: GPU ms summed over the batches (null without timestamp-query), wall ms summed
+// over submit → readback, and the full distance field read back once at the end.
+export async function measureBFS(gpuDevice, { cells, width, height, start = 0, goal = width * height - 1,
+    levelsPerSubmit = 256, between = null }) {
+    const n = width * height;
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || n > MAX_MEASURE_CELLS) {
+        throw new RangeError(`${width} × ${height} is outside 1 … ${MAX_MEASURE_CELLS} cells`);
+    }
+    if (cells?.length !== n) throw new RangeError(`cells has ${cells?.length} entries, expected ${n}`);
+    for (const c of [start, goal]) if (!Number.isInteger(c) || c < 0 || c >= n) throw new RangeError(`cell ${c} is outside the maze`);
+    const batch = Math.min(Math.max(Math.round(levelsPerSubmit), 1), MAX_STEPS_PER_FRAME);
+    const device = gpuDevice.device ?? gpuDevice;
+    const solver = new MazeSolver(device, null);
+    try {
+        solver.setupBuffers(width, height);
+        Object.assign(solver, { startCell: start, goalCell: goal, scale: 1 });
+        solver.cells = Uint32Array.from(cells, c => c & ~ON_PATH);
+        device.queue.writeBuffer(solver.wallBuffer, 0, solver.cells);
+        const init = new Uint32Array(n).fill(INF);
+        init[start] = 0;
+        device.queue.writeBuffer(solver.distBuffer, 0, init);
+        device.queue.writeBuffer(solver.statsBuffer, 0, new Uint32Array(4));
+        solver.resetSolveState();
+        solver.phase = 'solving';
+        await device.queue.onSubmittedWorkDone();
+
+        let found = false, goalDist = null, data = new Uint32Array(3), submits = 0, wallMs = 0, gpuMs = 0;
+        const wgX = Math.ceil(width / 8), wgY = Math.ceil(height / 8);
+        while (solver.dispatched < MAX_MEASURE_LEVELS) {
+            const passes = Math.min(batch, MAX_MEASURE_LEVELS - solver.dispatched);
+            solver.writeParams(passes);
+            const t0 = performance.now();
+            const encoder = device.createCommandEncoder();
+            const pass = encoder.beginComputePass(solver.gpuTimer.computePassDescriptor('bfs'));
+            pass.setPipeline(solver.bfsPipeline);
+            for (let i = 0; i < passes; i++) {
+                pass.setBindGroup(0, solver.computeBindGroup, [i * solver.paramsStride]);
+                pass.dispatchWorkgroups(wgX, wgY);
+            }
+            pass.end();
+            encoder.copyBufferToBuffer(solver.statsBuffer, 0, solver.statsStaging, 0, 8);
+            encoder.copyBufferToBuffer(solver.distBuffer, goal * 4, solver.statsStaging, 8, 4);
+            solver.gpuTimer.resolve(encoder);
+            device.queue.submit([encoder.finish()]);
+            const timing = solver.gpuTimer.read();
+            solver.dispatched += passes;
+            submits++;
+            await solver.statsStaging.mapAsync(GPUMapMode.READ);
+            data = new Uint32Array(solver.statsStaging.getMappedRange(0, 12).slice(0));
+            solver.statsStaging.unmap();
+            wallMs += performance.now() - t0;
+            const t = await timing;
+            gpuMs = gpuMs === null || typeof t?.passes.bfs !== 'number' ? null : gpuMs + t.passes.bfs;
+            if (data[2] !== INF) {
+                found = true;
+                goalDist = data[2];
+                break;
+            }
+            if (data[1] < solver.dispatched) break;   // the last level reached no new cell: unreachable
+            if (between) await between();
+        }
+        const staging = device.createBuffer({ size: 4 * n, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+        const encoder = device.createCommandEncoder();
+        encoder.copyBufferToBuffer(solver.distBuffer, 0, staging, 0, 4 * n);
+        device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ);
+        const dist = new Uint32Array(staging.getMappedRange().slice(0));
+        staging.unmap();
+        staging.destroy();
+        return {
+            width, height, start, goal, found, levels: goalDist, visited: data[0] + 1,
+            dispatches: solver.dispatched, submits, gpuMs, wallMs, dist,
+        };
+    } finally {
+        solver.destroy();
     }
 }
 

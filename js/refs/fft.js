@@ -1,9 +1,10 @@
-// CPU references for the fft-audio example: a naive DFT (independent of any FFT factorization) and
-// the magnitude / log-band reductions the visualizer applies to a spectrum.
-// Precision: naiveDFT is float64 (window and twiddles in double); magnitudes and bands mirror the
-// shader's f32 outputs (Float32Array results, Math.fround on the magnitude) so they compare tightly.
+// CPU references for the fft-audio example: a naive DFT (independent of any FFT factorization), a
+// float64 radix-2 FFT (for CPU timing comparisons), a spectrum error measure, and the magnitude /
+// log-band reductions the visualizer applies to a spectrum.
+// Precision: naiveDFT and fft64 are float64 (window and twiddles in double); magnitudes and bands mirror
+// the shader's f32 outputs (Float32Array results, Math.fround on the magnitude) so they compare tightly.
 // Cost: naiveDFT is O(n²) (n = 4096 is ~1.7e7 complex multiply-adds, fine in a browser; avoid
-// n ≫ 16384); magnitudes is O(n); bands is O(NUM_ROWS + n).
+// n ≫ 16384); fft64 is O(n log n); spectrumError, magnitudes are O(n); bands is O(NUM_ROWS + n).
 
 export const NUM_ROWS = 256, F_LO = 20, F_HI = 20000, SILENT_DB = -200;
 export const DB_PER_LOG2 = Math.fround(6.02059991);
@@ -23,6 +24,55 @@ export function naiveDFT(samples, windowed = null) {
         out[2 * k] = re; out[2 * k + 1] = im;
     }
     return { out, x };
+}
+
+// float64 iterative radix-2 FFT of a real sequence (no window), for CPU timing comparisons on the
+// Measure tab: the same factorization as the shader, in double precision. O(n log n); n a power of 2.
+// Returns the interleaved complex spectrum (Float64Array 2n).
+export function fft64(x) {
+    const n = x.length, bits = Math.round(Math.log2(n));
+    const out = new Float64Array(2 * n);
+    for (let i = 0; i < n; i++) {
+        let j = 0;
+        for (let b = 0; b < bits; b++) j |= ((i >>> b) & 1) << (bits - 1 - b);
+        out[2 * j] = x[i];
+    }
+    for (let h = 1; h < n; h *= 2) {
+        const step = Math.PI / h;
+        for (let j = 0; j < h; j++) {
+            const wr = Math.cos(step * j), wi = -Math.sin(step * j);
+            for (let i0 = j; i0 < n; i0 += 2 * h) {
+                const i1 = i0 + h;
+                const br = out[2 * i1], bi = out[2 * i1 + 1];
+                const tr = wr * br - wi * bi, ti = wr * bi + wi * br;
+                const ar = out[2 * i0], ai = out[2 * i0 + 1];
+                out[2 * i0] = ar + tr; out[2 * i0 + 1] = ai + ti;
+                out[2 * i1] = ar - tr; out[2 * i1 + 1] = ai - ti;
+            }
+        }
+    }
+    return out;
+}
+
+// Error of an interleaved complex spectrum X against a reference `ref` (both n bins), relative to the
+// reference's largest bin: maxRel = max_k |X_k − ref_k| / max_k |ref_k|, rmsRel = rms_k |X_k − ref_k| /
+// max_k |ref_k|. parseval compares Σ|X_k|² with n·Σ x_i² of the transformed sequence `x` (if given).
+export function spectrumError(X, ref, n, x = null) {
+    let maxErr = 0, sumSq = 0, maxRef = 0, energy = 0;
+    for (let k = 0; k < n; k++) {
+        const e = Math.hypot(X[2 * k] - ref[2 * k], X[2 * k + 1] - ref[2 * k + 1]);
+        maxErr = Math.max(maxErr, e);
+        sumSq += e * e;
+        maxRef = Math.max(maxRef, Math.hypot(ref[2 * k], ref[2 * k + 1]));
+        energy += X[2 * k] ** 2 + X[2 * k + 1] ** 2;
+    }
+    const result = { maxRel: maxErr / maxRef, rmsRel: Math.sqrt(sumSq / n) / maxRef };
+    if (x) {
+        let e = 0;
+        for (let i = 0; i < n; i++) e += x[i] * x[i];
+        result.parseval = Math.abs(energy / (n * e) - 1);
+    }
+    return result;
 }
 
 // ---- cs_magnitude and cs_bands ----

@@ -6,9 +6,14 @@
 export const UNDERSTAND = new Set([
     'dla',
     'falling-sand',
+    'fft-audio',
+    'kmeans',
+    'maze',
     'nbody',
     'noise',
+    'parallel-sort',
     'reaction-diffusion',
+    'voronoi',
     'wave-equation',
 ]);
 
@@ -16,9 +21,14 @@ export const UNDERSTAND = new Set([
 export const MEASURE = new Set([
     'dla',
     'falling-sand',
+    'fft-audio',
+    'kmeans',
+    'maze',
     'nbody',
     'noise',
+    'parallel-sort',
     'reaction-diffusion',
+    'voronoi',
     'wave-equation',
 ]);
 
