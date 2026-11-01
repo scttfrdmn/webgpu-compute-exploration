@@ -309,10 +309,11 @@ if you want to share it.
 ### Quick Start (JavaScript Only)
 
 ```bash
-python3 -m http.server 8000
+python3 tools/serve.py
 ```
 
-Then open http://localhost:8000 in a WebGPU-compatible browser.
+Then open http://localhost:8000 in a WebGPU-compatible browser. (`tools/serve.py` is `python3 -m http.server` with
+`Cache-Control: no-cache`, so the browser never runs stale cached modules after you pull.)
 
 ### Full Setup (with WASM)
 
@@ -335,7 +336,7 @@ cargo install wasm-pack
 
 4. **Start development server**:
 ```bash
-python3 -m http.server 8000
+python3 tools/serve.py
 ```
 
 5. Open http://localhost:8000
@@ -550,7 +551,7 @@ numerical tolerances, timing availability and interpretation verdicts are summar
 
 To add a run:
 
-1. Serve a clean checkout with its commit recorded: `node tools/local-version.mjs && python3 -m http.server 8000`
+1. Serve a clean checkout with its commit recorded: `node tools/local-version.mjs && python3 tools/serve.py`
    (or use the deployed site, which has `version.json`).
 2. Open `http://localhost:8000/validate.html` in the browser under test, check the detected environment, fill in
    the macOS version and Mac model, and press **Run validation** (about a minute; nothing else should use the GPU).

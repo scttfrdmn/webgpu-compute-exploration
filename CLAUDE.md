@@ -4,7 +4,8 @@ Static WebGPU demo site: `index.html` + ES modules in `js/`, no bundler, no npm 
 One example (#10) uses a Rust/WASM crate in `wasm/`.
 
 ## Run / build
-- Serve: `python3 -m http.server 8000` (or `npm run dev`), open http://localhost:8000 in a WebGPU browser.
+- Serve: `python3 tools/serve.py` (or `npm run dev`; it is `http.server` with `Cache-Control: no-cache`, so browsers
+  never run stale cached modules), open http://localhost:8000 in a WebGPU browser.
 - WASM: `./wasm/build.sh` → `js/wasm-pkg/` (gitignored). Needs a `rustc` with `wasm32-unknown-unknown`;
   on this machine Homebrew's `rustc` shadows rustup's, so run with `PATH=~/.cargo/bin:$PATH`.
 - Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done`, the WASM build, and

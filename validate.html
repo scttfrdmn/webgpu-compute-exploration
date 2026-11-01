@@ -79,6 +79,15 @@
         Source, issues and roadmap on <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">GitHub</a> · MIT License · © 2025-2026 Scott Friedman
     </footer>
 
+    <script>
+        // A module that fails to load or link (e.g. a stale cached import) never runs, so report it here
+        addEventListener('error', (event) => {
+            const status = document.getElementById('gpu-status');
+            if (!status || !/^Checking/.test(status.textContent)) return;
+            status.className = 'status not-supported';
+            status.textContent = `Validation page failed to load: ${event.message || 'a script did not load'} — try a hard reload (⌘⇧R).`;
+        }, true);
+    </script>
     <script type="module" src="./js/teach/validate.js"></script>
 </body>
 </html>

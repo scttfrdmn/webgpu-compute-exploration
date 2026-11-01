@@ -4,7 +4,7 @@
   "description": "25 interactive WebGPU compute shader examples in WGSL: simulations (SPH, cloth, N-body Barnes-Hut, waves, reaction-diffusion), parallel algorithms (sorting, k-means, Voronoi, BFS), rendering (path tracing, ray marching), signal processing (FFT, convolution reverb), and a CNN trained in the browser",
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 8000",
+    "dev": "python3 tools/serve.py 8000",
     "build-wasm": "cd wasm && chmod +x build.sh && ./build.sh",
     "validate:wgsl": "node tools/validate-wgsl.mjs",
     "test": "node --test 'test/*.test.mjs'"
