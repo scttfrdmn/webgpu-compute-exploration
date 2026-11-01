@@ -10,7 +10,7 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 - Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done`, the WASM build, and
   `npm run validate:wgsl` (set `NAGA=/path/to/naga` if it is not on PATH), and `npm test` (`node --test 'test/*.test.mjs'`).
 - `test/` is CPU-only: it runs the examples' exported JS and CPU replicas of the shader algorithms. Rendering
-  and GPU behaviour still have to be verified in a browser. Never run tests on the GPU or in a headless browser.
+  and GPU behaviour still have to be verified in a browser. Never run tests on the GPU or drive a browser locally.
 - `test/gpu/` (`*.gpu.test.mjs`) executes the shipped WGSL through Dawn's Node bindings (`webgpu` npm, version pinned
   in the `gpu-software` CI job) on Mesa lavapipe and compares with the CPU references. It is **CI-only**: never run
   it, `npm install webgpu`, or any other WebGPU runtime on a developer's machine from automation — iterate by pushing
@@ -26,6 +26,12 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   DLA and the ray marcher).
 - Uniform structs with `u32` fields must be written through a `Uint32Array` view of the buffer, and vec2/vec3/vec4
   fields follow WGSL alignment (8/16 bytes) — writing ints as floats turns small counts into ~1e9.
+- `test/browser/` (Playwright, `*.spec.mjs`) drives the real page in headless Chromium on a software WebGPU adapter
+  (SwiftShader; lavapipe forced as the only Vulkan ICD) in the CI `browser` job: tabs, deep links, lifecycle, Measure
+  runs and Cancel, the no-timestamp fallback, device loss, the learning path, the device report. It is **CI-only**:
+  `test/browser/guard.mjs` refuses to run unless `CI=true` on Linux with `BROWSER_FLAGS` from `probe.mjs`, and the
+  adapter must be software. Never run `npx playwright`, `playwright install` or the suite locally; iterate by pushing a
+  `ci/**` branch. `npm test` must not import `test/browser/`.
 - Do not drive the page with headless Chrome + `--enable-unsafe-webgpu` on macOS: loading it starts six GPU
   simulations at once and hung the machine (see #32). Ask the user to check in their own browser.
 

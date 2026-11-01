@@ -28,7 +28,7 @@ import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 import { buildDeviceReport } from './device-report.js';
 import { setupTabs } from './teach/tabs.js';
 import { pauseExample, NO_AUTO_RESUME } from './example-control.js';
-import { setGPUDevice, setExampleInstance, markDeviceLost, experimentResults } from './teach/app-state.js';
+import { setGPUDevice, setExampleInstance, markDeviceLost, isDeviceLost, experimentResults } from './teach/app-state.js';
 
 let gpuDevice = null;
 
@@ -179,7 +179,9 @@ function initInteractiveExamplesOnVisible() {
     const observer = new IntersectionObserver((entries) => {
         for (const entry of entries) {
             const id = entry.target.id;
-            if (entry.isIntersecting && !instances.has(id)) {
+            // After a device loss, examples scrolled into view stay uncreated: creating one would wire and
+            // re-enable its controls (handleDeviceLost disabled them) on a device that no longer works
+            if (entry.isIntersecting && !instances.has(id) && !isDeviceLost()) {
                 instances.set(id, examples[id](gpuDevice).catch((error) => {
                     console.error(`Failed to initialize ${id}:`, error);
                 }));

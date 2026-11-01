@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Real-browser regression tests (`test/browser/`, new `browser` CI job, #77): Playwright drives the page
+  in headless Chromium on a software WebGPU adapter — tabs and deep links, keyboard, lifecycle pauses,
+  Measure runs and Cancel, the no-timestamp fallback, device loss, the learning path, the device report.
+  CI-only, guarded like `test/gpu/`.
+
+### Fixed
+- After a GPU device loss, examples scrolled into view were still created and re-enabled their controls.
+
 ## [0.6.0] - 2026-11-01
 
 ### Added

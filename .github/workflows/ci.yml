@@ -89,3 +89,38 @@ jobs:
         run: >-
           node --test --test-reporter=spec --test-concurrency=2 --test-timeout=240000
           --test-force-exit 'test/gpu/*.gpu.test.mjs'
+
+  # Real-browser regression tests (test/browser/, #77): headless Chromium driven by Playwright on a
+  # software WebGPU adapter (Mesa lavapipe or Chromium's SwiftShader), never a real GPU. probe.mjs picks
+  # Chromium flags that yield a software adapter and prints it; test/browser/guard.mjs refuses to run
+  # unless CI=true on Linux, and global-setup.mjs re-checks the adapter before any test starts.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PLAYWRIGHT_VERSION: 1.64.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Mesa lavapipe (software Vulkan)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+      - name: Force the lavapipe ICD
+        run: |
+          icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
+          test -n "$icd"
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+      - name: Install Playwright and Chromium (CI only, not saved to package.json)
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts "@playwright/test@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
+      - name: Pick Chromium flags for a software WebGPU adapter
+        timeout-minutes: 4
+        run: node test/browser/probe.mjs
+      - name: Browser regression tests
+        timeout-minutes: 8
+        run: npx playwright test -c test/browser/playwright.config.mjs

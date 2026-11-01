@@ -327,7 +327,7 @@ python3 -m http.server 8000
 
 ### Validation
 
-The shaders are checked in three layers, all in CI on every push and pull request:
+The site is checked in four layers, all in CI on every push and pull request:
 
 1. **Static validation** (`wgsl` job): naga parses and validates every WGSL module the examples ship.
 2. **CPU reference suite** (`test` job): JavaScript replicas of the shader algorithms and the examples'
@@ -336,11 +336,15 @@ The shaders are checked in three layers, all in CI on every push and pull reques
    from `wgslModules()`, dispatches it through Dawn's Node bindings (the `webgpu` npm package) on Mesa
    lavapipe, a CPU-only Vulkan driver, and compares the read-back buffers with the CPU references.
    This tests the WGSL itself, which the replicas cannot.
+4. **Real-browser tests** (`browser` job): `test/browser/` drives the actual page in headless Chromium
+   on a software WebGPU adapter (SwiftShader) with Playwright: tabs, deep links and back/forward,
+   keyboard navigation, pausing on tab switch and scroll, running and cancelling experiments, the
+   no-timestamp fallback, device loss, the learning path and the device report.
 
-The GPU tests **never run locally by default**: `npm test` only picks up `test/*.test.mjs`, and
-`test/gpu/harness.mjs` refuses to start unless `CI=true` on Linux and the adapter reports a software
-device (llvmpipe/lavapipe/SwiftShader or a fallback adapter). Driving a real GPU from automated tests
-can hang it, so leave `test/gpu/` to CI.
+The GPU and browser tests **never run locally**: `npm test` only picks up `test/*.test.mjs`, and both
+`test/gpu/harness.mjs` and `test/browser/guard.mjs` refuse to start unless `CI=true` on Linux and the
+adapter reports a software device (llvmpipe/lavapipe/SwiftShader or a fallback adapter). Driving a real
+GPU from automated tests can hang it, so leave `test/gpu/` and `test/browser/` to CI.
 
 Every example exports `wgslModules()`, the WGSL modules it passes to `createShaderModule`. CI validates
 each one offline with [naga](https://github.com/gfx-rs/wgpu/tree/trunk/naga) (no GPU or browser needed).
@@ -429,6 +433,7 @@ webgpu/
 │   │   └── wasm-mandelbrot.js         # Example 25: WASM integration
 │   └── wasm-pkg/                      # Built WASM module (generated)
 ├── test/                              # CPU reference tests (npm test), one per example
+│   ├── browser/                       # Playwright tests of the real page on a software GPU (CI only)
 │   ├── gpu/                           # Shipped WGSL executed on a software GPU (CI only, never locally)
 │   └── helpers/                       # WGSL struct layout calculator, mock GPU device, shared references
 ├── tools/
