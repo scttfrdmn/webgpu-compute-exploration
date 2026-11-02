@@ -22,7 +22,7 @@
     },
     {
       "id": "apple-silicon-safari26",
-      "label": "Apple silicon Mac · Safari 26",
+      "label": "Apple silicon Mac · Safari (26 or later)",
       "hardware": "Mac with an Apple M-series chip",
       "os": "macos",
       "browser": "safari",
