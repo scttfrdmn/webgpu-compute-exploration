@@ -7,8 +7,9 @@
 // reference and baseline is TypedArray.prototype.sort (js/refs/sort.js cpuSort is the same call).
 //
 // Protocol (js/teach/measure.js): one ctx.measure per N. Each call is one independent *trial*: fresh keys
-// from the seeded sequence keySeed(N, trial) (reproducible, different in every trial), the CPU sort of a
-// copy (timed: the CPU baseline's sample), then each GPU algorithm sorting the same keys and checked
+// from the seeded sequence keySeed(N, trial) (reproducible, different in every trial), the CPU sort of
+// copies (timed: the CPU baseline's sample, a batch of cpuReps back-to-back sorts calibrated in the warm-up
+// so that it spans many ticks of a coarsened performance.now()), then each GPU algorithm sorting the same keys and checked
 // against that CPU result. One discarded warm-up trial, then PROTOCOL.repeats trials (LARGE_PROTOCOL above
 // LARGE_N, to fit the budget). Interleaving the algorithms within a trial keeps slow drifts (clocks,
 // thermal state) from favouring one of them. Timed columns are medians with their interquartile range;
@@ -49,11 +50,14 @@ export const keySeed = (n, trial) => (SEED + Math.imul(n, 0x9E3779B1) + Math.imu
 //                         faster than S, so the prediction is the interval between the two slopes.
 //   radix                 N·8 passes: slope 1.
 //   CPU sort              N log N comparisons: local slope 1 + 1/ln N ≈ 1.07.
-// Only the largest FIT_POINTS sizes of a run are fitted: at small N fixed per-dispatch and submit costs
-// dominate and flatten the curve (a slope below the prediction there means overhead, not a better
-// algorithm). SLOPE_TOLERANCE allows for the remaining overhead and cache effects. An interval wider than
+// Fit range: the sizes whose median time is at least FIT_MIN_MS (as in matrix-multiplication.js) and at
+// least RESOLUTION_FACTOR × its clock's resolution, up to the run's largest N; at least MIN_FIT_SIZES of
+// them, else the claim is undetermined. Below 1 ms fixed per-dispatch and submit costs dominate and flatten
+// the curve (a slope below the prediction there means overhead, not a better algorithm), and timers
+// quantize. SLOPE_TOLERANCE allows for the remaining overhead and cache effects. An interval wider than
 // ± MAX_HALF_WIDTH cannot tell N from N log² N (they differ by about 0.15 here), so it decides nothing.
-export const FIT_POINTS = 4;
+export const FIT_MIN_MS = 1;
+export const MIN_FIT_SIZES = 3;
 export const SLOPE_TOLERANCE = 0.05;
 export const MAX_HALF_WIDTH = 0.2;
 const stages = (n) => { const L = Math.log2(n); return L * (L + 1) / 2; };
@@ -68,6 +72,94 @@ export const MODELS = {
 export const predictedSlope = (model, ns) => fitPowerLaw(ns, ns.map(model)).slope;
 // Expected order at the largest N, fastest first, on a GPU with fast workgroup memory
 export const EXPECTED_RANKING = ['radix', 'bitonic-shared', 'bitonic'];
+
+// ---- Timer resolution -----------------------------------------------------------------------------------
+// Browsers coarsen performance.now() (Chrome to 0.1 ms, Safari to 1 ms) and Chrome quantizes GPU timestamps
+// (to 2¹⁶ ns ≈ 0.066 ms). A time below RESOLUTION_FACTOR × its clock's resolution is not compared or fitted:
+// it is at most a few ticks, so its error is 10% or more.
+export const RESOLUTION_FACTOR = 10;
+
+// performance.now() resolution: the smallest non-zero step between successive calls, over at most `ticks`
+// steps or `maxMs` (null if the clock never moved). `now` is injectable for tests; works in Node too.
+export function timerResolution(now = () => performance.now(), { maxMs = 50, ticks = 20, maxCalls = 1e6 } = {}) {
+    const start = now();
+    let prev = start, best = Infinity, seen = 0;
+    for (let i = 0; i < maxCalls && seen < ticks; i++) {
+        const t = now();
+        if (t > prev) { best = Math.min(best, t - prev); seen++; prev = t; }
+        if (t - start > maxMs) break;
+    }
+    return Number.isFinite(best) ? best : null;
+}
+
+// The step of a quantized series: the smallest gap between distinct values (rounded to 1 ns to merge
+// float noise); null with fewer than `minDistinct` distinct values
+export function granularity(values, minDistinct = 5) {
+    const u = [...new Set(values.filter(num).map(v => Math.round(v * 1e6) / 1e6))].sort((a, b) => a - b);
+    if (u.length < minDistinct) return null;
+    let g = Infinity;
+    for (let i = 1; i < u.length; i++) g = Math.min(g, u[i] - u[i - 1]);
+    return g;
+}
+
+const GPU_KEYS = ['bitonic', 'shared', 'radix'];
+// { wall, gpu, wallSource }: wall = the run's measured performance.now() resolution (row.timerMs), or for
+// records without it the granularity of the GPU wall medians; gpu = the granularity of the timestamp medians
+export function resolutions(rows) {
+    const measured = rows.map(r => r.timerMs).filter(v => num(v) && v > 0);
+    return {
+        wall: measured.length ? Math.max(...measured) : granularity(rows.flatMap(r => GPU_KEYS.map(k => r[`${k}Wall`]))),
+        wallSource: measured.length ? 'measured' : 'inferred from the wall medians',
+        gpu: granularity(rows.flatMap(r => GPU_KEYS.map(k => r[`${k}Gpu`]))),
+    };
+}
+// Is a median of `value` ms resolvable on a clock of resolution `res` (null: unknown, assume yes)? A CPU
+// sample spans `reps` back-to-back sorts, so its clock reading is reps × value.
+export const resolvable = (value, res, reps = 1) => res == null || value * reps >= RESOLUTION_FACTOR * res;
+
+// Which clock to use for one GPU algorithm: GPU timestamps when every row has them and they are consistent
+// with the wall clock (a pass cannot take longer on the GPU than submit → done: q1 of the GPU time above
+// 1.05 × q3 of the wall time + one wall tick is a contradiction), else the wall clock.
+// → { key, gpu, res, inconsistent: [N where the timestamps exceeded the wall time] }
+export function clockFor(rows, k, res = resolutions(rows)) {
+    const wall = { key: `${k}Wall`, gpu: false, res: res.wall, inconsistent: [] };
+    const walls = rows.filter(r => num(r[`${k}Wall`]));
+    if (!walls.length || !walls.every(r => num(r[`${k}Gpu`]))) return wall;
+    const lo = (r, key) => r[`${key}Lo`] ?? r[key], hi = (r, key) => r[`${key}Hi`] ?? r[key];
+    const inconsistent = walls.filter(r => lo(r, `${k}Gpu`) > 1.05 * hi(r, `${k}Wall`) + (res.wall ?? 0)).map(r => r.n);
+    if (inconsistent.length) return { ...wall, inconsistent };
+    return { key: `${k}Gpu`, gpu: true, res: res.gpu, inconsistent: [] };
+}
+
+// ---- CPU sort timing ------------------------------------------------------------------------------------
+// One sort of a small array is below the resolution of a coarsened performance.now() (Safari: 1 ms), so a
+// CPU sample is a batch of `reps` back-to-back sorts of separate copies of the same keys (copied before the
+// clock starts), divided by reps. The warm-up trial at each N doubles reps until a batch takes at least
+// cpuBatchTarget(timerMs); the measured trials use that reps. Caps: CPU_MAX_REPS sorts and
+// CPU_MAX_BATCH_KEYS keys (16 MB) per batch, so a batch is bounded on any machine.
+export const CPU_BATCH_MS = 10;
+export const CPU_MAX_REPS = 64;
+export const CPU_MAX_BATCH_KEYS = 4194304;
+export const cpuBatchTarget = (timerMs) => Math.max(CPU_BATCH_MS, 2 * RESOLUTION_FACTOR * (timerMs ?? 0));
+export const cpuRepsCap = (n) => Math.max(1, Math.min(CPU_MAX_REPS, Math.floor(CPU_MAX_BATCH_KEYS / n)));
+
+// → { cpuMs (per sort), totalMs, reps, sorted (the last sorted copy) }
+export function cpuSortBatch(keys, reps, now = () => performance.now()) {
+    const copies = Array.from({ length: reps }, () => keys.slice());
+    const t0 = now();
+    for (const c of copies) c.sort();
+    const totalMs = now() - t0;
+    return { cpuMs: totalMs / reps, totalMs, reps, sorted: copies[reps - 1] };
+}
+
+// The warm-up's calibration: batches of 1, 2, 4, … sorts until one takes targetMs (or the cap); returns the
+// last batch, whose reps the measured trials use
+export function calibrateCpuBatch(keys, targetMs, now = () => performance.now()) {
+    const cap = cpuRepsCap(keys.length);
+    let batch = cpuSortBatch(keys, 1, now);
+    while (batch.totalMs < targetMs && batch.reps < cap) batch = cpuSortBatch(keys, Math.min(cap, batch.reps * 2), now);
+    return batch;
+}
 
 // f32 key map: edge values (±0, ±denormal min, ±normal min, ±FLT_MAX, ±∞, ±1) plus seeded random keys
 export const F32_EDGES = [0, -0, 1.401298464324817e-45, -1.401298464324817e-45, 1.1754943508222875e-38,
@@ -91,15 +183,14 @@ const fmtMs = (v) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFix
 const withIqr = (row, key) => `${fmtMs(row[key])} ms (${fmtMs(row[`${key}Lo`] ?? row[key])}–${fmtMs(row[`${key}Hi`] ?? row[key])})`;
 const fmtFit = (fit) => `slope ${fit.slope.toFixed(2)}${fit.ci95 ? ` (95% CI ${fit.ci95[0].toFixed(2)} … ${fit.ci95[1].toFixed(2)}, R² ${fit.r2.toFixed(3)})` : ' (no interval: 2 sizes)'}`;
 
-// GPU-timestamp medians when every row that has a wall time also has a GPU time, else wall medians
-function timeKey(rows, k) {
-    const walls = rows.filter(r => num(r[`${k}Wall`]));
-    return walls.length && walls.every(r => num(r[`${k}Gpu`])) ? `${k}Gpu` : `${k}Wall`;
-}
+const fmtRes = (v) => (v == null ? 'unknown' : v >= 0.1 ? `${+v.toFixed(3)} ms` : `${+(v * 1000).toFixed(1)} µs`);
+const fmtNs = (ns) => ns.map(fmtN).join(', ');
 
-// Log-log fit over the largest FIT_POINTS sizes that have `key`
-export function fitTail(rows, key) {
-    const pts = rows.filter(r => num(r[key]) && r[key] > 0 && num(r.n)).sort((a, b) => a.n - b.n).slice(-FIT_POINTS);
+// Log-log fit of `key` vs N over the sizes whose median is ≥ FIT_MIN_MS and resolvable on a clock of
+// resolution `res` (reps(row): sorts per clock reading, the CPU sort's batch); every size up to maxN counts
+export function fitRange(rows, key, res = null, reps = () => 1) {
+    const pts = rows.filter(r => num(r.n) && num(r[key]) && r[key] >= FIT_MIN_MS && resolvable(r[key], res, reps(r)))
+        .sort((a, b) => a.n - b.n);
     const ns = pts.map(r => r.n);
     return { ns, fit: fitPowerLaw(ns, pts.map(r => r[key])) };
 }
@@ -110,115 +201,150 @@ function intervalAgrees(fit, lo, hi, tol) {
     return fit.ci95[1] >= lo - tol && fit.ci95[0] <= hi + tol;
 }
 
-const timing = (key) => (key.endsWith('Gpu') ? 'GPU-timestamp' : 'wall-clock');
 const rangeText = (ns) => `N = ${fmtN(ns[0])} … ${fmtN(ns[ns.length - 1])}`;
+const timingOf = (clock) => (clock.gpu ? 'GPU-timestamp' : 'wall-clock');
+const inconsistentNote = (clock) => (clock.inconsistent.length
+    ? ` GPU timestamps not used: at N = ${fmtNs(clock.inconsistent)} they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used.`
+    : '');
+const fitWindow = `the sizes whose median is at least ${FIT_MIN_MS} ms and ${RESOLUTION_FACTOR}× the timer resolution`;
 
 function slopeNote(agrees, fit, lo, hi) {
-    if (agrees === null && fit?.ci95) return `Too noisy to decide: the 95% interval is wider than ± ${MAX_HALF_WIDTH}, enough to fit both O(N) and O(N log² N). Rerun, or run to a larger N.`;
-    if (agrees === null) return `Needs at least 3 sizes with a time to estimate an interval (largest ${FIT_POINTS} are fitted).`;
+    if (agrees === null) return `Too noisy to decide: the 95% interval is wider than ± ${MAX_HALF_WIDTH}, enough to fit both O(N) and O(N log² N). Rerun, or run to a larger N.`;
     if (agrees) return 'Within the interval: time grows like the operation count over this range.';
     return fit.slope < lo
         ? 'Flatter than predicted: fixed per-dispatch and submit costs are still a large share at these N, so the GPU is not saturated; a run to a larger N (or GPU timestamps) moves the slope up.'
         : `Steeper than predicted (above ${hi.toFixed(2)}): something grows faster than the work at these N, e.g. the keys no longer fitting in a cache.`;
 }
 
-function slopeClaims(rows) {
+function slopeClaims(rows, res) {
     const claims = [];
-    const one = (id, claim, key, lo, hi, form, extra = '') => {
-        const { ns, fit } = fitTail(rows, key);
-        if (ns.length < 2) {
-            claims.push({ key: id, claim, predicted: form, measured: '—', agrees: null, note: slopeNote(null) });
+    const one = (id, claim, k, lo, hi, form, extra = '') => {
+        const clock = k === 'cpu' ? { key: 'cpuMs', gpu: false, res: res.wall, inconsistent: [] } : clockFor(rows, k, res);
+        const reps = k === 'cpu' ? (r) => (num(r.cpuReps) ? r.cpuReps : 1) : () => 1;
+        const { ns, fit } = fitRange(rows, clock.key, clock.res, reps);
+        const window = `Fitted over ${fitWindow} (${timingOf(clock)} resolution ${fmtRes(clock.res)}), up to the largest N of the run.`;
+        if (ns.length < MIN_FIT_SIZES) {
+            claims.push({
+                key: id, claim, predicted: form,
+                measured: ns.length >= 2 ? `${fmtFit(fit)} from ${timingOf(clock)} medians at ${ns.length} sizes (${rangeText(ns)})`
+                    : `${ns.length} size(s) with a ${timingOf(clock)} median ≥ ${FIT_MIN_MS} ms`,
+                agrees: null,
+                note: `Undetermined: needs at least ${MIN_FIT_SIZES} sizes with a median of at least ${FIT_MIN_MS} ms (and ${RESOLUTION_FACTOR}× the timer resolution), ${ns.length} here; run to a larger N. ${window}${inconsistentNote(clock)}`,
+            });
             return;
         }
         const pLo = lo(ns), pHi = hi(ns);
-        const tooWide = fit.ci95 && (fit.ci95[1] - fit.ci95[0]) / 2 > MAX_HALF_WIDTH;
+        const tooWide = (fit.ci95[1] - fit.ci95[0]) / 2 > MAX_HALF_WIDTH;
         const agrees = tooWide ? null
             : pLo === pHi ? slopeAgrees(fit, pLo, SLOPE_TOLERANCE) : intervalAgrees(fit, pLo, pHi, SLOPE_TOLERANCE);
         claims.push({
             key: id,
             claim,
             predicted: `${form}: slope ${pLo === pHi ? pLo.toFixed(2) : `${pLo.toFixed(2)} … ${pHi.toFixed(2)}`} over ${rangeText(ns)}${extra} (± ${SLOPE_TOLERANCE})`,
-            measured: `${fmtFit(fit)} from ${timing(key)} medians at ${ns.length} sizes`,
+            measured: `${fmtFit(fit)} from ${timingOf(clock)} medians at ${ns.length} sizes`,
             agrees,
-            note: slopeNote(agrees, fit, pLo, pHi),
+            note: `${slopeNote(agrees, fit, pLo, pHi)} ${window}${inconsistentNote(clock)}`,
         });
     };
     const fixed = (model) => (ns) => predictedSlope(model, ns);
-    one('bitonic-slope', 'Bitonic sort (global): time vs N', timeKey(rows, 'bitonic'), fixed(MODELS.bitonic), fixed(MODELS.bitonic),
+    one('bitonic-slope', 'Bitonic sort (global): time vs N', 'bitonic', fixed(MODELS.bitonic), fixed(MODELS.bitonic),
         'O(N log² N), the slope of N·log₂N(log₂N+1)/2');
-    one('shared-slope', 'Bitonic sort (workgroup memory): time vs N', timeKey(rows, 'shared'), fixed(MODELS.sharedCompute), fixed(MODELS.sharedTraffic),
+    one('shared-slope', 'Bitonic sort (workgroup memory): time vs N', 'shared', fixed(MODELS.sharedCompute), fixed(MODELS.sharedTraffic),
         'O(N log² N) compare-exchanges, global traffic N × dispatches', ' (compute-bound … traffic-bound)');
-    one('radix-slope', 'Radix sort: time vs N', timeKey(rows, 'radix'), fixed(MODELS.radix), fixed(MODELS.radix), 'O(N · 8 passes)');
-    one('cpu-slope', 'CPU sort (TypedArray.prototype.sort): time vs N', 'cpuMs', fixed(MODELS.cpu), fixed(MODELS.cpu), 'O(N log N), the slope of N·log₂N');
+    one('radix-slope', 'Radix sort: time vs N', 'radix', fixed(MODELS.radix), fixed(MODELS.radix), 'O(N · 8 passes)');
+    one('cpu-slope', 'CPU sort (TypedArray.prototype.sort): time vs N', 'cpu', fixed(MODELS.cpu), fixed(MODELS.cpu), 'O(N log N), the slope of N·log₂N');
     return claims;
 }
 
-// −1: GPU clearly faster (its q3 below the CPU's q1), +1: clearly slower, 0: the interquartile ranges overlap
-function versusCpu(row, key) {
+// −1: GPU clearly faster (its q3 below the CPU's q1), +1: clearly slower, 0: the interquartile ranges overlap,
+// 'res': a median below RESOLUTION_FACTOR × its clock's resolution (not compared), null: no data
+function versusCpu(row, clock, res) {
+    const key = clock.key;
     if (!num(row[key]) || !num(row.cpuMs)) return null;
+    if (!resolvable(row[key], clock.res) || !resolvable(row.cpuMs, res.wall, num(row.cpuReps) ? row.cpuReps : 1)) return 'res';
     const g = [row[`${key}Lo`] ?? row[key], row[`${key}Hi`] ?? row[key]];
     const c = [row.cpuMsLo ?? row.cpuMs, row.cpuMsHi ?? row.cpuMs];
     return g[1] < c[0] ? -1 : g[0] > c[1] ? 1 : 0;
 }
 
-// The crossover of one GPU algorithm with the CPU sort, bracketed between sweep points
+// The crossover of one GPU algorithm with the CPU sort, bracketed between sweep points, on GPU timestamps
+// when they are available and consistent (clockFor), else wall times. Sizes where a time is below timer
+// resolution are skipped (`skipped`); when every size is, the kind is 'below-resolution'.
 export function crossover(rows, k) {
-    const key = `${k}Wall`;
-    const pts = rows.filter(r => versusCpu(r, key) !== null).sort((a, b) => a.n - b.n);
-    if (!pts.length) return { kind: 'no-data' };
-    const states = pts.map(r => versusCpu(r, key));
+    const res = resolutions(rows), clock = clockFor(rows, k, res);
+    const all = rows.map(r => ({ r, s: versusCpu(r, clock, res) })).filter(p => p.s !== null).sort((a, b) => a.r.n - b.r.n);
+    const skipped = all.filter(p => p.s === 'res').map(p => p.r.n);
+    const pts = all.filter(p => p.s !== 'res').map(p => p.r);
+    const base = { clock, res, skipped };
+    if (!all.length) return { kind: 'no-data', ...base };
+    if (!pts.length) return { kind: 'below-resolution', at: all[all.length - 1].r, ...base };
+    const states = pts.map(r => versusCpu(r, clock, res));
     const last = states.length - 1;
-    if (states.every(s => s === 1)) return { kind: 'none', at: pts[last] };
-    if (states.every(s => s === -1)) return { kind: 'below', at: pts[0] };
-    if (states[last] !== -1) return { kind: states[last] === 0 ? 'unresolved' : 'reversed', at: pts[last] };
+    if (states.every(s => s === 1)) return { kind: 'none', at: pts[last], ...base };
+    if (states.every(s => s === -1)) return { kind: 'below', at: pts[0], undeterminedBelow: skipped.some(n => n < pts[0].n), ...base };
+    if (states[last] !== -1) return { kind: states[last] === 0 ? 'unresolved' : 'reversed', at: pts[last], ...base };
     let i = last;
     while (i > 0 && states[i - 1] === -1) i--;
-    return { kind: 'between', below: pts[i - 1], above: pts[i], overlap: states[i - 1] === 0 };
+    return { kind: 'between', below: pts[i - 1], above: pts[i], overlap: states[i - 1] === 0, ...base };
 }
 
-function crossoverClaims(rows) {
+function crossoverClaims(rows, res) {
     return ALGORITHMS.map(a => {
-        const k = KEY[a], key = `${k}Wall`;
+        const k = KEY[a];
         const c = crossover(rows, k);
+        const key = c.clock.key;
         const both = (r) => `${NAME[a]} ${withIqr(r, key)} vs CPU ${withIqr(r, 'cpuMs')} at N = ${fmtN(r.n)}`;
         const measured = {
             'no-data': () => '—',
-            none: () => `none in range: the CPU sort is faster at every N (${both(c.at)})`,
-            below: () => `below the range: already faster at the smallest N (${both(c.at)})`,
+            'below-resolution': () => `undetermined: below timer resolution at every N (${both(c.at)})`,
+            none: () => `none in range: the CPU sort is faster at every compared N (${both(c.at)})`,
+            below: () => (c.undeterminedBelow
+                ? `faster from the smallest N with resolvable times on (${both(c.at)}); below that N a time is under ${RESOLUTION_FACTOR}× the timer resolution, so whether the crossover lies lower is undetermined`
+                : `below the range: already faster at the smallest N (${both(c.at)})`),
             unresolved: () => `not resolved: the spreads overlap at the largest N (${both(c.at)})`,
             reversed: () => `not stable: faster at some N but slower at the largest (${both(c.at)})`,
             between: () => `between N = ${fmtN(c.below.n)} and ${fmtN(c.above.n)}${c.overlap ? ' (spreads overlap at the lower one)' : ''}: ${both(c.below)}; ${both(c.above)}`,
         }[c.kind]();
+        const skipped = c.skipped.length && c.kind !== 'below-resolution'
+            ? `; not compared (a time below ${RESOLUTION_FACTOR}× the timer resolution): N = ${fmtNs(c.skipped)}` : '';
         return {
             key: `crossover-${k}`,
-            claim: `Crossover: ${NAME[a]} (wall) becomes faster than the CPU sort`,
+            claim: `Crossover: ${NAME[a]} (${c.clock.gpu ? 'GPU timestamps' : 'wall'}) becomes faster than the CPU sort`,
             predicted: 'device-dependent, no universal N; "none in range" is a valid outcome',
-            measured,
+            measured: measured + skipped,
             agrees: null,
-            note: 'GPU wall time is submit → done of the sort alone (no upload or readback); a GPU is "faster" at an N only when its q3 is below the CPU sort\'s q1. '
-                + 'In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point.',
+            note: 'The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. '
+                + 'The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is "faster" at an N only when its q3 is below the CPU sort\'s q1, '
+                + `and an N is compared only when both medians are at least ${RESOLUTION_FACTOR}× their clock's resolution (performance.now(): ${fmtRes(res.wall)}, ${res.wallSource}; GPU timestamps: ${fmtRes(res.gpu)}, inferred from the medians). `
+                + 'In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point.'
+                + inconsistentNote(c.clock),
         };
     });
 }
 
-function rankingClaim(rows) {
+function rankingClaim(rows, res) {
     const claim = 'Ranking at the largest N';
     const predicted = 'fastest first: radix < bitonic (workgroup memory) < bitonic (global), on a GPU with fast workgroup memory';
-    const note = 'Each adjacent pair counts as decided only when the interquartile ranges do not overlap. On the CPU-emulated GPU in CI '
-        + 'the order is inverted (global bitonic fastest, radix slowest): there barriers are expensive and workgroup memory is ordinary cache.';
+    const clocks = ALGORITHMS.map(a => clockFor(rows, KEY[a], res));
+    const gpu = clocks.every(c => c.gpu);
+    const tick = (gpu ? res.gpu : res.wall) ?? 0;
+    const note = 'A prediction for GPUs with fast workgroup memory, not a law: other GPUs and drivers may order them differently. '
+        + 'Each adjacent pair counts as decided only when the interquartile ranges are more than one clock tick apart; '
+        + 'GPU timestamps are used only when every algorithm\'s are consistent with the wall clock. On the CPU-emulated GPU in CI the order is inverted '
+        + '(global bitonic fastest, radix slowest): there barriers are expensive and workgroup memory is ordinary cache.'
+        + (clocks.map(inconsistentNote).find(Boolean) ?? '');
     const full = rows.filter(r => ALGORITHMS.every(a => num(r[`${KEY[a]}Wall`]))).sort((a, b) => a.n - b.n);
     if (!full.length) return { key: 'ranking', claim, predicted, measured: '—', agrees: null, note };
     const row = full[full.length - 1];
-    const gpu = ALGORITHMS.every(a => num(row[`${KEY[a]}Gpu`]));
     const keyOf = (a) => `${KEY[a]}${gpu ? 'Gpu' : 'Wall'}`;
     const lo = (a) => row[`${keyOf(a)}Lo`] ?? row[keyOf(a)], hi = (a) => row[`${keyOf(a)}Hi`] ?? row[keyOf(a)];
     const order = [...ALGORITHMS].sort((a, b) => row[keyOf(a)] - row[keyOf(b)]);
     let contradicted = false, decided = true;
     for (let i = 0; i + 1 < EXPECTED_RANKING.length; i++) {
         const fast = EXPECTED_RANKING[i], slow = EXPECTED_RANKING[i + 1];
-        if (hi(fast) < lo(slow)) continue;                 // decided, as predicted
-        if (hi(slow) < lo(fast)) contradicted = true;      // decided, the other way round
-        else decided = false;                              // spreads overlap
+        if (hi(fast) + tick < lo(slow)) continue;                 // decided, as predicted
+        if (hi(slow) + tick < lo(fast)) contradicted = true;      // decided, the other way round
+        else decided = false;                                     // spreads overlap
     }
     return {
         key: 'ranking',
@@ -246,6 +372,7 @@ const scaling = {
         { key: 'sharedGpu', label: 'bitonic (workgroup) GPU ms', format: ms, unit: 'ms' },
         { key: 'radixGpu', label: 'radix GPU ms', format: ms, unit: 'ms' },
         { key: 'cpuMs', label: 'CPU sort ms', format: ms, unit: 'ms' },
+        { key: 'cpuReps', label: 'CPU sorts per sample' },
         { key: 'bitonicWall', label: 'bitonic wall ms', format: ms, unit: 'ms' },
         { key: 'sharedWall', label: 'bitonic (workgroup) wall ms', format: ms, unit: 'ms' },
         { key: 'radixWall', label: 'radix wall ms', format: ms, unit: 'ms' },
@@ -253,6 +380,7 @@ const scaling = {
         { key: 'readbackMs', label: 'readback ms (radix)', format: ms, unit: 'ms' },
         { key: 'setupMs', label: 'buffers + bind groups ms (radix)', format: ms, unit: 'ms' },
         { key: 'pipelineMs', label: 'pipeline compile ms (once per run)', format: ms, unit: 'ms' },
+        { key: 'timerMs', label: 'performance.now() resolution ms', format: (v) => (v == null ? '—' : String(+v.toFixed(4))), unit: 'ms' },
         { key: 'radixKeysPerUs', label: 'radix M keys/s (wall)', format: int },
         { key: 'dispatches', label: 'dispatches (bitonic / workgroup / radix)', format: String },
         { key: 'bitonicWrong', label: 'bitonic keys ≠ CPU' },
@@ -306,6 +434,7 @@ const scaling = {
         ],
     },
     async *run(ctx, { dataType, maxN }) {
+        const timerMs = timerResolution();   // performance.now() resolution, recorded in every row
         const clock = new PhaseClock();
         const sorter = clock.time('compile', () => computeSorter(ctx.gpuDevice));
         let pipelineMs = clock.phases.compile;
@@ -315,13 +444,14 @@ const scaling = {
                 await ctx.step();
                 const wrong = { bitonic: 0, 'bitonic-shared': 0, radix: 0 };
                 let dispatches = {};
+                let cpuReps = 1;
                 const m = await ctx.measure(async ({ warmup, index }) => {
                     const keys = generateKeys(n, dataType, keySeed(n, warmup ? 100 + index : index + 1));
-                    const sorted = keys.slice();
-                    const t0 = performance.now();
-                    sorted.sort();
-                    const trial = { cpuMs: performance.now() - t0 };
-                    const expected = new Uint32Array(sorted.buffer);
+                    // The warm-up calibrates the CPU batch (CPU sort timing, above); measured trials reuse it
+                    const batch = warmup ? calibrateCpuBatch(keys, cpuBatchTarget(timerMs)) : cpuSortBatch(keys, cpuReps);
+                    if (warmup) cpuReps = batch.reps;
+                    const trial = { cpuMs: batch.cpuMs };
+                    const expected = new Uint32Array(batch.sorted.buffer);
                     for (const algorithm of ALGORITHMS) {
                         await ctx.step();
                         const r = await measureSort(ctx.gpuDevice, { algorithm, n, dataType, keys, expected, sorter });
@@ -332,7 +462,7 @@ const scaling = {
                     return trial;
                 }, protocolFor(n));
                 const stat = (f) => summarize(m.samples.map(f));
-                const row = { n, repeats: m.repeats, ...withSpread('cpuMs', stat(s => s.cpuMs)) };
+                const row = { n, repeats: m.repeats, ...withSpread('cpuMs', stat(s => s.cpuMs)), cpuReps, timerMs };
                 for (const a of ALGORITHMS) {
                     Object.assign(row, withSpread(`${KEY[a]}Gpu`, stat(s => s[a].gpuMs)), withSpread(`${KEY[a]}Wall`, stat(s => s[a].wallMs)));
                 }
@@ -377,7 +507,8 @@ const scaling = {
         return checks;
     },
     interpret(rows) {
-        return [...slopeClaims(rows), ...crossoverClaims(rows), rankingClaim(rows)];
+        const res = resolutions(rows);
+        return [...slopeClaims(rows, res), ...crossoverClaims(rows, res), rankingClaim(rows, res)];
     },
 };
 

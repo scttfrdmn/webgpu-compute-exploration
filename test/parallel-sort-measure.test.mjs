@@ -7,7 +7,10 @@
 // declared columns; measureSort reports its wall-clock phases; the experiment follows the measurement
 // protocol (one ctx.measure per N, warm-up + repeats, fresh seeded keys per trial, the same keys for every
 // algorithm within a trial, medians with q1/q3); verify() and interpret() on synthetic rows (known slopes
-// agree, wrong ones disagree, too few sizes cannot decide), crossovers and the ranking; the scope note.
+// agree, wrong ones disagree, too few sizes cannot decide), crossovers and the ranking; the scope note; the
+// timer-resolution helpers (performance.now() resolution, granularity of quantized medians, the CPU sort
+// batch), the fit range (≥ 1 ms and resolvable, up to the largest N) and the timestamp consistency check.
+// test/parallel-sort-bundles.test.mjs applies interpret() to the recorded Apple silicon runs.
 // The real sorts are checked on a software GPU in test/gpu/parallel-sort-measure.gpu.test.mjs.
 
 import { test } from 'node:test';
@@ -15,7 +18,8 @@ import assert from 'node:assert/strict';
 import { measureSort, computeSorter, generateKeys, MEASURE_MAX_KEYS, ParallelSort, sortInternals as S, wgslModules } from '../js/examples/parallel-sort.js';
 import experiments, {
     COUNTS, MAX_N, ALGORITHMS, KEY, PROTOCOL, LARGE_N, LARGE_PROTOCOL, protocolFor, keySeed, MODELS, predictedSlope,
-    FIT_POINTS, SLOPE_TOLERANCE, crossover, f32KeyMapFailures,
+    SLOPE_TOLERANCE, crossover, f32KeyMapFailures, FIT_MIN_MS, MIN_FIT_SIZES, RESOLUTION_FACTOR, timerResolution, granularity,
+    resolutions, resolvable, clockFor, fitRange, cpuSortBatch, calibrateCpuBatch, cpuBatchTarget, cpuRepsCap, CPU_MAX_REPS, CPU_MAX_BATCH_KEYS,
 } from '../js/teach/experiments/parallel-sort.js';
 import { runExperiment, makeContext, MAX_REPEATS, MAX_WARMUP } from '../js/teach/measure.js';
 import { PHASES } from '../js/phase-clock.js';
@@ -165,6 +169,9 @@ test('experiment runs on a mock device: the protocol per N, fresh seeded keys pe
             }
             for (const k of ['bitonicGpu', 'sharedGpu', 'radixGpu']) assert.equal(row[k], null, 'no timestamp-query on the mock');
             assert.equal(row.pipelineMs === null, i > 0, 'pipeline compile on the first row only');
+            assert.ok(Number.isInteger(row.cpuReps) && row.cpuReps >= 1 && row.cpuReps <= cpuRepsCap(row.n), `cpuReps ${row.cpuReps}`);
+            assert.ok(row.timerMs > 0 && row.timerMs < 1, `performance.now() resolution ${row.timerMs} ms in Node`);
+            if (i === 0) t.diagnostic(`N = ${row.n}: ${row.cpuReps} CPU sorts per sample, CPU ${row.cpuMs.toFixed(3)} ms per sort, timer ${row.timerMs} ms`);
             assert.match(row.dispatches, /^\d+ \/ \d+ \/ \d+$/);
             for (const a of ALGORITHMS) assert.ok(row[`${KEY[a]}Wrong`] > 0, 'the mock reads back zeros, which must not verify');
         });
@@ -241,7 +248,7 @@ test('verify(): pass with zero mismatches, fail with any, not-checked without ro
 });
 
 test('interpret(): predicted slopes come from the models at the fitted N', () => {
-    const tail = NS.slice(-FIT_POINTS);
+    const tail = NS.slice(-4);
     const mid = Math.log(Math.sqrt(tail[0] * tail[tail.length - 1]));
     const close = (a, b, tol) => assert.ok(Math.abs(a - b) < tol, `${a} vs ${b}`);
     // the local slopes of the asymptotic forms at the middle of the range: N log² N ≈ 1 + 2/ln N, N log N ≈ 1 + 1/ln N
@@ -262,16 +269,16 @@ test('interpret(): known slopes agree, wrong slopes disagree, too few sizes cann
     for (const prefix of SLOPES) {
         const c = byClaim(claims, prefix);
         assert.equal(c.agrees, true, `${prefix}: ${c.measured} vs ${c.predicted}`);
-        assert.match(c.measured, /95% CI .* medians at 4 sizes/);
+        assert.match(c.measured, /95% CI .* medians at \d+ sizes/);
     }
     assert.match(byClaim(claims, 'Radix sort').measured, /GPU-timestamp medians/);
-    assert.match(byClaim(claims, 'Radix sort').predicted, /slope 1\.00 over N = 524,288 … 4,194,304/);
+    assert.match(byClaim(claims, 'Radix sort').predicted, /slope 1\.00 over N = 131,072 … 4,194,304/);
     // the workgroup variant at the traffic-bound slope also agrees (its prediction is an interval)
     const traffic = e.interpret(syntheticRows(NS, { ...GOOD, shared: (n) => 1e-6 * MODELS.sharedTraffic(n) }));
     assert.equal(byClaim(traffic, 'Bitonic sort (workgroup').agrees, true);
 
     // wrong exponents: radix ∝ N², a flat (overhead-bound) bitonic, a CPU sort ∝ N^1.5
-    const wrong = e.interpret(syntheticRows(NS, { ...GOOD, radix: (n) => 1e-12 * n * n, bitonic: () => 5, cpu: (n) => 1e-6 * n ** 1.5 }));
+    const wrong = e.interpret(syntheticRows(NS, { ...GOOD, radix: (n) => 1e-10 * n * n, bitonic: () => 5, cpu: (n) => 1e-6 * n ** 1.5 }));
     assert.equal(byClaim(wrong, 'Radix sort').agrees, false);
     assert.match(byClaim(wrong, 'Radix sort').note, /Steeper/);
     assert.equal(byClaim(wrong, 'Bitonic sort (global)').agrees, false);
@@ -300,8 +307,8 @@ test('interpret(): known slopes agree, wrong slopes disagree, too few sizes cann
 test('crossover(): bracketed between sweep points with spreads; none in range, below range, unresolved, reversed', () => {
     // radix with a 2 ms fixed cost vs CPU 4e-6·N log₂N: the CPU is faster at small N, radix at large N
     const rows = syntheticRows(NS, { ...GOOD, radix: (n) => 2 + 1.2e-6 * MODELS.radix(n) }, { jitter: 0 });
-    const first = rows.findIndex(r => r.radixWallHi < r.cpuMsLo);
-    assert.ok(first > 0 && rows.slice(first).every(r => r.radixWallHi < r.cpuMsLo));
+    const first = rows.findIndex(r => r.radixGpuHi < r.cpuMsLo);   // GPU timestamps decide when present
+    assert.ok(first > 0 && rows.slice(first).every(r => r.radixGpuHi < r.cpuMsLo));
     const c = crossover(rows, 'radix');
     assert.equal(c.kind, 'between');
     assert.deepEqual([c.below.n, c.above.n], [rows[first - 1].n, rows[first].n]);
@@ -313,7 +320,7 @@ test('crossover(): bracketed between sweep points with spreads; none in range, b
     assert.equal(crossover(slow, 'radix').kind, 'none');
     assert.match(byClaim(e.interpret(slow), 'Crossover: radix').measured, /^none in range/);
     assert.equal(crossover(syntheticRows(NS, { ...GOOD, radix: (n) => 0.1 * GOOD.cpu(n) }), 'radix').kind, 'below');
-    assert.equal(crossover(syntheticRows(NS, { ...GOOD, radix: (n) => GOOD.cpu(n) }), 'radix').kind, 'unresolved');
+    assert.equal(crossover(syntheticRows(NS, { ...GOOD, radix: (n) => GOOD.cpu(n) / 0.8 }), 'radix').kind, 'unresolved');   // GPU time = 0.8 × wall
     assert.equal(crossover(syntheticRows(NS, { ...GOOD, radix: (n) => (n < 1e6 ? 0.1 : 10) * GOOD.cpu(n) }), 'radix').kind, 'reversed');
     assert.equal(crossover([], 'radix').kind, 'no-data');
 });
@@ -332,4 +339,115 @@ test('ranking at the largest N: expected order agrees, inverted (software GPU) d
     assert.equal(c.agrees, null, 'workgroup and global bitonic within each other\'s spread');
     assert.match(c.claim, /wall clock/);
     assert.equal(byClaim(e.interpret([]), 'Ranking').agrees, null);
+});
+
+// ---- timer resolution, CPU batches, fit range, timestamp consistency --------------------------------------
+
+// A clock that advances `stepMs` of true time per call and reports it floored to `tickMs` (Safari: 1 ms)
+const coarseClock = (tickMs, stepMs = 0.003) => { let t = 0; return () => { t += stepMs; return Math.floor(t / tickMs) * tickMs; }; };
+
+test('timerResolution(): the smallest step of a coarsened clock; Node\'s clock is fine-grained; a frozen clock gives null', (t) => {
+    for (const tick of [1, 0.1, 0.005]) {
+        const r = timerResolution(coarseClock(tick));
+        assert.ok(Math.abs(r - tick) < 1e-9, `${tick} ms clock: measured ${r}`);
+    }
+    const node = timerResolution();
+    t.diagnostic(`performance.now() resolution in Node: ${node} ms`);
+    assert.ok(node > 0 && node < 0.05);
+    assert.equal(timerResolution(() => 7, { maxCalls: 1000 }), null);
+});
+
+test('granularity(): the step of quantized medians, null with too few distinct values', () => {
+    // Chrome's GPU timestamps: multiples of 2¹⁶ ns, with float noise
+    const ticks = [3, 4, 5, 9, 15, 36, 65].map(k => k * 0.065536 * (1 + 1e-9));
+    assert.ok(Math.abs(granularity(ticks) - 0.065536) < 1e-5);
+    assert.equal(granularity([0, 1, 1, 2, 3, 6, 6.0000001]), 1, 'Safari wall medians: 1 ms');
+    assert.equal(granularity([1, 2, 3]), null);
+    const r = resolutions([{ n: 1, timerMs: 0.1, radixWall: 0.5 }, { n: 2, timerMs: 0.1, radixWall: 0.55 }]);
+    assert.equal(r.wall, 0.1, 'a measured resolution wins over the inferred one');
+    assert.equal(r.wallSource, 'measured');
+    assert.ok(resolvable(1, 0.1) && !resolvable(0.99, 0.1) && resolvable(0.2, 0.1, 5) && resolvable(0.001, null));
+    assert.equal(RESOLUTION_FACTOR, 10);
+});
+
+test('CPU sort batch: copies sorted back to back, per-sort time, calibrated to the target, capped', () => {
+    const keys = generateKeys(4096, 'u32', 5);
+    const b = cpuSortBatch(keys, 3);
+    assert.equal(b.reps, 3);
+    assert.deepEqual(b.sorted, keys.slice().sort());
+    assert.ok(Math.abs(b.cpuMs * 3 - b.totalMs) < 1e-9);
+    assert.notDeepEqual(keys, b.sorted, 'the input keys are not sorted in place');
+    // A 1 ms clock and 0.25 ms per sort: reps double until a batch spans the 20 ms target (Safari: 20 × 1 ms)
+    let t = 0;
+    const now = () => Math.floor(t);
+    const fake = (length, ms) => ({ length, slice: () => ({ sort() { t += ms; } }) });
+    assert.equal(cpuBatchTarget(1), 20);
+    assert.equal(cpuBatchTarget(0.0001), 10);
+    const cal = calibrateCpuBatch(fake(16384, 0.25), cpuBatchTarget(1), now);
+    assert.equal(cal.reps, CPU_MAX_REPS, '64 × 0.25 ms = 16 ms: the cap stops it');
+    assert.ok(resolvable(cal.cpuMs, 1, cal.reps), `${cal.reps} × ${cal.cpuMs} ms resolvable on a 1 ms clock`);
+    t = 0;
+    assert.equal(calibrateCpuBatch(fake(1 << 20, 0.25), 20, now).reps, cpuRepsCap(1 << 20));
+    assert.equal(cpuRepsCap(1 << 20), CPU_MAX_BATCH_KEYS >> 20, 'at most 16 MB of keys per batch');
+    assert.equal(cpuRepsCap(MAX_N), 1);
+    assert.ok(COUNTS.every(n => cpuRepsCap(n) * n <= Math.max(n, CPU_MAX_BATCH_KEYS)));
+    t = 0;
+    assert.equal(calibrateCpuBatch(fake(MAX_N, 300), 20, now).reps, 1, 'a sort longer than the target is timed once');
+    t = 0;
+    assert.equal(calibrateCpuBatch(fake(65536, 3), 20, now).reps, 8, '3, 6, 12 ms are short of 20 ms; 24 ms is not');
+});
+
+test('fitRange(): every size up to the largest N with a median ≥ 1 ms and resolvable; < 3 sizes undetermined', () => {
+    const rows = syntheticRows(NS, GOOD);
+    const { ns } = fitRange(rows, 'radixGpu');
+    assert.deepEqual(ns, rows.filter(r => r.radixGpu >= FIT_MIN_MS).map(r => r.n));
+    assert.ok(ns.length >= MIN_FIT_SIZES && ns.length < NS.length, 'the smallest sizes are left out');
+    assert.equal(ns.at(-1), MAX_N, 'up to the largest N of the run');
+    // a 1 ms clock: only medians ≥ 10 ms count
+    assert.deepEqual(fitRange(rows, 'radixGpu', 1).ns, rows.filter(r => r.radixGpu >= 10).map(r => r.n));
+    // Swept to 1,048,576 only (the first Apple silicon runs), radix reaches 1 ms at too few sizes: undetermined
+    const short = syntheticRows(NS.filter(n => n <= 1048576), { ...GOOD, radix: (n) => 2.5e-6 * n });
+    const c = byClaim(e.interpret(short), 'Radix sort');
+    assert.ok(fitRange(short, 'radixGpu').ns.length < MIN_FIT_SIZES);
+    assert.equal(c.agrees, null);
+    assert.match(c.note, /Undetermined: needs at least 3 sizes/);
+    // The predicted slope is computed over the fitted N, not a fixed range
+    const b = byClaim(e.interpret(rows), 'Bitonic sort (global)');
+    const fitted = fitRange(rows, 'bitonicGpu').ns;
+    assert.ok(b.predicted.includes(`slope ${predictedSlope(MODELS.bitonic, fitted).toFixed(2)} over N = ${fitted[0].toLocaleString('en-US')} … 4,194,304`), b.predicted);
+});
+
+test('clockFor(): GPU timestamps longer than the wall time of the same sorts are not used', () => {
+    const rows = syntheticRows(NS, GOOD);
+    assert.equal(clockFor(rows, 'radix').key, 'radixGpu');
+    const bad = rows.map(r => (r.n === 1048576 ? { ...r, radixGpu: 3 * r.radixWall, radixGpuLo: 2.5 * r.radixWall, radixGpuHi: 3.5 * r.radixWall } : r));
+    const clock = clockFor(bad, 'radix');
+    assert.deepEqual([clock.key, clock.gpu, clock.inconsistent], ['radixWall', false, [1048576]]);
+    const claims = e.interpret(bad);
+    assert.match(byClaim(claims, 'Crossover: radix (wall)').note, /GPU timestamps not used: at N = 1,048,576/);
+    assert.match(byClaim(claims, 'Ranking').claim, /wall clock/, 'the ranking needs consistent timestamps for every algorithm');
+    assert.ok(byClaim(claims, 'Crossover: bitonic (global) (GPU timestamps)'));
+});
+
+test('crossover(): sizes below timer resolution are not compared; all below → undetermined', () => {
+    // Safari-like: wall and CPU times quantized to 1 ms, no timestamps; CPU up to 17 ms, radix up to 3 ms
+    const rows = NS.filter(n => n <= 1048576).map((n, i) => {
+        const row = { n, repeats: 5, cpuReps: 1 };
+        for (const [k, v] of [['cpuMs', 17 * n / 1048576], ['radixWall', 3 * n / 1048576], ['bitonicWall', 6 * n / 1048576 + i % 2], ['sharedWall', 6 * n / 1048576]]) {
+            row[k] = Math.round(v); row[`${k}Lo`] = Math.round(v); row[`${k}Hi`] = Math.round(v) + (i % 2);
+        }
+        return row;
+    });
+    assert.equal(resolutions(rows).wall, 1);
+    assert.equal(crossover(rows, 'radix').kind, 'below-resolution');
+    assert.match(byClaim(e.interpret(rows), 'Crossover: radix (wall)').measured, /^undetermined: below timer resolution/);
+    // The CPU sort timed over 64-sort batches: CPU times resolvable, radix still not
+    assert.equal(crossover(rows.map(r => ({ ...r, cpuReps: 64 })), 'radix').kind, 'below-resolution');
+    // Resolvable GPU times from 524,288 on: faster there, undetermined below
+    const x = (r, k, f) => ({ [k]: r[k] * f, [`${k}Lo`]: r[`${k}Lo`] * f, [`${k}Hi`]: r[`${k}Hi`] * f });
+    const later = rows.map(r => ({ ...r, cpuReps: 64, ...x(r, 'radixWall', 10), ...x(r, 'cpuMs', 100) }));
+    const l = crossover(later, 'radix');
+    assert.equal(l.kind, 'below');
+    assert.ok(l.undeterminedBelow && l.skipped.length > 0 && l.skipped.every(n => n < l.at.n));
+    assert.match(byClaim(e.interpret(later), 'Crossover: radix').measured, /whether the crossover lies lower is undetermined; not compared/);
 });

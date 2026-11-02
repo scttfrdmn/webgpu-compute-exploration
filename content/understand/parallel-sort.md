@@ -182,15 +182,24 @@ with the CPU sort is the question the [benchmark](#parallel-sort/measure) answer
 The [scaling experiment](#parallel-sort/measure) runs, for each $N$, one discarded warm-up and then 5
 independent trials (3 from $N = 2^{21}$, so that the sweep fits its 20 s budget). Each trial draws fresh
 keys from a fixed seed sequence, so trials differ from each other but a rerun repeats them exactly; times
-the browser's sort on a copy; and sorts the same keys with all three GPU algorithms, each checked against
+the browser's sort on copies; and sorts the same keys with all three GPU algorithms, each checked against
 the CPU result bit for bit. Tables show the median with the interquartile range, charts a range bar.
 The **Measured vs predicted** table under the results then sets your numbers against the theory.
+
+**Timer resolution.** Browsers coarsen `performance.now()` against timing attacks: Chrome to 0.1 ms,
+Safari to 1 ms, so a 0.3 ms sort reads as 0 or 1 ms there. Chrome also rounds GPU timestamps, to
+$2^{16}$ ns ≈ 0.066 ms. The experiment measures the `performance.now()` step once per run (the
+"performance.now() resolution" column) and infers the timestamp step from the medians. A CPU sample is
+a batch of back-to-back sorts of separate copies, as many as it takes (up to 64, at most 16 MB of keys)
+for the batch to last 10 ms and 20 ticks of the clock, divided by their number (the "CPU sorts per
+sample" column; the warm-up trial calibrates it). A time below 10× its clock's resolution is a few
+ticks, so it is neither fitted nor compared.
 
 **Slopes.** $\mathcal{O}(n \log^2 n)$ is not a straight line on log-log axes, so it cannot be compared
 with a fitted slope directly. The experiment turns each model into a number over *your* range: it
 evaluates the operation count at the measured $N$ and fits the same log-log line through it.
 
-| model | operation count | predicted slope, $N = 2^{19} \dots 2^{22}$ |
+| model | operation count | predicted slope, e.g. over $N = 2^{19} \dots 2^{22}$ |
 |---|---|---|
 | bitonic, global | $N \cdot S(N)$ stages × keys | 1.14 (the local slope is $1 + 2/\ln N$) |
 | bitonic, workgroup memory | $N \cdot S(N)$ compare-exchanges … $N \cdot D(N)$ global traffic | 1.14 … 1.22 |
@@ -198,8 +207,11 @@ evaluates the operation count at the measured $N$ and fits the same log-log line
 | CPU sort | $N \log_2 N$ | 1.07 (the local slope is $1 + 1/\ln N$) |
 
 $D(N)$ is the workgroup variant's dispatch count, which grows faster than the number of stages. The fit
-uses the four largest $N$ of your run; its 95% interval comes from the scatter of those medians around a
-straight line (Student $t$ with 2 degrees of freedom, so it is wide), and the claim *agrees* when the
+uses every size of your run, up to **Largest N**, whose median is at least 1 ms (and 10× the timer
+resolution): below that, launch and submit costs and the timer's ticks dominate. The prediction is
+computed over exactly the fitted sizes. At least three sizes are needed; at the default 4,194,304 a
+GPU that sorts $2^{20}$ keys in 1–5 ms has three to five. The 95% interval comes from the scatter of
+those medians around a straight line (Student $t$, so it is wide with few sizes), and the claim *agrees* when the
 interval reaches the prediction ± 0.05. A slope **below** the prediction does not mean a better
 algorithm: fixed costs per dispatch and per submit are still a large share of the time, so the GPU is
 not saturated yet. A slope **above** it means something grows faster than the work, such as the keys
@@ -207,17 +219,23 @@ outgrowing a cache. Fewer than three sizes give no interval, and an interval wid
 tell $\mathcal{O}(n)$ from $\mathcal{O}(n \log^2 n)$; both make the verdict "undetermined".
 
 **Crossovers.** A GPU sort counts as faster than the CPU sort at an $N$ only when the upper quartile of
-its wall time is below the CPU sort's lower quartile. The crossover is then bracketed between two sweep
-sizes; "none in range" and "not resolved" are results too. There is no device-independent prediction,
+its time is below the CPU sort's lower quartile, and an $N$ is compared only when both medians are at
+least 10× their clock's resolution. The crossover is then bracketed between two sweep sizes; "none in
+range", "not resolved" and "undetermined: below timer resolution" are results too, and when the GPU is
+already faster at the smallest comparable $N$ the claim says so and leaves the smaller sizes open. There is no device-independent prediction,
 so the verdict is always "undetermined": the crossing point moves with the GPU, the driver, the
 browser and the CPU. It also compares the sort alone with the CPU sort; the third chart shows upload
 and readback next to the radix sort time, and their sum is the fair comparison when the keys start and
-end on the CPU. Slopes and the ranking use GPU timestamps when your browser offers `timestamp-query`,
-otherwise wall times; crossovers always use wall times, like the CPU sort's.
+end on the CPU. Slopes, crossovers and the ranking use GPU timestamps when your browser offers
+`timestamp-query`, otherwise wall times (the CPU sort is always wall-clock). Timestamps are rejected
+when a sort's GPU time exceeds the wall time of the same sort, from submit to done, which a pass
+cannot do: Safari 27.2 on an M4 Pro reported 5.6 ms of GPU time for radix sorts that took 3 ms by the
+wall clock, so there the claims fall back to wall times.
 
 **Ranking.** At the largest $N$ the expected order, fastest first, is radix, bitonic with workgroup
-memory, global bitonic. Each neighbouring pair is decided only when their interquartile ranges do not
-overlap; one pair in the wrong order makes the verdict "disagrees". On the CPU-emulated GPU in CI the
+memory, global bitonic, a prediction for GPUs with fast workgroup memory rather than a law. Each
+neighbouring pair is decided only when their interquartile ranges are more than one clock tick apart;
+one pair in the wrong order makes the verdict "disagrees". On the CPU-emulated GPU in CI the
 order is reversed, which is the measurement being right about that machine, not the theory being wrong.
 
 What none of this shows: other inputs (only uniform random keys are timed), other devices or browsers,
