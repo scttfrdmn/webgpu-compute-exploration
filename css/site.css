@@ -41,6 +41,14 @@ header.hero p { margin: 0 0 18px; max-width: 760px; color: var(--muted); font-si
 }
 .hero-links a:hover { border-color: var(--accent); color: var(--accent); }
 .hero-links button { border-radius: 999px; }
+/* Visitor level (js/teach/levels.js): Beginner / Intermediate / Advanced */
+.level-select {
+    display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 14px;
+    border: 1px solid var(--border); border-radius: 999px; font-size: 0.92rem; color: var(--muted);
+}
+.level-select select { border-radius: 999px; padding: 4px 10px; font-size: 0.9rem; }
+.level-select:focus-within { border-color: var(--accent); }
+.level-fallback-note { margin: 0 0 12px; }
 
 /* Opt-in device report: built on request, copied to the clipboard, never sent automatically */
 .device-report { margin-top: 12px; max-width: 760px; }
