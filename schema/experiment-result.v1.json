@@ -359,6 +359,11 @@
         ],
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional stable identifier of the claim; unlike claim text it does not change with wording or clock labels"
+          },
           "claim": {
             "type": "string",
             "minLength": 1

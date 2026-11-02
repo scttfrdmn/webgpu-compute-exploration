@@ -168,11 +168,17 @@ export function renderSummary({ matrix, bundles }) {
 
     const claimRows = [];
     for (const x of experiments) {
-        const claims = [];
-        for (const env of present) for (const c of find(env, experimentKey(x))?.interpretation ?? []) if (!claims.includes(c.claim)) claims.push(c.claim);
-        for (const claim of claims) {
-            claimRows.push([x.experiment.exampleId, experimentName(x), claim, ...present.map(env => {
-                const c = find(env, experimentKey(x))?.interpretation?.find(k => k.claim === claim);
+        // Rows group by the stable claim key. A record from before keys existed joins the row of the key that
+        // another environment gives the same claim text; otherwise its text stands in for the key. Show the first wording seen.
+        const claimsOf = present.map(env => find(env, experimentKey(x))?.interpretation ?? []);
+        const keyByText = new Map(claimsOf.flat().filter(c => c.key).map(c => [c.claim, c.key]));
+        const idOf = c => c.key ?? keyByText.get(c.claim) ?? c.claim;
+        const ids = [...new Set(claimsOf.flat().map(idOf))];
+        for (const id of ids) {
+            const claimIn = (env) => find(env, experimentKey(x))?.interpretation?.find(k => idOf(k) === id);
+            const first = present.map(claimIn).find(Boolean);
+            claimRows.push([x.experiment.exampleId, experimentName(x), first.claim, ...present.map(env => {
+                const c = claimIn(env);
                 return c ? agreesText(c.agrees) : '—';
             })]);
         }

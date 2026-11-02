@@ -37,7 +37,7 @@ const experiment = {
     id: 'demo', title: 'Demo', budgetMs: 20000,
     columns: [{ key: 'n', label: 'N' }, { key: 'ms', label: 'wall ms', unit: 'ms' }, { key: 'err', label: 'error' }],
     verify: (rows) => [check('max error', Math.max(...rows.map(r => r.err)), { max: 1e-3, reference: 'CPU' })],
-    interpret: () => [{ claim: 'time grows linearly', predicted: 'slope 1', measured: '1.02 (95% CI 0.9–1.1)', agrees: true, note: 'two sizes only' }],
+    interpret: () => [{ key: 'linear', claim: 'time grows linearly', predicted: 'slope 1', measured: '1.02 (95% CI 0.9–1.1)', agrees: true, note: 'two sizes only' }],
 };
 const rows = [
     { n: 1024, ms: 1.5, msLo: 1.2, msHi: 1.9, err: 1e-4 },
@@ -333,4 +333,13 @@ test('interpretationOf: normalizes claims, survives a throwing interpret, omitte
     assert.equal(thrown.interpretation[0].agrees, null);
     assert.match(thrown.interpretation[0].note, /boom/);
     assert.deepEqual(validateResultRecord(sampleRecord(), schema), { valid: true, errors: [] });
+});
+
+test('interpretationOf keeps each claim key, and the schema accepts it', async () => {
+    const { interpretationOf } = await import('../js/teach/result-record.js');
+    const claim = { key: 'radix-slope', claim: 'Radix sort: time vs N (GPU timestamps)', predicted: 'p', measured: 'm', agrees: true };
+    const out = interpretationOf({ interpret: () => [claim] }, [], {});
+    assert.equal(out.interpretation[0].key, 'radix-slope');
+    const record = { ...sampleRecord(), interpretation: out.interpretation };
+    assert.deepEqual(validateResultRecord(record, schema), { valid: true, errors: [] });
 });

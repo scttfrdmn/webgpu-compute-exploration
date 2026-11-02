@@ -313,6 +313,25 @@ test('summary tool: correctness, tolerances, timing and interpretation tables ov
     }
 });
 
+test('summary tool: a claim without a key joins the keyed row with the same text in another environment', () => {
+    const dir = fakeRoot();
+    try {
+        const sort = (claims) => recordFor('parallel-sort', 'scaling', { settings: { dataType: 'u32', maxN: 1048576 }, claims });
+        const claim = { claim: 'radix O(N) vs CPU sort', predicted: 'radix wins', measured: 'radix wins', agrees: true };
+        const chrome = buildValidationBundle({ plan: VALIDATION_PLAN, environment: sampleEnvironment({ id: 'apple-silicon-chrome' }),
+            records: [sort([{ key: 'radix-vs-cpu', ...claim }])], generatedAt: '2026-11-01T09:00:00.000Z' });
+        const safari = buildValidationBundle({ plan: VALIDATION_PLAN, environment: sampleEnvironment({ id: 'apple-silicon-safari26' }),
+            records: [sort([claim])], generatedAt: '2026-11-01T10:00:00.000Z' });
+        writeBundle(dir, 'apple-silicon-chrome', chrome);
+        writeBundle(dir, 'apple-silicon-safari26', safari);
+        const md = renderSummary(loadBundles(dir));
+        assert.deepEqual(md.split('\n').filter(line => line.includes('radix O(N) vs CPU sort')),
+            ['| parallel-sort | scaling (dataType=u32, maxN=1048576) | radix O(N) vs CPU sort | agrees | agrees |']);
+    } finally {
+        rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test('summary tool: rejects smoke bundles, misplaced files, wrong names, unknown environments, invalid JSON', () => {
     const dir = fakeRoot();
     try {
