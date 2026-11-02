@@ -624,6 +624,8 @@ export async function initBoids(gpuDevice) {
         const wasRunning = simulation.running;
         simulation.destroy();
         simulation = new BoidsSimulation(device, canvas, numBoids);
+        speedSlider.value = String(simulation.maxSpeed * 10);
+        speedValue.textContent = speedSlider.value;
         if (wasRunning) simulation.start(); else simulation.render();
         updateOutput();
     });
