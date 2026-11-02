@@ -284,8 +284,18 @@ export const KERNELS = {
     naive: { code: shaderCode, workgroups: (M, K) => [Math.ceil(M / TILE), Math.ceil(K / TILE)] },
     tiled: { code: tiledShaderCode, workgroups: (M, K) => [Math.ceil(K / TILED_T), Math.ceil(M / TILED_T)] },
 };
-export const MAX_MATMUL_DIM = 1024;      // M, N, K caps: 1024³ is 2.1 GFLOP in one dispatch
+export const MAX_MATMUL_DIM = 2048;      // M, N, K caps: 2048³ is 17.2 GFLOP in one dispatch (0.35 s at 50 GFLOPS)
 export const MAX_MEASURE_REPEATS = 10;
+// Products per timed pass (measureMatmul's batch): at most MAX_BATCH, and at most one 2048³ product's work
+export const MAX_BATCH = 64;
+export const MAX_BATCH_FLOPS = 2 * MAX_MATMUL_DIM ** 3;
+
+// The batch measureMatmul really uses for an M×N·N×K product: 1 … MAX_BATCH, capped so that batch · 2MNK stays
+// within MAX_BATCH_FLOPS
+export function effectiveBatch(batch, M, N, K) {
+    if (!Number.isInteger(batch) || batch < 1) throw new RangeError(`batch = ${batch} must be a positive integer`);
+    return Math.max(1, Math.min(batch, MAX_BATCH, Math.floor(MAX_BATCH_FLOPS / (2 * M * N * K))));
+}
 
 const median = (values) => {
     const v = values.filter(x => typeof x === 'number' && Number.isFinite(x)).sort((p, q) => p - q);
@@ -293,14 +303,18 @@ const median = (values) => {
 };
 
 // A: M×N and B: N×K Float32Arrays, row-major; kernel 'naive' or 'tiled'. Resolves to
-// { M, N, K, kernel, flops, gpuMs, wallMs, phases, C } with flops = 2·M·N·K; gpuMs and wallMs are medians
-// over `repeats` timed dispatches after `warmup` untimed ones (≤ 10 each), gpuMs from timestamp queries
+// { M, N, K, kernel, batch, flops, gpuMs, wallMs, phases, C } with flops = 2·M·N·K; gpuMs and wallMs are medians
+// over `repeats` timed passes after `warmup` untimed ones (≤ 10 each), gpuMs from timestamp queries
 // (null without timestamp-query) and wallMs from submit to onSubmittedWorkDone; C (M×K Float32Array) is
 // read back when readback is true. phases are wall-clock ms as defined in js/phase-clock.js: compile
 // (buffers, shader module, pipeline, bind group), upload (A, B and the dimensions), dispatch (= wallMs)
 // and readback (copy, map, copy out). One call with warmup = 0, repeats = 1 is one independent
 // measurement for ctx.measure (js/teach/measure.js), which then takes care of warm-up and repeats.
-export async function measureMatmul(gpuDevice, { A, B, M, N, K, kernel = 'naive', warmup = 1, repeats = 3, readback = true }) {
+// batch (effectiveBatch, returned as result.batch) dispatches the same product that many times back to back in
+// one pass; gpuMs and wallMs are then per product (pass time / batch). Batching makes a fast GPU's small
+// products long enough for the timer (Chrome quantizes timestamps to about 0.1 ms) and amortizes the submit;
+// every dispatch writes the same C, so the result does not change.
+export async function measureMatmul(gpuDevice, { A, B, M, N, K, kernel = 'naive', warmup = 1, repeats = 3, readback = true, batch = 1 }) {
     const device = gpuDevice.device ?? gpuDevice;
     for (const [name, v] of [['M', M], ['N', N], ['K', K]]) {
         if (!Number.isInteger(v) || v < 1 || v > MAX_MATMUL_DIM) throw new RangeError(`${name} = ${v} is outside 1 … ${MAX_MATMUL_DIM}`);
@@ -308,6 +322,7 @@ export async function measureMatmul(gpuDevice, { A, B, M, N, K, kernel = 'naive'
     if (A?.length !== M * N || B?.length !== N * K) throw new RangeError('A must be M×N and B N×K');
     const spec = KERNELS[kernel];
     if (!spec) throw new RangeError(`unknown kernel ${kernel}`);
+    const perPass = effectiveBatch(batch, M, N, K);
     const clock = new PhaseClock();
     const buffers = [];
     const timer = new GpuTimer(gpuDevice, { maxPasses: 1, poolSize: 1 });
@@ -351,7 +366,7 @@ export async function measureMatmul(gpuDevice, { A, B, M, N, K, kernel = 'naive'
             const pass = encoder.beginComputePass(timed ? timer.computePassDescriptor('matmul') : undefined);
             pass.setPipeline(pipeline);
             pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(wx, wy);
+            for (let b = 0; b < perPass; b++) pass.dispatchWorkgroups(wx, wy);
             pass.end();
             if (timed) timer.resolve(encoder);
             const t0 = performance.now();
@@ -359,10 +374,11 @@ export async function measureMatmul(gpuDevice, { A, B, M, N, K, kernel = 'naive'
             const timing = timed ? timer.read() : null;
             await device.queue.onSubmittedWorkDone();
             if (!timed) continue;
-            wall.push(performance.now() - t0);
-            gpu.push((await timing)?.total ?? null);
+            wall.push((performance.now() - t0) / perPass);
+            const passMs = (await timing)?.total;
+            gpu.push(typeof passMs === 'number' ? passMs / perPass : null);
         }
-        const result = { M, N, K, kernel, flops: 2 * M * N * K, gpuMs: median(gpu), wallMs: median(wall) };
+        const result = { M, N, K, kernel, batch: perPass, flops: 2 * M * N * K, gpuMs: median(gpu), wallMs: median(wall) };
         clock.add('dispatch', result.wallMs);
         clock.add('readback', 0);
         if (readback) result.C = await clock.time('readback', () => readBuffer(device, cBuffer, 4 * M * K));

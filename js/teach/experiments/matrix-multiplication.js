@@ -8,21 +8,25 @@
 // and one independent reference, the float64 product of js/refs/basic.js (matmulRowsF64) on SAMPLE_ROWS evenly
 // spaced rows (O(rows · n²), so n = 1,024 stays cheap).
 //
-// Caps (exported so test/matrix-multiplication-measure.test.mjs can check them): GPU n ≤ 1,024 (2.1 GFLOP
-// per product), CPU n ≤ 512 (0.27 GFLOP: about 0.1 s at the 2.4 GFLOPS one core of a 2023 laptop reaches,
+// Caps (exported so test/matrix-multiplication-measure.test.mjs can check them): GPU n ≤ 2,048 (17.2 GFLOP
+// per product, 0.35 s at 50 GFLOPS; the default stops at 1,024), CPU n ≤ 512 (0.27 GFLOP: about 0.1 s at the 2.4 GFLOPS one core of a 2023 laptop reaches,
 // still under 1.5 s at 0.2 GFLOPS; a loaded CI runner took 0.67 s). Protocol for every path: 1 discarded warm-up, then 5 independent
-// repeats (GPU: each a fresh measureMatmul call that creates, uploads, dispatches once and reads back).
+// repeats (GPU: each a fresh measureMatmul call that creates, uploads, dispatches and reads back). A GPU sample
+// runs the product `batch` times in one timed pass (batchFor: enough for about TARGET_SAMPLE_MS, from a probe
+// at the first size and the previous size's time after that) and reports the time per product, so a fast GPU's
+// small products are not below the timer's resolution; on a slow GPU the batch is 1.
 // Timed columns are medians with their interquartile range; errors are deterministic and come from the
 // last repeat.
 
-import { measureMatmul, MAX_MATMUL_DIM, TILED_T } from '../../examples/matrix-multiplication.js';
+import { measureMatmul, effectiveBatch, MAX_MATMUL_DIM, MAX_BATCH, TILED_T } from '../../examples/matrix-multiplication.js';
 import { matmulRowsF64, matmulBlockedF32 } from '../../refs/basic.js';
 import { mulberry32 } from '../../refs/random.js';
 import { summarize, withSpread, fitPowerLaw, slopeAgrees } from '../stats.js';
 import { check } from '../result-record.js';
 
-export const SIZES = [64, 128, 256, 512, 1024];
-export const MAX_SIZE = 1024;            // GPU cap (also the example's MAX_MATMUL_DIM)
+export const SIZES = [64, 128, 256, 512, 1024, 2048];
+export const MAX_SIZE = 2048;            // GPU cap (also the example's MAX_MATMUL_DIM)
+export const DEFAULT_MAX_N = 1024;
 export const CPU_MAX_N = 512;            // CPU baseline cap: one product stays well under 2 s
 export const SAMPLE_ROWS = 16;
 export const SEED = 7;
@@ -34,10 +38,15 @@ export const PROTOCOL = { warmup: 1, repeats: 5 };
 // a factor 4–5 of headroom (a different FMA contraction or summation order) and is still below n·u for
 // n > 16; a kernel that drops or repeats a 16-wide tile is wrong by ≥ 16/n ≥ 1.6% and fails by 10⁴×.
 export const ERR_FACTOR = 4;
-// interpret(): power laws are fitted over the sizes whose median time is at least FIT_MIN_MS. Below that a
-// measurement is launch-, latency- or timer-bound (Chrome quantizes GPU timestamps and performance.now() to
-// ~0.1 ms), so its time does not grow like n³ yet.
+// interpret(): power laws are fitted over the sizes whose timed sample (median per product × batch) is at least
+// FIT_MIN_MS, so that the timer resolves it (Chrome quantizes GPU timestamps and performance.now() to ~0.1 ms,
+// Safari performance.now() to 1 ms), and, for the GPU kernels, n ≥ GPU_FIT_MIN_N: n² = 262,144 threads, about
+// a hundred per ALU lane of a current integrated GPU. Smaller grids leave the GPU partly idle or latency-bound,
+// so their time does not grow like n³ yet.
 export const FIT_MIN_MS = 1;
+export const GPU_FIT_MIN_N = 512;
+// batchFor(): products per timed pass, aiming at TARGET_SAMPLE_MS per sample
+export const TARGET_SAMPLE_MS = 2;
 export const SLOPE_TOLERANCE = 0.15;     // n³ is asymptotic: allow for cache effects at the fit's ends
 
 export function makeMatrix(rows, cols, seed) {
@@ -95,17 +104,26 @@ function timedColumns(path, n, m, timeOf) {
     };
 }
 
+// Products per timed pass for an estimated time per product (ms; ≤ 0 or unknown = too fast to resolve).
+// measureMatmul caps it further by work (effectiveBatch).
+export function batchFor(estimateMs) {
+    const est = Number.isFinite(estimateMs) && estimateMs > 0 ? estimateMs : TARGET_SAMPLE_MS / MAX_BATCH;
+    return Math.min(MAX_BATCH, Math.max(1, Math.ceil(TARGET_SAMPLE_MS / est)));
+}
+
 const emptyPath = (path) => ({ ...withSpread(`${path}Ms`, null), ...withSpread(`${path}Gflops`, null), [`${path}Err`]: null });
 
 // ---- interpret() helpers --------------------------------------------------------------------------------
 const rangeText = (row, key, f) => (row[`${key}Lo`] != null && row[`${key}Hi`] != null
     ? `${f(row[key])} (${f(row[`${key}Lo`])}–${f(row[`${key}Hi`])})` : f(row[key]));
 
-// Fit of <path>Ms vs n over the rows with a median ≥ FIT_MIN_MS; the fit over all rows for contrast
+// Fit of <path>Ms vs n over the rows whose timed sample (median × batch) is ≥ FIT_MIN_MS and, for the GPU
+// paths, n ≥ GPU_FIT_MIN_N; the fit over all rows for contrast
 export function fitTimes(rows, path) {
     const key = `${path}Ms`;
+    const minN = path === 'cpu' ? 0 : GPU_FIT_MIN_N;
     const all = rows.filter(r => r[key] > 0);
-    const used = all.filter(r => r[key] >= FIT_MIN_MS);
+    const used = all.filter(r => r.n >= minN && r[key] * (r[`${path}Batch`] ?? 1) >= FIT_MIN_MS);
     return {
         used: used.map(r => r.n),
         fit: fitPowerLaw(used.map(r => r.n), used.map(r => r[key])),
@@ -116,13 +134,18 @@ export function fitTimes(rows, path) {
 function slopeClaim(rows, path, timing) {
     const { used, fit, allFit } = fitTimes(rows, path);
     const window = used.length ? `n = ${used[0]} … ${used.at(-1)}` : 'no sizes';
-    const measured = fit.slope === null ? `${used.length} size(s) with median ≥ ${FIT_MIN_MS} ms`
+    const gpu = path !== 'cpu';
+    const rule = `${gpu ? `n ≥ ${GPU_FIT_MIN_N} and ` : ''}a timed sample ≥ ${FIT_MIN_MS} ms`;
+    const measured = fit.slope === null ? `${used.length} size(s) with ${rule}`
         : fit.ci95 ? `${fit.slope.toFixed(2)} (95% CI ${fit.ci95[0].toFixed(2)} … ${fit.ci95[1].toFixed(2)}) over ${window}`
             : `${fit.slope.toFixed(2)} (no interval from 2 points) over ${window}`;
-    const notes = [`Fitted over the sizes whose median ${timing} is at least ${FIT_MIN_MS} ms (${window}); smaller products are `
-        + 'launch-, latency- or timer-bound, so their times do not grow like n³ yet.'];
+    const notes = [gpu
+        ? `Fitted over the sizes with n ≥ ${GPU_FIT_MIN_N} (n² threads, enough to fill the GPU) whose timed sample (${timing} per `
+            + `product × products per pass) is at least ${FIT_MIN_MS} ms (${window}); smaller grids leave the GPU partly idle, so `
+            + 'their times do not grow like n³ yet.'
+        : `Fitted over the sizes whose median ${timing} is at least ${FIT_MIN_MS} ms (${window}), so the timer resolves them.`];
     if (allFit.slope !== null) notes.push(`Over all ${allFit.n} sizes the slope is ${allFit.slope.toFixed(2)}.`);
-    if (!fit.ci95) notes.push('At least 3 sizes are needed for an uncertainty; with fewer, this claim stays undecided.');
+    if (!fit.ci95) notes.push(`At least 3 sizes are needed for an uncertainty; with fewer, this claim stays undecided${gpu ? ` (run to n = ${MAX_SIZE.toLocaleString('en-US')})` : ''}.`);
     return {
         key: `${path}-n3`,
         claim: `${LABEL[path]}: time grows like n³`,
@@ -141,7 +164,7 @@ const threeWay = {
     title: 'CPU vs naive GPU vs tiled GPU',
     question: 'How much do workgroup-memory tiling and the GPU itself buy over a single CPU core for C = AB as n grows, and do all three get the same answer?',
     settings: [
-        { key: 'maxN', label: 'Largest n', options: [256, 512, 1024].map(n => ({ value: n, label: n.toLocaleString('en-US') })), default: 1024 },
+        { key: 'maxN', label: 'Largest n', options: [256, 512, 1024, 2048].map(n => ({ value: n, label: n.toLocaleString('en-US') })), default: DEFAULT_MAX_N },
     ],
     budgetMs: 20000,
     scope: {
@@ -167,6 +190,8 @@ const threeWay = {
         { key: 'cpuMs', label: 'CPU ms', format: ms, unit: 'ms' },
         { key: 'naiveMs', label: 'naive GPU ms', format: ms, unit: 'ms' },
         { key: 'tiledMs', label: 'tiled GPU ms', format: ms, unit: 'ms' },
+        { key: 'naiveBatch', label: 'naive products per timed pass', format: String },
+        { key: 'tiledBatch', label: 'tiled products per timed pass', format: String },
         { key: 'speedup', label: 'tiled vs naive', format: (v) => `${v.toFixed(2)}×` },
         { key: 'cpuErr', label: 'CPU max rel. error', format: sci },
         { key: 'naiveErr', label: 'naive max rel. error', format: sci },
@@ -205,9 +230,10 @@ const threeWay = {
         + '(1.24–1.33) at 1,024. Fitted slopes over n = 128 … 1,024: naive 2.91 (95% CI 2.73 … 3.09), tiled 2.80 (1.67 … 3.92); '
         + 'CPU over 64 … 512: 2.82 (2.17 … 3.47). Errors 0.71–0.90 √n·u for all three, naive and tiled bit-identical at every n. '
         + 'On a real GPU expect tens to thousands of GFLOPS, a larger tiling gain, and a crossover with the CPU at a few hundred.',
-    async *run(ctx, { maxN = MAX_SIZE } = {}) {
+    async *run(ctx, { maxN = DEFAULT_MAX_N } = {}) {
         const useGpu = ctx.timestamps === true;
         const timing = useGpu ? 'timestamps' : 'wall (submit → done)';
+        const previous = {};   // kernel → median ms per product at the previous size
         for (const n of SIZES) {
             if (n > Math.min(maxN, MAX_SIZE, MAX_MATMUL_DIM)) break;
             const A = makeMatrix(n, n, SEED), B = makeMatrix(n, n, SEED + 1);
@@ -218,11 +244,20 @@ const threeWay = {
             const C = {};
             for (const kernel of ['naive', 'tiled']) {
                 await ctx.step();
-                const m = await ctx.measure(() => measureMatmul(ctx.gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1 }), PROTOCOL);
+                // Estimated time per product: a single-product probe at the first size, then 8× the previous size's
+                let estimate = previous[kernel] * 8;
+                if (previous[kernel] === undefined) {
+                    const probe = await measureMatmul(ctx.gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1, readback: false });
+                    estimate = kernelMs(useGpu)(probe);
+                }
+                const batch = effectiveBatch(batchFor(estimate), n, n, n);
+                const m = await ctx.measure(() => measureMatmul(ctx.gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1, batch }), PROTOCOL);
+                row[`${kernel}Batch`] = batch;
                 C[kernel] = m.samples.at(-1).C;
                 for (const s of m.samples.slice(0, -1)) delete s.C;
                 Object.assign(row, timedColumns(kernel, n, m, kernelMs(useGpu)), { [`${kernel}Err`]: maxRelError(C[kernel], n, rows, ref) });
                 for (const p of PHASE_KEYS) Object.assign(row, withSpread(`${kernel}${p}`, m.phases[p.toLowerCase()]));
+                previous[kernel] = row[`${kernel}Ms`] ?? 0;
             }
             if (n <= CPU_MAX_N) {
                 await ctx.step();

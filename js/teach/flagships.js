@@ -15,8 +15,9 @@ export const FLAGSHIPS = [
         title: 'Matrix multiplication',
         question: 'How much do workgroup-memory tiling and the GPU itself buy over one CPU core for C = AB, '
             + 'and do all three get the same answer?',
-        protocol: 'Sweeps n = 64 … 1,024 for a naive and a tiled WGSL kernel and a single-threaded JavaScript loop on '
-            + 'the same seeded matrices: 1 warm-up and 5 repeats per size, reported as medians with interquartile ranges.',
+        protocol: 'Sweeps n = 64 … 1,024 (or 2,048) for a naive and a tiled WGSL kernel and a single-threaded JavaScript loop on '
+            + 'the same seeded matrices: 1 warm-up and 5 repeats per size, reported as medians with interquartile ranges; small GPU '
+            + 'products are timed several to a pass so the timer resolves them.',
         verified: 'Every product is checked against a float64 reference on 16 sampled rows, within 4·√n·u.',
         predictions: [
             { text: 'Time grows like n³ (log-log slope 3).', experiment: 'cpu-naive-tiled', claims: ['naive-n3', 'tiled-n3'], terms: ['n³'] },

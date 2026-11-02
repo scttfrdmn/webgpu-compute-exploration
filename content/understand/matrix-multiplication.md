@@ -227,16 +227,17 @@ number in this table changes, most of all the GPU columns.
 - Run [CPU vs naive GPU vs tiled GPU](#matrix-multiplication/measure). On the GFLOPS chart, find where
   each GPU line stops rising: below that, the launch and synchronization overhead dominates. On the time
   chart, compare the slopes with the $n^3$ line.
-- Read the **Measured vs predicted** table. The fitted slopes only use the sizes whose median time is at
-  least 1 ms, because shorter measurements are launch- or timer-bound. On a fast GPU that can leave
-  fewer than three sizes, and the claim stays undecided: the GPU is too fast for these sizes to show its
-  $n^3$ growth.
+- Read the **Measured vs predicted** table. The GPU slopes are fitted only over $n \ge 512$ (at least
+  262,144 threads, enough to keep a current GPU busy), and only over samples long enough for the timer: a
+  fast GPU's small products are timed several at a time in one pass (the "products per timed pass" columns)
+  and reported per product, so each sample takes about 2 ms. With the default largest $n = 1024$ that is
+  two sizes, and the claim stays undecided; choose **Largest n = 2,048** to give the fit three.
 - Check the tiled-vs-naive speed-up at $n = 1024$ and its range. The intensity argument predicts more
   than 1; the factor depends on how well your GPU's caches already served the naive kernel. The implied
   load bandwidth of the naive kernel ($8n^3$ bytes over its time) tells you which: if it exceeds your
   GPU's memory bandwidth, caches were doing the reuse.
-- Look at the phases charts at $n = 64$: is the dispatch time (submit to done) larger than the kernel
-  time? Where does the GPU overtake one CPU core, and does that hold with upload and readback included?
+- Look at the phases charts at $n = 64$: is the dispatch time (submit to done, divided by the products in
+  the pass) larger than the kernel time? Where does the GPU overtake one CPU core, and does that hold with upload and readback included?
 - On the error chart all three lines should sit near $\sqrt{n}\,u$; the verification allows
   $4\sqrt{n}\,u$. If the naive and tiled errors differ, your compiler contracted one of them into fused
   multiply-adds.

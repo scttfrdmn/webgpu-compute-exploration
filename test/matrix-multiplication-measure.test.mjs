@@ -7,9 +7,9 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { measureMatmul, wgslModules, MAX_MATMUL_DIM, KERNELS, TILED_T } from '../js/examples/matrix-multiplication.js';
+import { measureMatmul, effectiveBatch, wgslModules, MAX_MATMUL_DIM, MAX_BATCH, MAX_BATCH_FLOPS, KERNELS, TILED_T } from '../js/examples/matrix-multiplication.js';
 import experiments, {
-    SIZES, MAX_SIZE, CPU_MAX_N, ERR_FACTOR, FIT_MIN_MS, PROTOCOL, sampleRows, makeMatrix, maxRelError, maxRelDiff, sqrtNu, fitTimes,
+    SIZES, MAX_SIZE, DEFAULT_MAX_N, CPU_MAX_N, ERR_FACTOR, FIT_MIN_MS, GPU_FIT_MIN_N, TARGET_SAMPLE_MS, PROTOCOL, batchFor, sampleRows, makeMatrix, maxRelError, maxRelDiff, sqrtNu, fitTimes,
 } from '../js/teach/experiments/matrix-multiplication.js';
 import { matmulF64, matmulRowsF64, matmulBlockedF32, CPU_BLOCK } from '../js/refs/basic.js';
 import { runExperiment, makeContext } from '../js/teach/measure.js';
@@ -66,6 +66,27 @@ test('measureMatmul enforces the caps', async () => {
     await assert.rejects(measureMatmul({ device }, { A: m(4), B: m(4), M: 4, N: 4, K: 4, kernel: 'strassen' }), RangeError);
 });
 
+test('batching: effectiveBatch caps by count and work; measureMatmul reports per-product times and the batch', async () => {
+    assert.equal(MAX_BATCH_FLOPS, 2 * 2048 ** 3);
+    assert.equal(effectiveBatch(1, 64, 64, 64), 1);
+    assert.equal(effectiveBatch(1000, 64, 64, 64), MAX_BATCH);
+    assert.equal(effectiveBatch(64, 512, 512, 512), 64, '64 · 512³ = 2048³');
+    assert.equal(effectiveBatch(64, 1024, 1024, 1024), 8);
+    assert.equal(effectiveBatch(64, 2048, 2048, 2048), 1);
+    for (const bad of [0, -1, 1.5, NaN]) assert.throws(() => effectiveBatch(bad, 4, 4, 4), RangeError);
+    const device = mockDevice();
+    const A = makeMatrix(16, 16, 1), B = makeMatrix(16, 16, 2);
+    const r = await measureMatmul({ device }, { A, B, M: 16, N: 16, K: 16, batch: 10, repeats: 1 });
+    assert.equal(r.batch, 10);
+    assert.equal(r.phases.dispatch, r.wallMs, 'dispatch phase is per product');
+    await assert.rejects(measureMatmul({ device }, { A, B, M: 16, N: 16, K: 16, batch: 0 }), RangeError);
+    // batchFor aims at TARGET_SAMPLE_MS per sample
+    assert.equal(batchFor(TARGET_SAMPLE_MS), 1);
+    assert.equal(batchFor(10), 1);
+    assert.equal(batchFor(0.3), Math.ceil(TARGET_SAMPLE_MS / 0.3));
+    for (const tiny of [0, null, undefined, -1, 1e-6]) assert.equal(batchFor(tiny), MAX_BATCH);
+});
+
 test('matmulRowsF64 equals the rows of matmulF64; sampled rows are spread and distinct', () => {
     const [M, N, K] = [40, 17, 23];
     const A = makeMatrix(M, N, 3), B = makeMatrix(N, K, 4);
@@ -110,7 +131,11 @@ test('experiment on a mock device: one row per size, declared columns only, caps
     const device = mockDevice();
     const ctx = mockCtx(device, e.budgetMs);
     const rows = await runExperiment(e, { maxN: 1024 }, ctx);
-    assert.deepEqual(rows.map(r => r.n), SIZES);
+    assert.deepEqual(rows.map(r => r.n), SIZES.filter(n => n <= 1024));
+    assert.equal(DEFAULT_MAX_N, 1024);
+    assert.equal(e.settings[0].default, DEFAULT_MAX_N);
+    assert.deepEqual(e.settings[0].options.map(o => o.value), [256, 512, 1024, 2048]);
+    for (const row of rows) for (const k of ['naiveBatch', 'tiledBatch']) assert.ok(Number.isInteger(row[k]) && row[k] >= 1 && row[k] <= MAX_BATCH, `${k} ${row[k]}`);
     const allowed = new Set(e.columns.flatMap(c => [c.key, `${c.key}Lo`, `${c.key}Hi`]));
     for (const row of rows) {
         for (const k of Object.keys(row)) assert.ok(allowed.has(k), `row key ${k} is a column or its spread`);
@@ -119,7 +144,7 @@ test('experiment on a mock device: one row per size, declared columns only, caps
         assert.equal(row.cpuMs === null, row.n > CPU_MAX_N, `n = ${row.n}: CPU measured iff n ≤ ${CPU_MAX_N}`);
         assert.equal(row.naiveVsTiled, 0, 'mock readback: both zero');
     }
-    assert.ok(Math.max(...device.buffers.map(b => b.size)) <= 4 * MAX_SIZE * MAX_SIZE);
+    assert.ok(Math.max(...device.buffers.map(b => b.size)) <= 4 * 1024 * 1024);
     assert.deepEqual([ctx.measured.warmup, ctx.measured.repeats], [1, 5]);
     // A record from the mock rows validates (verify fails here: the mock reads back zeros)
     const record = buildResultRecord({ exampleId: 'matrix-multiplication', experiment: e, settings: { maxN: 1024 }, rows,
@@ -130,6 +155,9 @@ test('experiment on a mock device: one row per size, declared columns only, caps
 
     const short = await runExperiment(e, { maxN: 256 }, mockCtx(mockDevice(), e.budgetMs));
     assert.deepEqual(short.map(r => r.n), [64, 128, 256]);
+    const full = await runExperiment(e, { maxN: 2048 }, mockCtx(mockDevice(), e.budgetMs));
+    assert.deepEqual(full.map(r => r.n), SIZES);
+    assert.ok(full.at(-1).naiveBatch === 1 && full.at(-1).tiledBatch === 1, 'one 2048³ product per pass');
 });
 
 // Synthetic rows: times ∝ n³ (with a launch floor), errors as a multiple of √n·u
@@ -174,18 +202,25 @@ test('interpret: n³ data agree, a launch floor or one large size leaves the slo
         assert.match(c.measured, /^3\.00 \(95% CI/);
     }
     assert.equal(byClaim(claims, 'Tiling').agrees, true);
-    assert.match(byClaim(claims, 'Tiling').measured, /^4\.00× \(3\.6\d×–4\.4\d×\) at n = 1024/);
+    assert.match(byClaim(claims, 'Tiling').measured, /^4\.00× \(3\.6\d×–4\.4\d×\) at n = 2048/);
     assert.equal(byClaim(claims, 'The naive kernel').agrees, null);
     const gpu = byClaim(claims, 'The GPU beats');
     assert.equal(gpu.agrees, true);
     assert.match(gpu.measured, /GPU faster from n = 64 on; at n = 512/);
 
-    // Launch-bound GPU: a 0.05 ms floor and tiny n³ term → fewer than 3 sizes ≥ FIT_MIN_MS → undecided
+    // Fast GPU without batching: only n = 1024 and 2048 reach FIT_MIN_MS → undecided
     const fast = e.interpret(synthetic({ naive: 1e-9, tiled: 1.5e-9, floor: 0.05 }));
     assert.equal(byClaim(fast, 'tiled GPU').agrees, null);
     const { used } = fitTimes(synthetic({ tiled: 1.5e-9, floor: 0.05 }), 'tiled');
-    assert.deepEqual(used, [1024], `only n = 1024 reaches ${FIT_MIN_MS} ms`);
+    assert.deepEqual(used, [1024, 2048], `only n = 1024, 2048 reach ${FIT_MIN_MS} ms`);
     assert.match(byClaim(fast, 'tiled GPU').note, /At least 3 sizes/);
+    // The same GPU with batched samples: n = 512 is resolvable (8 × 0.25 ms) → 3 sizes, slope ≈ 3
+    const batched = synthetic({ naive: 1e-9, tiled: 1.5e-9 }).map(r => ({ ...r, naiveBatch: batchFor(r.naiveMs), tiledBatch: batchFor(r.tiledMs) }));
+    assert.deepEqual(fitTimes(batched, 'tiled').used, [512, 1024, 2048]);
+    assert.equal(byClaim(e.interpret(batched), 'tiled GPU').agrees, true);
+    // Below GPU_FIT_MIN_N a size is never fitted for the GPU, however long; the CPU has no such limit
+    assert.ok(fitTimes(synthetic(), 'naive').used.every(n => n >= GPU_FIT_MIN_N));
+    assert.deepEqual(fitTimes(synthetic(), 'cpu').used, SIZES.filter(n => n <= CPU_MAX_N && 4e-6 * n ** 3 >= FIT_MIN_MS));
     // Slope 2 (e.g. bandwidth-limited growth) disagrees
     const sq = synthetic().map(r => ({ ...r, tiledMs: 1e-3 * r.n ** 2, tiledMsLo: 0.99e-3 * r.n ** 2, tiledMsHi: 1.01e-3 * r.n ** 2 }));
     assert.equal(byClaim(e.interpret(sq), 'tiled GPU').agrees, false);

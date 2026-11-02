@@ -45,6 +45,19 @@ test('measureMatmul naive and tiled: ragged non-square sizes vs float64, naive =
     }
 });
 
+test('measureMatmul batch: several products in one pass give the same C, per-product times', async (t) => {
+    const n = 96;
+    const A = makeMatrix(n, n, 5), B = makeMatrix(n, n, 6);
+    for (const kernel of ['naive', 'tiled']) {
+        const one = await measureMatmul(gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1 });
+        const four = await measureMatmul(gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1, batch: 4 });
+        assert.equal(four.batch, 4);
+        assert.ok(four.C.every((v, i) => v === one.C[i]), `${kernel}: batched C equals the single product bit for bit`);
+        assert.ok(four.wallMs > 0 && Number.isFinite(four.wallMs));
+        t.diagnostic(`${kernel} n=${n}: wall ms per product, batch 1 ${one.wallMs.toFixed(3)}, batch 4 ${four.wallMs.toFixed(3)}`);
+    }
+});
+
 test('experiment cpu-naive-tiled (n ≤ 1,024): record matches schema v1, verify passes, interpretation present', async (t) => {
     const [e] = experiments;
     const settings = { maxN: 1024 };
@@ -80,6 +93,7 @@ test('experiment cpu-naive-tiled (n ≤ 1,024): record matches schema v1, verify
             assert.ok(row[`${col.key}Lo`] <= row[col.key] && row[col.key] <= row[`${col.key}Hi`], `${col.key}: q1 ≤ median ≤ q3`);
         }
     }
+    t.diagnostic(`products per timed pass: ${rows.map(r => `n=${r.n} naive ${r.naiveBatch} tiled ${r.tiledBatch}`).join(', ')}`);
     for (const r of rows) {
         assert.ok(r.naiveMs > 0 && r.tiledMs > 0, `n = ${r.n}: GPU times`);
         assert.equal(r.cpuMs === null, r.n > 512);
