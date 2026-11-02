@@ -65,13 +65,21 @@ export const MEASURE = new Set([
 export const UNDERSTAND_LEVELS = {
     beginner: new Set([
         'boids',
+        'falling-sand',
+        'game-of-life',
+        'matrix-multiplication',
         'nbody',
+        'parallel-sort',
         'wasm-mandelbrot',
         'wave-equation',
     ]),
     intermediate: new Set([
         'boids',
+        'falling-sand',
+        'game-of-life',
+        'matrix-multiplication',
         'nbody',
+        'parallel-sort',
         'wasm-mandelbrot',
         'wave-equation',
     ]),
