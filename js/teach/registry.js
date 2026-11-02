@@ -64,10 +64,16 @@ export const MEASURE = new Set([
 // pages above (<id>.md) are the Advanced level. A level without its page falls back to the next level up.
 export const UNDERSTAND_LEVELS = {
     beginner: new Set([
+        'boids',
         'nbody',
+        'wasm-mandelbrot',
+        'wave-equation',
     ]),
     intermediate: new Set([
+        'boids',
         'nbody',
+        'wasm-mandelbrot',
+        'wave-equation',
     ]),
 };
 
