@@ -16,8 +16,8 @@
       "source": "client-hints"
     },
     "architecture": "arm",
-    "hardware": null,
-    "notes": null,
+    "hardware": "Apple M4 Pro",
+    "notes": "hardware added after the run: same Mac as the apple-silicon-safari26 bundle (maintainer)",
     "adapter": {
       "vendor": "apple",
       "architecture": "metal-3",
