@@ -207,10 +207,10 @@ than three give no interval), or the interval straddles the edge of a predicted 
 |---|---|---|---|
 | θ vs error | median force error vs $\theta$ | slope 2 ± 0.25 (quadrupole term, $l/d \le \theta$; the $\theta^3$ term steepens it a little) | 2.09 (2.01 … 2.16) |
 | θ vs error | interactions per body vs $\theta$ | slope between −3 and 0 | −1.46 (−1.50 … −1.42) |
-| Scaling | brute-force time vs $N$, above the fixed floor | slope 2 ± 0.1 | about 1.9 |
-| Scaling | Barnes-Hut time vs $N$, above the fixed floor | 1.0 … $s + 0.2$, where $s$ is the slope of $N \log_2 N$ over the fitted sizes (1.11 over 1,024 … 65,536) | about 1.1 |
+| Scaling | brute-force time vs $N$, above the fixed floor | slope 2 ± 0.1 | 1.94 (0.83 … 3.05), only 3 sizes: undetermined |
+| Scaling | Barnes-Hut time vs $N$, above the fixed floor | 1.0 … $s + 0.2$, where $s$ is the slope of $N \log_2 N$ over the fitted sizes (1.11 over 1,024 … 65,536) | 1.23 (1.16 … 1.30) |
 | Scaling | crossover | exists; where is device-dependent | between 8,192 and 16,384 |
-| Scaling | fixed cost per evaluation (the time at the smallest $N$) | reported, no verdict | 16 ms Barnes-Hut, 1.4 ms brute force (wall) |
+| Scaling | fixed cost per evaluation (the time at the smallest $N$) | reported, no verdict | 17 ms Barnes-Hut, 2.5 ms brute force (wall) |
 | Energy | max $\lvert\Delta E/E_0\rvert$ vs $\Delta t$, brute force | slope 2 | 2.25 (1.87 … 2.64) |
 | Energy | the same, Barnes-Hut $\theta = 0.5$ | slope 0 ± 0.2, floor $10^{-4}$ … $10^{-2}$ | 0.04 (0.01 … 0.07), floor 6.5e-4 |
 

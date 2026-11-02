@@ -285,7 +285,7 @@ export const scalingCounts = (maxN) => SCALING_COUNTS.filter(n => n <= scalingLi
 //   1,024 … 65,536, 1.09 over 32,768 … 262,144). The O(N) tree build pulls the slope towards 1; the interactions per
 //   body, which grow faster than log N at these N (CI: ∝ N^0.37), push the traversal up. So the prediction is the
 //   band 1.0 … nlognSlope + BH_EXTRA (≈ 1.3), tested as an overlap of the 95% interval with it (slopeAgrees about
-//   its center with half its width). CI (software GPU, wall ms): 1.1.
+//   its center with half its width). CI (software GPU, wall ms): 1.23 (1.16 … 1.30).
 //   Crossover: O(N²) must overtake O(N log N) at some N; where depends on the device. CI: 8,192 … 16,384.
 //   Tree-build share: the build is O(N) plus ~30 fixed dispatches, the traversal O(N log N), so the share falls.
 export const BRUTE_ORDER = 2, BRUTE_ORDER_TOLERANCE = 0.1;
@@ -335,8 +335,10 @@ const scaling = {
         + 'thousand (248 at N = 1,024, 1,140 at 65,536 in CI) plus a 30-dispatch tree build, so it loses at small N and wins '
         + 'at large N. In CI, on a CPU-emulated GPU (no timestamp-query, so wall ms; Largest N 65,536), the wall times cross '
         + 'between N = 8,192 (brute force about 30% faster) and 16,384 (Barnes-Hut about 10% faster; log-interpolated '
-        + '≈ 14,000); with the fixed floor (the time at N = 1,024: 1.4 ms brute force, 16 ms Barnes-Hut) subtracted and only '
-        + `the sizes at least ${FLOOR_FACTOR}× above it fitted, the slopes were about 1.9 for brute force and 1.1 for Barnes-Hut. `
+        + '≈ 14,000). With the fixed floor (the wall time at N = 1,024: 17 ms Barnes-Hut, 1.4–2.5 ms brute force) subtracted '
+        + `and only the sizes at least ${FLOOR_FACTOR}× above it fitted, the slopes (95% CI) were 1.23 (1.16 … 1.30) for Barnes-Hut `
+        + 'over N = 4,096 … 65,536, and 1.94 (0.83 … 3.05) for brute force over only 3 sizes (4,096 … 16,384: undetermined); '
+        + 'without the correction, over all sizes, an earlier CI run gave 1.11 and 1.86. '
         + 'On an Apple M4 Pro (GPU ms) the floor is 0.6 ms for Barnes-Hut and under 0.1 ms for brute force, and it covers most '
         + 'of the default sweep: choose Largest N 262,144 on a fast GPU. Where the crossover falls depends on the GPU, driver '
         + 'and browser: read it from your medians and their spread, not from one number. Compile is pipeline and buffer '
