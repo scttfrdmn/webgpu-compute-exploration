@@ -230,8 +230,9 @@ number in this table changes, most of all the GPU columns.
 - Read the **Measured vs predicted** table. The GPU slopes are fitted only over $n \ge 512$ (at least
   262,144 threads, enough to keep a current GPU busy), and only over samples long enough for the timer: a
   fast GPU's small products are timed several at a time in one pass (the "products per timed pass" columns)
-  and reported per product, so each sample takes about 2 ms. With the default largest $n = 1024$ that is
-  two sizes, and the claim stays undecided; choose **Largest n = 2,048** to give the fit three.
+  and reported per product, so each sample takes about 4 ms. A slope decides its claim only when its 95%
+  interval is within ±0.5, narrow enough to tell $n^3$ from $n^2$. The default largest $n = 1024$ gives the
+  fit three sizes (512, 768, 1,024); **Largest n = 2,048** gives it five.
 - Check the tiled-vs-naive speed-up at $n = 1024$ and its range. The intensity argument predicts more
   than 1; the factor depends on how well your GPU's caches already served the naive kernel. The implied
   load bandwidth of the naive kernel ($8n^3$ bytes over its time) tells you which: if it exceeds your

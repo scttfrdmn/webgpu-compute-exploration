@@ -13,7 +13,7 @@
 // still under 1.5 s at 0.2 GFLOPS; a loaded CI runner took 0.67 s). Protocol for every path: 1 discarded warm-up, then 5 independent
 // repeats (GPU: each a fresh measureMatmul call that creates, uploads, dispatches and reads back). A GPU sample
 // runs the product `batch` times in one timed pass (batchFor: enough for about TARGET_SAMPLE_MS, from a probe
-// at the first size and the previous size's time after that) and reports the time per product, so a fast GPU's
+// at the first size and the previous size's time × (n / previous n)³ after that) and reports the time per product, so a fast GPU's
 // small products are not below the timer's resolution; on a slow GPU the batch is 1.
 // Timed columns are medians with their interquartile range; errors are deterministic and come from the
 // last repeat.
@@ -24,7 +24,9 @@ import { mulberry32 } from '../../refs/random.js';
 import { summarize, withSpread, fitPowerLaw, slopeAgrees } from '../stats.js';
 import { check } from '../result-record.js';
 
-export const SIZES = [64, 128, 256, 512, 1024, 2048];
+// Powers of two plus 384, 768 and 1,536: enough sizes per fit for a useful interval, and sizes whose row stride
+// is not a power of two (power-of-two strides can map rows onto the same cache sets)
+export const SIZES = [64, 128, 256, 384, 512, 768, 1024, 1536, 2048];
 export const MAX_SIZE = 2048;            // GPU cap (also the example's MAX_MATMUL_DIM)
 export const DEFAULT_MAX_N = 1024;
 export const CPU_MAX_N = 512;            // CPU baseline cap: one product stays well under 2 s
@@ -46,8 +48,11 @@ export const ERR_FACTOR = 4;
 export const FIT_MIN_MS = 1;
 export const GPU_FIT_MIN_N = 512;
 // batchFor(): products per timed pass, aiming at TARGET_SAMPLE_MS per sample
-export const TARGET_SAMPLE_MS = 2;
+export const TARGET_SAMPLE_MS = 4;
 export const SLOPE_TOLERANCE = 0.15;     // n³ is asymptotic: allow for cache effects at the fit's ends
+// A fitted slope decides its claim only when its 95% interval is at most ±MAX_CI_HALF_WIDTH: wide enough to
+// separate n³ from n² (memory-bound growth), so an interval that contains 3 only because it is huge stays undecided
+export const MAX_CI_HALF_WIDTH = 0.5;
 
 export function makeMatrix(rows, cols, seed) {
     const rand = mulberry32(seed);
@@ -145,13 +150,15 @@ function slopeClaim(rows, path, timing) {
             + 'their times do not grow like n³ yet.'
         : `Fitted over the sizes whose median ${timing} is at least ${FIT_MIN_MS} ms (${window}), so the timer resolves them.`];
     if (allFit.slope !== null) notes.push(`Over all ${allFit.n} sizes the slope is ${allFit.slope.toFixed(2)}.`);
+    const tooWide = fit.ci95 && (fit.ci95[1] - fit.ci95[0]) / 2 > MAX_CI_HALF_WIDTH;
+    if (tooWide) notes.push(`The 95% interval is wider than ±${MAX_CI_HALF_WIDTH}, too wide to tell n³ from n², so the claim stays undecided.`);
     if (!fit.ci95) notes.push(`At least 3 sizes are needed for an uncertainty; with fewer, this claim stays undecided${gpu ? ` (run to n = ${MAX_SIZE.toLocaleString('en-US')})` : ''}.`);
     return {
         key: `${path}-n3`,
         claim: `${LABEL[path]}: time grows like n³`,
         predicted: `log-log slope 3 (2n³ flops; ±${SLOPE_TOLERANCE} for cache effects)`,
         measured,
-        agrees: slopeAgrees(fit, 3, SLOPE_TOLERANCE),
+        agrees: tooWide ? null : slopeAgrees(fit, 3, SLOPE_TOLERANCE),
         note: notes.join(' '),
     };
 }
@@ -234,6 +241,7 @@ const threeWay = {
         const useGpu = ctx.timestamps === true;
         const timing = useGpu ? 'timestamps' : 'wall (submit → done)';
         const previous = {};   // kernel → median ms per product at the previous size
+        let previousN = 0;
         for (const n of SIZES) {
             if (n > Math.min(maxN, MAX_SIZE, MAX_MATMUL_DIM)) break;
             const A = makeMatrix(n, n, SEED), B = makeMatrix(n, n, SEED + 1);
@@ -244,8 +252,9 @@ const threeWay = {
             const C = {};
             for (const kernel of ['naive', 'tiled']) {
                 await ctx.step();
-                // Estimated time per product: a single-product probe at the first size, then 8× the previous size's
-                let estimate = previous[kernel] * 8;
+                // Estimated time per product: a single-product probe at the first size, then the previous size's
+                // time scaled by (n / previous n)³
+                let estimate = previous[kernel] * (n / previousN) ** 3;
                 if (previous[kernel] === undefined) {
                     const probe = await measureMatmul(ctx.gpuDevice, { A, B, M: n, N: n, K: n, kernel, warmup: 0, repeats: 1, readback: false });
                     estimate = kernelMs(useGpu)(probe);
@@ -259,6 +268,7 @@ const threeWay = {
                 for (const p of PHASE_KEYS) Object.assign(row, withSpread(`${kernel}${p}`, m.phases[p.toLowerCase()]));
                 previous[kernel] = row[`${kernel}Ms`] ?? 0;
             }
+            previousN = n;
             if (n <= CPU_MAX_N) {
                 await ctx.step();
                 const out = new Float32Array(n * n);

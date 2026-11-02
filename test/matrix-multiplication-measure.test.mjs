@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { measureMatmul, effectiveBatch, wgslModules, MAX_MATMUL_DIM, MAX_BATCH, MAX_BATCH_FLOPS, KERNELS, TILED_T } from '../js/examples/matrix-multiplication.js';
 import experiments, {
-    SIZES, MAX_SIZE, DEFAULT_MAX_N, CPU_MAX_N, ERR_FACTOR, FIT_MIN_MS, GPU_FIT_MIN_N, TARGET_SAMPLE_MS, PROTOCOL, batchFor, sampleRows, makeMatrix, maxRelError, maxRelDiff, sqrtNu, fitTimes,
+    SIZES, MAX_SIZE, DEFAULT_MAX_N, CPU_MAX_N, ERR_FACTOR, FIT_MIN_MS, GPU_FIT_MIN_N, TARGET_SAMPLE_MS, MAX_CI_HALF_WIDTH, PROTOCOL, batchFor, sampleRows, makeMatrix, maxRelError, maxRelDiff, sqrtNu, fitTimes,
 } from '../js/teach/experiments/matrix-multiplication.js';
 import { matmulF64, matmulRowsF64, matmulBlockedF32, CPU_BLOCK } from '../js/refs/basic.js';
 import { runExperiment, makeContext } from '../js/teach/measure.js';
@@ -208,16 +208,21 @@ test('interpret: n³ data agree, a launch floor or one large size leaves the slo
     assert.equal(gpu.agrees, true);
     assert.match(gpu.measured, /GPU faster from n = 64 on; at n = 512/);
 
-    // Fast GPU without batching: only n = 1024 and 2048 reach FIT_MIN_MS → undecided
-    const fast = e.interpret(synthetic({ naive: 1e-9, tiled: 1.5e-9, floor: 0.05 }));
+    // Fast GPU without batching, run to n = 1,024: only n = 1024 reaches FIT_MIN_MS → undecided
+    const to1024 = (rows) => rows.filter(r => r.n <= 1024);
+    const fast = e.interpret(to1024(synthetic({ naive: 1e-9, tiled: 1.5e-9, floor: 0.05 })));
     assert.equal(byClaim(fast, 'tiled GPU').agrees, null);
-    const { used } = fitTimes(synthetic({ tiled: 1.5e-9, floor: 0.05 }), 'tiled');
-    assert.deepEqual(used, [1024, 2048], `only n = 1024, 2048 reach ${FIT_MIN_MS} ms`);
+    assert.deepEqual(fitTimes(to1024(synthetic({ tiled: 1.5e-9, floor: 0.05 })), 'tiled').used, [1024], `only n = 1024 reaches ${FIT_MIN_MS} ms`);
     assert.match(byClaim(fast, 'tiled GPU').note, /At least 3 sizes/);
-    // The same GPU with batched samples: n = 512 is resolvable (8 × 0.25 ms) → 3 sizes, slope ≈ 3
+    // The same GPU with batched samples: every size from GPU_FIT_MIN_N on is resolvable → slope ≈ 3
     const batched = synthetic({ naive: 1e-9, tiled: 1.5e-9 }).map(r => ({ ...r, naiveBatch: batchFor(r.naiveMs), tiledBatch: batchFor(r.tiledMs) }));
-    assert.deepEqual(fitTimes(batched, 'tiled').used, [512, 1024, 2048]);
+    assert.deepEqual(fitTimes(batched, 'tiled').used, [512, 768, 1024, 1536, 2048]);
     assert.equal(byClaim(e.interpret(batched), 'tiled GPU').agrees, true);
+    // Precision rule: three noisy sizes whose 95% interval contains 3 only because it is huge stay undecided
+    const noisy = to1024(synthetic()).map(r => (r.n === 768 ? { ...r, tiledMs: r.tiledMs * 2.5 } : r));
+    const wide = byClaim(e.interpret(noisy), 'tiled GPU');
+    assert.equal(wide.agrees, null, wide.measured);
+    assert.match(wide.note, new RegExp(`wider than ±${MAX_CI_HALF_WIDTH}`));
     // Below GPU_FIT_MIN_N a size is never fitted for the GPU, however long; the CPU has no such limit
     assert.ok(fitTimes(synthetic(), 'naive').used.every(n => n >= GPU_FIT_MIN_N));
     assert.deepEqual(fitTimes(synthetic(), 'cpu').used, SIZES.filter(n => n <= CPU_MAX_N && 4e-6 * n ** 3 >= FIT_MIN_MS));

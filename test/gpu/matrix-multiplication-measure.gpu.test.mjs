@@ -71,7 +71,7 @@ test('experiment cpu-naive-tiled (n ≤ 1,024): record matches schema v1, verify
     const record = buildResultRecord({ exampleId: 'matrix-multiplication', experiment: e, settings, rows, outcome: { status: 'done' },
         measured: ctx.measured, gpuDevice, source: { version: 'ci', commit: 'local', url: null }, userAgent: 'node', budgetMs: e.budgetMs });
     assert.deepEqual(validateResultRecord(record, schema).errors, [], 'record matches schema v1');
-    assert.deepEqual(rows.map(r => r.n), [64, 128, 256, 512, 1024]);
+    assert.deepEqual(rows.map(r => r.n), [64, 128, 256, 384, 512, 768, 1024]);
     const f = (v, d = 2) => (typeof v === 'number' ? (Math.abs(v) < 1e-2 && v !== 0 ? v.toExponential(2) : v.toFixed(d)) : '—');
     const range = (r, k) => `${f(r[k])} (${f(r[`${k}Lo`])}–${f(r[`${k}Hi`])})`;
     t.diagnostic(`timing: ${rows[0].timing}; protocol ${record.protocol.warmup} + ${record.protocol.repeats}`);
