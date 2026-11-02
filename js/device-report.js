@@ -4,6 +4,8 @@
 // It reads browser/adapter/device properties and a small whitelist of plain numeric/boolean
 // fields from the example instances. It never calls methods on the instances.
 
+import { loadSourceInfo } from './source-info.js';
+
 // Instance fields that are safe to read and useful for comparing devices. Only values whose
 // type matches are reported, so a missing field or an accidental method is simply skipped.
 const INSTANCE_FIELDS = [
@@ -63,6 +65,14 @@ function safe(fn, fallback = undefined) {
     }
 }
 
+async function safeAsync(fn, fallback) {
+    try {
+        return (await fn()) ?? fallback;
+    } catch {
+        return fallback;
+    }
+}
+
 function cell(value) {
     return String(value).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
@@ -98,17 +108,6 @@ function formatNumber(value) {
     return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-async function pageVersion(fetchFn) {
-    if (typeof fetchFn !== 'function') return 'unknown';
-    try {
-        const response = await fetchFn('package.json', { cache: 'no-store' });
-        if (!response.ok) return 'unknown';
-        const pkg = await response.json();
-        return typeof pkg.version === 'string' ? pkg.version : 'unknown';
-    } catch {
-        return 'unknown';
-    }
-}
 
 function limitRows(adapterLimits, deviceLimits) {
     const names = new Set();
@@ -188,8 +187,10 @@ export async function buildDeviceReport({
     const uaData = safe(() => nav.userAgentData);
     const brands = safe(() => uaData.brands.map(b => `${b.brand} ${b.version}`).join(', '));
     const screenSize = safe(() => `${win.screen.width}×${win.screen.height}`);
+    const source = await safeAsync(() => loadSourceInfo(fetchFn), { version: 'unknown', commit: 'local' });
     const pageRows = [
-        ['Page version', await pageVersion(fetchFn)],
+        ['Page version', source.version],
+        ['Source commit', source.commit],
         ['Page origin', safe(() => loc.origin, 'unknown')],
         ['Date', safe(() => now.toISOString(), 'unknown')],
         ['User agent', ua],
@@ -287,19 +288,27 @@ export async function buildDeviceReport({
     }
     if (!anyOneShot) push('_none run_', '');
 
-    // Measure-tab experiments run this session (results only; settings as chosen by the user)
+    // Measure-tab experiments run this session: the latest result record (schema v1,
+    // schema/experiment-result.v1.json) per experiment, as a table of medians and the full record as JSON
     const results = safe(() => experiments.slice(), []);
     push(`### Measure experiments this session (${results.length})`, '');
     if (!results.length) push('_none run_', '');
+    else push('_Each record below is a result file (schema `experiment-result.v1`); paste one into a `.json` file to '
+        + 'compare it in the Measure tab._', '');
     for (const r of results) {
         safe(() => {
             const settings = Object.entries(r.settings ?? {}).map(([k, v]) => `${k}=${v}`).join(', ');
-            push(`**${r.exampleId} · ${r.title}** (${r.outcome}${settings ? `; ${settings}` : ''})`, '');
+            const checks = (r.verification ?? []).map(c => c.status);
+            const verified = checks.includes('fail') ? 'verification FAILED'
+                : checks.includes('pass') ? `verified (${checks.filter(s => s === 'pass').length} checks pass)` : 'not verified';
+            push(`**${r.experiment.exampleId} · ${r.experiment.title}** (${r.outcome?.status}; ${verified}`
+                + `${settings ? `; ${settings}` : ''})`, '');
             const cols = (r.columns ?? []).map(c => ({ key: c.key, label: c.label }));
             const cell = (v) => (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toPrecision(4)) : String(v ?? ''));
             push(`| ${cols.map(c => c.label).join(' | ')} |`, `| ${cols.map(() => '---').join(' | ')} |`);
             for (const row of (r.rows ?? []).slice(0, MAX_EXPERIMENT_ROWS)) push(`| ${cols.map(c => cell(row[c.key])).join(' | ')} |`);
-            push('');
+            push('', '<details><summary>Result record (JSON)</summary>', '');
+            push('```json', JSON.stringify(r).replace(/```/g, "'''"), '```', '', '</details>', '');
         });
     }
 

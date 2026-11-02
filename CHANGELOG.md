@@ -7,10 +7,34 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Measurement protocol (#73): experiments repeat measurements (`ctx.measure`: warm-up + repeats) and
+  report medians with the interquartile range, drawn as range bars; compile/upload/dispatch/readback
+  phases where they apply. N-body adopts it.
+- Reference investigations section on the landing page (#79): matrix multiplication, N-body and parallel
+  sorting, each with its question, protocol, the predictions it tests and a caveat, linking straight into
+  Measure; the learning path points to them too.
+- Three flagship investigations brought to a common standard (#72, #75): matrix multiplication (new tiled
+  workgroup-memory kernel and a blocked CPU baseline: CPU vs naive GPU vs tiled GPU, with phases), N-body and
+  parallel sorting (now on the protocol). Each shows measured vs predicted — fitted log-log slopes with 95%
+  intervals against the theory (n³, θ², N² vs N log N, leapfrog dt², sorting complexities), crossovers
+  bracketed with their spreads — and states what the result does and does not show.
+- Experiment result schema v1 (#74): every run produces a versioned JSON record (source commit, settings,
+  protocol, verification checks, adapter and browser), downloadable from the Measure tab and comparable
+  with another person's file; the deployed site stamps `version.json` with the commit.
 - Real-browser regression tests (`test/browser/`, new `browser` CI job, #77): Playwright drives the page
   in headless Chromium on a software WebGPU adapter — tabs and deep links, keyboard, lifecycle pauses,
   Measure runs and Cancel, the no-timestamp fallback, device loss, the learning path, the device report.
   CI-only, guarded like `test/gpu/`.
+- Physical-GPU validation (#78): `validate.html` runs a fixed plan of the three flagship investigations
+  and downloads a validation bundle (`schema/validation-bundle.v1.json`: environment, adapter,
+  timestamp-query support and one schema v1 record per entry). `data/validation/matrix.json` lists the
+  target environments; `tools/validation-summary.mjs` turns committed bundles into the README's
+  correctness, tolerance, timing and interpretation tables; `tools/local-version.mjs` stamps a local
+  checkout so bundles name their commit.
+
+### Changed
+- The Measure time budget is described accurately: it is checked between steps, and each step's GPU work
+  is capped (#76).
 
 ### Fixed
 - After a GPU device loss, examples scrolled into view were still created and re-enabled their controls.

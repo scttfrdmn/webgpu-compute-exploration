@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physical-GPU validation — WebGPU Compute Shader Examples</title>
+    <meta name="description" content="Runs the flagship investigations (matrix multiplication, N-body, parallel sorting) with fixed settings on your GPU and produces a validation bundle of schema v1 result records.">
+    <meta name="author" content="Scott Friedman">
+    <meta name="robots" content="noindex">
+    <meta name="theme-color" content="#0d1117">
+    <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+    <header class="hero">
+        <div class="inner">
+            <h1>Physical-GPU <span>validation</span></h1>
+            <p>One click runs the validation protocol: the three flagship investigations — matrix multiplication,
+            N-body and parallel sorting — with fixed settings, one experiment at a time, on this device's GPU.
+            Each run checks its results against CPU references and produces a result record; together they form a
+            <strong>validation bundle</strong> you can download and add to the validation matrix. Nothing is sent
+            anywhere.</p>
+            <div class="hero-links">
+                <a href="index.html">All examples</a>
+                <a href="https://github.com/scttfrdmn/webgpu-compute-exploration#validation-on-physical-gpus">How the matrix works</a>
+            </div>
+            <div id="gpu-status" class="status">Checking WebGPU support…</div>
+        </div>
+    </header>
+
+    <main class="page" id="validation-app">
+        <section class="example" id="validation-environment">
+            <h3>1. This environment</h3>
+            <div id="validation-detected" class="output" hidden></div>
+            <div class="controls">
+                <label for="validation-env">Matrix environment</label>
+                <select id="validation-env"></select>
+                <label for="validation-browser-version">Browser version</label>
+                <input id="validation-browser-version" type="text" size="14" autocomplete="off">
+                <label for="validation-os-version">macOS version</label>
+                <input id="validation-os-version" type="text" size="10" autocomplete="off" placeholder="e.g. 26.1">
+            </div>
+            <div class="controls">
+                <label for="validation-hardware">Mac model and chip</label>
+                <input id="validation-hardware" type="text" size="32" autocomplete="off" placeholder="e.g. MacBook Pro 14-inch, M3 Pro">
+                <label for="validation-notes">Notes</label>
+                <input id="validation-notes" type="text" size="40" autocomplete="off" placeholder="e.g. on power, developer features off">
+            </div>
+            <p class="hint" id="validation-env-hint"></p>
+        </section>
+
+        <section class="example" id="validation-plan-section">
+            <h3>2. What will run</h3>
+            <p class="hint" id="validation-plan-summary"></p>
+            <div class="experiment-table"><table id="validation-plan"></table></div>
+            <p class="hint">Close other tabs that use the GPU and keep this tab in front while it runs. Each
+            experiment does a fixed, capped amount of GPU work per step; its time budget is checked between steps.</p>
+            <div class="controls">
+                <button type="button" id="validation-run" class="primary" disabled>▶ Run validation</button>
+                <button type="button" id="validation-cancel" disabled>Cancel</button>
+                <span id="validation-status" class="experiment-status" role="status"></span>
+            </div>
+            <progress id="validation-progress" max="1" value="0" hidden></progress>
+        </section>
+
+        <section class="example" id="validation-results-section" hidden>
+            <h3>3. Results</h3>
+            <p class="hint">Correctness (the verification checks), timing method and the interpretation verdicts are
+            separate: a PASS says the numbers are right, not that they match a theory.</p>
+            <div class="experiment-table"><table id="validation-results"></table></div>
+            <div id="validation-details"></div>
+            <div class="experiment-record">
+                <button type="button" id="validation-download" class="primary" disabled>Download validation bundle (JSON)</button>
+                <span id="validation-download-hint" class="hint"></span>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        Source, issues and roadmap on <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">GitHub</a> · MIT License · © 2025-2026 Scott Friedman
+    </footer>
+
+    <script>
+        // A module that fails to load or link (e.g. a stale cached import) never runs, so report it here
+        addEventListener('error', (event) => {
+            const status = document.getElementById('gpu-status');
+            if (!status || !/^Checking/.test(status.textContent)) return;
+            status.className = 'status not-supported';
+            status.textContent = `Validation page failed to load: ${event.message || 'a script did not load'} — try a hard reload (⌘⇧R).`;
+        }, true);
+    </script>
+    <script type="module" src="./js/teach/validate.js"></script>
+</body>
+</html>

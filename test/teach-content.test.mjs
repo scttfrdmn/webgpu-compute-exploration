@@ -70,12 +70,23 @@ for (const id of MEASURE) {
             assert.ok(Number.isFinite(e.budgetMs) && e.budgetMs > 0 && e.budgetMs <= MAX_BUDGET_MS, `${where}: budgetMs ≤ ${MAX_BUDGET_MS}`);
             assert.ok(e.run && Object.prototype.toString.call(e.run) === '[object AsyncGeneratorFunction]', `${where}: run must be async function*`);
             assert.ok(Array.isArray(e.columns) && e.columns.length > 0, `${where}: columns`);
+            if (e.verify !== undefined) assert.equal(typeof e.verify, 'function', `${where}: verify must be a function`);
+            for (const c of e.columns) {
+                if (c.unit !== undefined) assert.equal(typeof c.unit, 'string', `${where}: column ${c.key} unit`);
+                assert.ok(!/(Lo|Hi)$/.test(c.key) || !e.columns.some(o => `${o.key}Lo` === c.key || `${o.key}Hi` === c.key),
+                    `${where}: column ${c.key} collides with the spread keys of another column`);
+            }
             const keys = new Set(e.columns.map(c => c.key));
             for (const chart of e.charts ?? []) {
                 assert.ok(keys.has(chart.x), `${where}: chart x "${chart.x}" is not a column`);
                 assert.ok(chart.y.length >= 1 && chart.y.length <= 4, `${where}: 1–4 series per chart`);
                 for (const y of chart.y) assert.ok(keys.has(y), `${where}: chart y "${y}" is not a column`);
                 assert.equal(typeof chart.xLabel, 'string'); assert.equal(typeof chart.yLabel, 'string');
+            }
+            if (e.interpret !== undefined) assert.equal(typeof e.interpret, 'function', `${where}: interpret must be a function`);
+            if (e.scope !== undefined) {
+                for (const k of Object.keys(e.scope)) assert.ok(['shows', 'doesNotShow'].includes(k), `${where}: scope.${k}`);
+                for (const list of Object.values(e.scope)) assert.ok(Array.isArray(list) && list.every(x => typeof x === 'string' && x.length), `${where}: scope lists of strings`);
             }
             for (const s of e.settings ?? []) {
                 assert.ok(s.options.length > 0, `${where}: setting ${s.key} has options`);

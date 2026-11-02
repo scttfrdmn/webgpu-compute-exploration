@@ -194,6 +194,43 @@ $10^{-6}$ relative (99th percentile $2.6 \times 10^{-6}$ for 3,000 bodies). The 
 reaches the same level, $8.8 \times 10^{-7}$ median, although it adds in a different order. The energy
 reduction is good to about $10^{-7}$, below every drift above.
 
+### How to read the Measure results
+
+Each experiment ends with a **Measured vs predicted** table. The measured value of a trend is the slope
+of a least-squares line through the points on log-log axes, so $y \propto x^{p}$ gives slope $p$. It
+comes with a 95% interval from the scatter of the points about that line. A verdict of *agrees* means
+the prediction lies inside that interval, widened by a stated tolerance where the theory is itself only
+approximate. *Disagrees* means it lies outside. *Undetermined* means there are too few points (fewer
+than three give no interval), or the interval straddles the edge of a predicted range.
+
+| Experiment | Claim | Prediction | CI, software GPU |
+|---|---|---|---|
+| θ vs error | median force error vs $\theta$ | slope 2 ± 0.25 (quadrupole term, $l/d \le \theta$; the $\theta^3$ term steepens it a little) | 2.09 (2.01 … 2.16) |
+| θ vs error | interactions per body vs $\theta$ | slope between −3 and 0 | −1.46 (−1.50 … −1.42) |
+| Scaling | brute-force time vs $N$ | slope 2 ± 0.1 | 1.86 (1.56 … 2.15) |
+| Scaling | Barnes-Hut time vs $N$ | 1.0 … 1.3 ($N \log_2 N$ alone gives 1.11 here) | 1.11 (1.04 … 1.17) |
+| Scaling | crossover | exists; where is device-dependent | between 8,192 and 16,384 |
+| Energy | max $\lvert\Delta E/E_0\rvert$ vs $\Delta t$, brute force | slope 2 | 2.25 (1.87 … 2.64) |
+| Energy | the same, Barnes-Hut $\theta = 0.5$ | slope 0 ± 0.2, floor $10^{-4}$ … $10^{-2}$ | 0.04 (0.01 … 0.07), floor 6.5e-4 |
+
+Some of these predictions are bands rather than numbers, and the reasons are physics, not slack. The
+$\theta^{-3}$ count of accepted cells per tree level holds only for large $N$ and uniform density. At
+4,096 bodies the near field and the roughly $\log N$ levels add work that does not depend on $\theta$,
+so the measured fall is shallower. For the same reason, the interactions per body still grow like
+$N^{0.37}$ here, not like $\log N$, and that is why the Barnes-Hut band reaches above 1.11. The
+Barnes-Hut energy floor is an order-of-magnitude scale set by the tree's potential error, not a fit.
+
+**Uncertainty.** The force errors and interaction counts are deterministic: for one set of bodies, their
+interval measures how far the points bend away from a straight line, not noise. The timings carry real
+noise, which shows as each point's interquartile range. Read the crossover from points whose ranges do
+not overlap; the table says when they do.
+
+**What a disagreement means.** If the θ slope is well below 2, something other than the multipole
+truncation sets the error: a precision floor, or a fault in the tree. If the brute-force slope is below 2
+on a fast GPU, fixed costs per submission still dominate at these $N$, so look at GPU time if your browser
+offers it. A slope in the energy test that falls short of 2 points to a floor at small $\Delta t$. None of these
+is a ranking of devices: one device, one browser, one run.
+
 ## Why it maps well — or poorly — to a GPU
 
 **Brute force maps very well.** The work is uniform, the inner loop has no branches (the self-interaction

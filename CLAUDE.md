@@ -4,7 +4,8 @@ Static WebGPU demo site: `index.html` + ES modules in `js/`, no bundler, no npm 
 One example (#10) uses a Rust/WASM crate in `wasm/`.
 
 ## Run / build
-- Serve: `python3 -m http.server 8000` (or `npm run dev`), open http://localhost:8000 in a WebGPU browser.
+- Serve: `python3 tools/serve.py` (or `npm run dev`; it is `http.server` with `Cache-Control: no-cache`, so browsers
+  never run stale cached modules), open http://localhost:8000 in a WebGPU browser.
 - WASM: `./wasm/build.sh` → `js/wasm-pkg/` (gitignored). Needs a `rustc` with `wasm32-unknown-unknown`;
   on this machine Homebrew's `rustc` shadows rustup's, so run with `PATH=~/.cargo/bin:$PATH`.
 - Checks (same as CI): `for f in $(git ls-files '*.js'); do node --check "$f"; done`, the WASM build, and
@@ -55,7 +56,16 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   links `#<id>/understand`, `#<id>/measure`; leaving Explore stops the example via its own Pause/Stop button),
   `markdown.js` + `tex-mathml.js` render `content/understand/<id>.md` (escaped Markdown, `$…$` TeX subset → MathML),
   `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
-  examples have content, `app-state.js` shares the device and instances with `main.js`.
+  examples have content, `app-state.js` shares the device and instances with `main.js`, `stats.js` summarizes
+  repeats (median, IQR, CV), `result-record.js` builds and validates schema v1 records (Download / Compare).
+- `js/teach/flagships.js` — data for the landing page's three reference investigations; each card cites `interpret()`
+  claims by their stable `key`, and `test/flagships.test.mjs` fails if a card's wording drifts from the claims.
+- `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`
+  (version, commit, build time) into the Pages build; `js/source-info.js` reads it (commit "local" when served locally).
+- `validate.html` + `js/teach/validation.js` (plan, environment, bundle; pure) + `js/teach/validate.js` (runner and
+  page) — the physical-GPU validation run. Bump `VALIDATION_PLAN.version` whenever its entries or settings change.
+  Bundles go in `data/validation/<env>/` (environments from `data/validation/matrix.json`); then run
+  `node tools/validation-summary.mjs --write` — `test/validation.test.mjs` fails if the README block is stale.
 - `learn.html` + `js/teach/path.js` (data) + `js/teach/learn.js` (renderer) — the learning path; it never loads
   WebGPU. New examples should be placed in a track step; `test/learn-path.test.mjs` requires every example to appear.
 - `index.html` — page structure. Each example is a
@@ -81,7 +91,11 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
 6. Teaching content (see `content/understand/nbody.md` and `js/teach/experiments/nbody.js` as the template):
    an Understand page with the outline in `test/teach-content.test.mjs` (`REQUIRED_SECTIONS`), and 1–3 Measure
    experiments (interface at the top of `js/teach/measure.js`) that use fixed parameter lists with hard caps, a
-   `budgetMs` ≤ 20 s, `await ctx.step()` between steps, and a CPU reference from `js/refs/`. GPU work for
+   `budgetMs` ≤ 20 s, `await ctx.step()` between steps, and a CPU reference from `js/refs/`. The budget is checked
+   between steps, so each step's GPU work must be capped on its own. Time with `ctx.measure(runOnce, { warmup, repeats })`
+   (medians + IQR via `withSpread`; phases via `js/phase-clock.js`), declare `columns[].unit`, and add
+   `verify(rows, settings)` checks against references where a result can be right or wrong; every run produces a
+   schema v1 record (`schema/experiment-result.v1.json`, built by `js/teach/result-record.js`). GPU work for
    experiments goes through a small compute-only export of the example (no canvas), covered by a CPU test and a
    `test/gpu/` test. List the example in `js/teach/registry.js`; `npm test` lints all registered content.
 

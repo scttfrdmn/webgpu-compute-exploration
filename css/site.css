@@ -239,6 +239,21 @@ footer {
 .chart-dot { stroke: var(--surface); stroke-width: 2; }
 .chart-reference { fill: none; stroke: var(--muted); stroke-width: 1; }
 .chart-crosshair { stroke: var(--muted); stroke-width: 1; }
+.chart-range { stroke: var(--muted); stroke-width: 1; }
+.chart-range-key { display: inline-block; width: 7px; height: 10px; vertical-align: middle; margin-right: 6px;
+    border: solid var(--muted); border-width: 1px 0; background: linear-gradient(var(--muted), var(--muted)) center / 1px 100% no-repeat; }
+.experiment-protocol { margin: 4px 0; }
+.experiment-checks { list-style: none; margin: 6px 0; padding: 0; font-size: 0.88rem; }
+.experiment-checks li { margin: 2px 0; color: var(--muted); }
+.experiment-checks .check-status { display: inline-block; min-width: 7.5em; color: var(--text); font-weight: 600; }
+.experiment-record { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.experiment-compare { margin: 8px 0; }
+.experiment-compare table { border-collapse: collapse; font-size: 0.85rem; margin: 8px 0; }
+.experiment-compare th, .experiment-compare td { border: 1px solid var(--border); padding: 4px 8px; text-align: left;
+    vertical-align: top; }
+.experiment-compare td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.experiment-compare th { color: var(--muted); font-weight: 500; }
+.experiment-compare .error, .experiment-status.error { color: var(--error); }
 .chart-line.series-1 { stroke: var(--series-1); } .chart-dot.series-1 { fill: var(--series-1); }
 .chart-line.series-2 { stroke: var(--series-2); } .chart-dot.series-2 { fill: var(--series-2); }
 .chart-line.series-3 { stroke: var(--series-3); } .chart-dot.series-3 { fill: var(--series-3); }
@@ -291,3 +306,40 @@ footer {
 .step-why { margin: 10px 0; max-width: 760px; }
 .step-try { max-width: 760px; }
 .step-why strong, .step-try strong { color: var(--text); }
+.experiment-scope { font-size: 0.88rem; color: var(--muted); margin: 0 0 8px; }
+.experiment-scope strong { color: var(--text); font-weight: 500; }
+.experiment-scope ul { margin: 2px 0 6px 18px; padding: 0; }
+.experiment-interpretation h5 { margin: 12px 0 4px; font-size: 0.95rem; }
+.experiment-interpretation table { border-collapse: collapse; font-size: 0.85rem; }
+.experiment-interpretation th, .experiment-interpretation td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+.verdict-agrees { color: var(--accent-2); }
+.verdict-disagrees { color: var(--error); }
+.verdict-undetermined { color: var(--muted); }
+
+/* ---- Reference investigations (index.html cards, learn.html pointer; js/teach/flagships.js) ---- */
+.flagships > .hint { max-width: 760px; }
+.flagship-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 16px 0; }
+.flagship {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px 20px; display: flex; flex-direction: column;
+}
+.flagship h3 { margin: 0 0 6px; font-size: 1.15rem; }
+.flagship p { margin: 0 0 10px; }
+.flagship-question { color: var(--text); }
+.flagship-protocol { color: var(--muted); font-size: 0.9rem; }
+.flagship-protocol strong, .flagship-label { color: var(--text); font-weight: 600; font-size: 0.9rem; }
+.flagship-label { margin-bottom: 2px; }
+.flagship-predictions { margin: 0 0 10px 18px; padding: 0; font-size: 0.9rem; }
+.flagship-caveat { margin-top: 0; }
+.flagship .flagship-links { margin-top: auto; margin-bottom: 0; }
+.flagship-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.flagship-links a {
+    text-decoration: none; padding: 3px 11px; border: 1px solid var(--border); border-radius: 999px;
+    font-size: 0.88rem; color: var(--text);
+}
+.flagship-links a:hover { border-color: var(--accent); color: var(--accent); }
+.flagship-links a.flagship-run { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.flagship-pointer { margin-top: 28px; max-width: 900px; }
+.flagship-pointer h2 { margin: 0 0 6px; font-size: 1.1rem; }
+.flagship-pointer-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.flagship-pointer-item .flagship-links { margin: 4px 0 0; }

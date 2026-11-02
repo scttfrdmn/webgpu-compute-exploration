@@ -1,0 +1,33 @@
+{
+  "matrixVersion": 1,
+  "description": "Physical-GPU validation matrix (#78). Each environment is one browser on one kind of device. Run validate.html there, download the validation bundle, commit it as bundlePath, then run `node tools/validation-summary.mjs --write` to update the README table. More environments can be added here (with a directory of the same name) from device reports.",
+  "plan": 1,
+  "bundlePath": "data/validation/<environment>/<date>-<commit>.json",
+  "record": [
+    { "field": "browser.version", "how": "From the user agent (Chrome: full version from client hints); check it against the browser's About page" },
+    { "field": "os.version", "how": "Chrome: from client hints. Safari freezes the macOS version in the user agent: enter it from About This Mac" },
+    { "field": "hardware", "how": "Enter the Mac model and chip from About This Mac, e.g. \"MacBook Air 13-inch, M2\"" },
+    { "field": "timestampQuery.adapter", "how": "Detected: whether the adapter offers timestamp-query (GPU times) or only wall-clock times are available" },
+    { "field": "timestampQuery.device", "how": "Detected: whether the device was created with timestamp-query" }
+  ],
+  "environments": [
+    {
+      "id": "apple-silicon-chrome",
+      "label": "Apple silicon Mac · Chrome",
+      "hardware": "Mac with an Apple M-series chip",
+      "os": "macos",
+      "browser": "chrome",
+      "minBrowserMajor": 113,
+      "notes": "Current stable Chrome. Timestamps are quantized to about 100 µs unless chrome://flags/#enable-webgpu-developer-features is on; record which in the notes field."
+    },
+    {
+      "id": "apple-silicon-safari26",
+      "label": "Apple silicon Mac · Safari (26 or later)",
+      "hardware": "Mac with an Apple M-series chip",
+      "os": "macos",
+      "browser": "safari",
+      "minBrowserMajor": 26,
+      "notes": "Safari 26 or later with WebGPU on by default. timestamp-query may be missing: then every GPU time is wall-clock, which the bundle records."
+    }
+  ]
+}

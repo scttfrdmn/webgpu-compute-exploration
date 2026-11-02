@@ -21,12 +21,27 @@ scaling).
   behaviour, things to try, and references (Markdown with MathML equations, `content/understand/<id>.md`).
 - **Measure** — experiments you start on your own GPU (e.g. Barnes-Hut opening angle vs force error, scaling
   against brute force), checked against CPU references in the browser and charted. Each experiment uses fixed,
-  capped problem sizes and a time budget, and its results are added to the device report.
+  capped problem sizes and repeats each measurement (median and interquartile range, with a phase breakdown where
+  it applies). Each step's GPU work is capped and the 20 s budget is checked between steps. Results carry
+  PASS/FAIL checks against the references and can be downloaded as a versioned JSON record (schema
+  `schema/experiment-result.v1.json`, stamped with the source commit) and compared with someone else's file.
 
 Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`. Content is being written example
 by example; tabs without content yet say so.
 
 - **Learning path** — [learn.html](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html) orders the examples into steps.
+
+### Reference investigations
+
+Three examples are worked up to a common standard and featured at the top of the landing page: **matrix
+multiplication** (does time grow like n³, and does tiling beat the naive kernel?), **N-body gravity (Barnes-Hut)**
+(does the force error grow like θ², and where does the tree overtake the O(N²) direct sum?) and **parallel sorting**
+(radix O(N) vs bitonic O(N log² N), and a crossover with the browser's CPU sort). Each states its question, sweeps it
+with a fixed protocol (warm-up, repeats, medians and interquartile ranges), verifies the GPU results against an
+independent CPU reference (float64 products and forces, a bit-exact CPU sort), and tests its predictions against your
+measurements. Results are for your device and browser, not a GPU ranking. The cards are data in
+`js/teach/flagships.js`, which cites each prediction by the key of the `interpret()` claim that tests it; the
+learning path links to the same three.
 
 ### Learning path
 
@@ -294,10 +309,11 @@ if you want to share it.
 ### Quick Start (JavaScript Only)
 
 ```bash
-python3 -m http.server 8000
+python3 tools/serve.py
 ```
 
-Then open http://localhost:8000 in a WebGPU-compatible browser.
+Then open http://localhost:8000 in a WebGPU-compatible browser. (`tools/serve.py` is `python3 -m http.server` with
+`Cache-Control: no-cache`, so the browser never runs stale cached modules after you pull.)
 
 ### Full Setup (with WASM)
 
@@ -320,7 +336,7 @@ cargo install wasm-pack
 
 4. **Start development server**:
 ```bash
-python3 -m http.server 8000
+python3 tools/serve.py
 ```
 
 5. Open http://localhost:8000
@@ -392,11 +408,16 @@ webgpu/
 │   └── social-preview.png             # Preview image (README, link previews)
 ├── content/
 │   └── understand/                    # Understand pages (Markdown + TeX math), one per example
+├── schema/
+│   ├── experiment-result.v1.json      # JSON Schema for Measure result records
+│   └── validation-bundle.v1.json      # JSON Schema for physical-GPU validation bundles
 ├── css/
 │   └── site.css                       # Shared styles (index.html, learn.html)
 ├── data/
-│   └── mnist/                         # MNIST subset + cached weights (CC BY-SA 3.0, see LICENSE.md)
+│   ├── mnist/                         # MNIST subset + cached weights (CC BY-SA 3.0, see LICENSE.md)
+│   └── validation/                    # Physical-GPU validation matrix (matrix.json) and committed bundles
 ├── index.html                          # Main application page
+├── validate.html                       # Physical-GPU validation run (flagship experiments → bundle)
 ├── js/
 │   ├── main.js                        # Entry point; sets up examples as they scroll into view
 │   ├── teach/                         # Tabs, Markdown/MathML renderer, Measure runner + charts, experiments
@@ -438,7 +459,9 @@ webgpu/
 │   └── helpers/                       # WGSL struct layout calculator, mock GPU device, shared references
 ├── tools/
 │   ├── train-mnist.mjs                # CPU trainer that writes data/mnist/weights.bin
-│   └── validate-wgsl.mjs              # Validates every example's WGSL modules with naga (CI)
+│   ├── validate-wgsl.mjs              # Validates every example's WGSL modules with naga (CI)
+│   ├── validation-summary.mjs         # Validates validation bundles, writes the README summary table
+│   └── local-version.mjs              # version.json for a locally served checkout (commit in bundles)
 ├── wasm/
 │   ├── Cargo.toml                     # Rust dependencies
 │   ├── build.sh                       # WASM build script
@@ -506,6 +529,142 @@ Examples that report performance show two numbers, e.g. `GPU: 1.23 ms · wall: 1
 Chrome quantizes timestamp-query results to ~100 µs to limit timing attacks unless WebGPU developer
 features are enabled (`chrome://flags/#enable-webgpu-developer-features`), so very short passes read as
 0 or 0.1 ms; long passes and averages over many frames are still meaningful.
+
+## Validation on physical GPUs
+
+CI runs everything on software GPUs (lavapipe, SwiftShader): a correctness gate, not a performance or
+portability result. The physical-GPU validation matrix records what the flagship investigations (matrix
+multiplication, N-body, parallel sorting) do on real devices, starting with:
+
+| Environment | Device | Browser | Recorded |
+| --- | --- | --- | --- |
+| `apple-silicon-chrome` | Apple silicon Mac | Chrome (stable) | browser version, macOS version, Mac model/chip, timestamp-query on adapter and device |
+| `apple-silicon-safari26` | Apple silicon Mac | Safari 26+ | the same (Safari hides the macOS version: enter it by hand) |
+
+The matrix is defined in [`data/validation/matrix.json`](data/validation/matrix.json); more environments can be
+added there from device reports. [`validate.html`](validate.html) runs the fixed validation protocol
+(`VALIDATION_PLAN` in `js/teach/validation.js`: each flagship experiment with documented settings, one at a time,
+through the same runner, budgets and checks as the Measure tab) and builds a **validation bundle**: the
+environment plus one schema v1 result record per experiment
+([`schema/validation-bundle.v1.json`](schema/validation-bundle.v1.json)). Correctness (verification checks),
+numerical tolerances, timing availability and interpretation verdicts are summarized separately.
+
+To add a run:
+
+1. Serve a clean checkout with its commit recorded: `node tools/local-version.mjs && python3 tools/serve.py`
+   (or use the deployed site, which has `version.json`).
+2. Open `http://localhost:8000/validate.html` in the browser under test, check the detected environment, fill in
+   the macOS version and Mac model, and press **Run validation** (about a minute; nothing else should use the GPU).
+3. **Download validation bundle (JSON)** and commit it as `data/validation/<environment>/<date>-<commit>.json`
+   (the page shows the exact path).
+4. `node tools/validation-summary.mjs --write` validates every bundle and updates the table below;
+   `node tools/local-version.mjs --remove` deletes the local `version.json`.
+
+<!-- validation-summary:start -->
+_Generated by `node tools/validation-summary.mjs --write` from 2 bundles in `data/validation/` (the latest of each environment). Do not edit by hand._
+
+| Environment | Latest bundle | Bundles | Plan | Site commit | Browser | OS | Hardware | Adapter | timestamp-query | Not recorded |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| apple-silicon-chrome (Apple silicon Mac · Chrome) | 2026-11-02-6fd3b07.json | 1 | v1 | 0.6.0 @ 6fd3b07 | chrome 156.0.8078.74 | macos 27.2.0 | Apple M4 Pro | apple / metal-3 | yes | — |
+| apple-silicon-safari26 (Apple silicon Mac · Safari (26 or later)) | 2026-11-02-6fd3b07.json | 1 | v1 | 0.6.0 @ 6fd3b07 | safari 27.2 | macos 27.2 | Apple M4 Pro | apple / apple / apple / apple | yes | — |
+
+**Correctness** — verification checks against CPU references (PASS = no check failed; passed/total).
+
+| Flagship | Experiment | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- | --- |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | PASS 4/4 | PASS 4/4 |
+| nbody | theta-error (n=16384, preset=plummer) | PASS 7/7 | PASS 7/7 |
+| nbody | scaling (preset=plummer) | NOT CHECKED | NOT CHECKED |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | PASS 6/6 | PASS 6/6 |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | PASS 4/4 | PASS 4/4 |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | PASS 3/4 (1 not checked) | PASS 3/4 (1 not checked) |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | PASS 5/5 | PASS 5/5 |
+
+**Numerical tolerances** — each check's measured value against its bound.
+
+| Flagship | Experiment | Check | Bound | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- | --- | --- | --- |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | naive GPU: max over n of (max rel. error) / (√n·u) | <= 4 (error ≤ 4·√n·u) | 0.862 pass | 0.862 pass |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | tiled GPU: max over n of (max rel. error) / (√n·u) | <= 4 (error ≤ 4·√n·u) | 0.862 pass | 0.862 pass |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | CPU baseline: max over n of (max rel. error) / (√n·u) | <= 4 (error ≤ 4·√n·u) | 0.86 pass | 0.86 pass |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | naive vs tiled: max over n of max \|naive − tiled\| / \|C\| / (√n·u) | <= 4 (error ≤ 4·√n·u) | 0 pass | 0 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 0.3 | 5.0e-4 … 1.5e-3 | 8.58e-4 pass | 8.58e-4 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 0.4 | 9.7e-4 … 2.8e-3 | 0.00165 pass | 0.00165 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 0.5 | 1.6e-3 … 4.5e-3 | 0.00264 pass | 0.00264 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 0.7 | 3.1e-3 … 9.0e-3 | 0.00527 pass | 0.00527 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 0.9 | 5.4e-3 … 1.6e-2 | 0.00916 pass | 0.00916 pass |
+| nbody | theta-error (n=16384, preset=plummer) | median rel. error at θ = 1.2 | 1.0e-2 … 2.9e-2 | 0.017 pass | 0.017 pass |
+| nbody | theta-error (n=16384, preset=plummer) | θ steps where the median error does not grow | 0 | 0 pass | 0 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | max \|ΔE/E₀\| at dt = 0.04 | <= 1.0e-3 | 3.38e-5 pass | 3.38e-5 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | max \|ΔE/E₀\| at dt = 0.02 | <= 1.0e-3 | 5.70e-6 pass | 5.50e-6 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | max \|ΔE/E₀\| at dt = 0.01 | <= 1.0e-3 | 1.30e-6 pass | 1.40e-6 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | max \|ΔE/E₀\| at dt = 0.005 | <= 1.0e-3 | 4.00e-7 pass | 4.00e-7 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | dt halvings where the error does not fall | 0 | 0 pass | 0 pass |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | observed order between dt = 0.02 and 0.01 | 1 … 3 | 2.13 pass | 1.97 pass |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | max \|ΔE/E₀\| at dt = 0.04 | <= 1.0e-2 | 6.86e-4 pass | 6.86e-4 pass |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | max \|ΔE/E₀\| at dt = 0.02 | <= 1.0e-2 | 6.58e-4 pass | 6.58e-4 pass |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | max \|ΔE/E₀\| at dt = 0.01 | <= 1.0e-2 | 6.43e-4 pass | 6.43e-4 pass |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | max \|ΔE/E₀\| at dt = 0.005 | <= 1.0e-2 | 6.36e-4 pass | 6.36e-4 pass |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | bitonic (global): keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | bitonic (workgroup memory): keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | radix: keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | f32 key map round trip | 0 | not checked | not checked |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | bitonic (global): keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | bitonic (workgroup memory): keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | radix: keys that differ from the CPU sort | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | f32 key map: decode(encode(u)) ≠ u | 0 | 0 pass | 0 pass |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | f32 key map: encoded order ≠ float order | 0 | 0 pass | 0 pass |
+
+**Timing availability** — how GPU times were measured (timestamp-query, or wall-clock submit → done).
+
+| Flagship | Experiment | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- | --- |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | timestamp-query | timestamp-query |
+| nbody | theta-error (n=16384, preset=plummer) | timestamp-query | timestamp-query |
+| nbody | scaling (preset=plummer) | timestamp-query | timestamp-query |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | timestamp-query | timestamp-query |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | timestamp-query | timestamp-query |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | timestamp-query | timestamp-query |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | timestamp-query | timestamp-query |
+
+**Interpretation** — measured vs predicted (agrees / disagrees / undetermined within the stated uncertainty).
+
+| Flagship | Experiment | Claim | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- | --- | --- |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | naive GPU: time grows like n³ | undetermined | undetermined |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | tiled GPU: time grows like n³ | undetermined | undetermined |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | CPU (blocked JS): time grows like n³ | agrees | agrees |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | Tiling speeds the GPU kernel up | agrees | agrees |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | The naive kernel is bound by memory traffic, not arithmetic | undetermined | undetermined |
+| matrix-multiplication | cpu-naive-tiled (maxN=1024) | The GPU beats one CPU core from some n on | agrees | agrees |
+| nbody | theta-error (n=16384, preset=plummer) | Median force error vs θ (log-log slope) | agrees | agrees |
+| nbody | theta-error (n=16384, preset=plummer) | Interactions per body vs θ (log-log slope) | agrees | agrees |
+| nbody | theta-error (n=16384, preset=plummer) | Your GPU vs the float64 CPU replica (same bodies) | agrees | agrees |
+| nbody | scaling (preset=plummer) | Brute-force time vs N (log-log slope, GPU ms) | agrees | disagrees |
+| nbody | scaling (preset=plummer) | Barnes-Hut time vs N (log-log slope, GPU ms) | disagrees | disagrees |
+| nbody | scaling (preset=plummer) | Barnes-Hut interactions per body vs N (log-log slope) | agrees | agrees |
+| nbody | scaling (preset=plummer) | Crossover N (Barnes-Hut faster from here) | agrees | agrees |
+| nbody | scaling (preset=plummer) | Tree-build share of Barnes-Hut GPU time vs N | agrees | agrees |
+| nbody | energy-drift (n=2048, mode=brute, preset=plummer) | Max \|ΔE/E₀\| vs dt, exact forces (log-log slope = order) | agrees | agrees |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | Max \|ΔE/E₀\| vs dt, Barnes-Hut θ = 0.5 (log-log slope) | agrees | agrees |
+| nbody | energy-drift (n=2048, mode=bh, preset=plummer) | Size of the Barnes-Hut floor | agrees | agrees |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Bitonic sort (global): time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Bitonic sort (workgroup memory): time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Radix sort: time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | CPU sort (TypedArray.prototype.sort): time vs N | agrees | agrees |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Crossover: bitonic (global) (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Crossover: bitonic (workgroup memory) (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Crossover: radix (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=u32, maxN=1048576) | Ranking at the largest N (N = 1,048,576, GPU timestamps) | undetermined | disagrees |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Bitonic sort (global): time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Bitonic sort (workgroup memory): time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Radix sort: time vs N | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | CPU sort (TypedArray.prototype.sort): time vs N | agrees | agrees |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Crossover: bitonic (global) (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Crossover: bitonic (workgroup memory) (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Crossover: radix (wall) becomes faster than the CPU sort | undetermined | undetermined |
+| parallel-sort | scaling (dataType=f32, maxN=1048576) | Ranking at the largest N (N = 1,048,576, GPU timestamps) | agrees | disagrees |
+<!-- validation-summary:end -->
 
 ## Performance Tips
 
