@@ -33,6 +33,17 @@ All notable changes to this project are documented here. The format follows
   checkout so bundles name their commit.
 
 ### Changed
+- Validation plan v2 (#83), from the first Apple silicon bundles: matrix multiplication to n = 2,048, N-body
+  scaling to N = 262,144, sorting to 4,194,304 keys, so the timing predictions have enough resolvable sizes
+  on a fast GPU.
+- Matrix multiplication (#83): small GPU products are timed several to a pass (batch chosen per device for
+  ~2 ms samples, reported per product); Largest n 2,048 is an option; GPU n³ fits use n ≥ 512.
+- Parallel sort (#84): each run measures the clock's resolution and only compares or fits times ≥ 10× it;
+  CPU sorts are batched to stay resolvable under Safari's 1 ms `performance.now()`; crossovers use GPU
+  timestamps when they are consistent with the wall clock (Safari's radix timestamps on Apple silicon are
+  not), and fits run up to the largest N.
+- N-body scaling (#85): slopes are fitted above the measured fixed-cost floor, with the floor reported as
+  its own claim; Largest N 262,144 runs Barnes-Hut to 262,144 and brute force to 65,536.
 - The Measure time budget is described accurately: it is checked between steps, and each step's GPU work
   is capped (#76).
 

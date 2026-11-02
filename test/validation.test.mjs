@@ -290,7 +290,7 @@ test('summary tool: correctness, tolerances, timing and interpretation tables ov
         const md = renderSummary(loaded);
         t.diagnostic(`\n${md}`);
         assert.match(md, /from 3 bundles/);
-        assert.match(md, /\| apple-silicon-chrome \(Apple silicon Mac · Chrome\) \| 2026-11-01-bbbbbbb\.json \| 2 \| v1 \| 0\.6\.0 @ bbbbbbb \| chrome 142\.0\.7444\.60 \| macos 26\.1\.0 \| Mac mini, M4 \| apple \/ metal-3 \| yes \| — \|/);
+        assert.match(md, /\| apple-silicon-chrome \(Apple silicon Mac · Chrome\) \| 2026-11-01-bbbbbbb\.json \| 2 \| v2 \| 0\.6\.0 @ bbbbbbb \| chrome 142\.0\.7444\.60 \| macos 26\.1\.0 \| Mac mini, M4 \| apple \/ metal-3 \| yes \| — \|/);
         assert.match(md, /\| apple-silicon-safari26 [^\n]*\| safari 26\.1 \| macos \? \|[^\n]*\| no \(wall-clock\) \| os\.version \|/, 'missing timestamps and OS version');
         // correctness: pass / fail / not checked / stopped; '—' where an environment has no record
         assert.match(md, /\| matrix-multiplication \| cpu-naive-tiled \(maxN=1024\) \| PASS 2\/2 \| FAIL 1\/2 \|/);

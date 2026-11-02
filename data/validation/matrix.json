@@ -1,7 +1,7 @@
 {
   "matrixVersion": 1,
   "description": "Physical-GPU validation matrix (#78). Each environment is one browser on one kind of device. Run validate.html there, download the validation bundle, commit it as bundlePath, then run `node tools/validation-summary.mjs --write` to update the README table. More environments can be added here (with a directory of the same name) from device reports.",
-  "plan": 1,
+  "plan": 2,
   "bundlePath": "data/validation/<environment>/<date>-<commit>.json",
   "record": [
     { "field": "browser.version", "how": "From the user agent (Chrome: full version from client hints); check it against the browser's About page" },

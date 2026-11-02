@@ -25,17 +25,17 @@ export const FLAGSHIPS = ['matrix-multiplication', 'nbody', 'parallel-sort'];
 // expectedSeconds: a rough estimate of one run on an Apple-silicon Mac (M1 or later), shown before running.
 // The hard bound is the experiment's budget (20 s each), checked between steps.
 export const VALIDATION_PLAN = Object.freeze({
-    version: 1,
+    version: 2,
     entries: Object.freeze([
         { key: 'matmul', exampleId: 'matrix-multiplication', experimentId: 'cpu-naive-tiled',
-            settings: { maxN: 1024 }, expectedSeconds: 5,
-            why: 'all five sizes to the GPU cap; CPU baseline to n = 512' },
+            settings: { maxN: 2048 }, expectedSeconds: 5,
+            why: 'six sizes to n = 2,048, batched timing for small products, so the GPU n³ fits get three sizes; CPU baseline to n = 512' },
         { key: 'nbody-theta', exampleId: 'nbody', experimentId: 'theta-error',
             settings: { n: 16384, preset: 'plummer' }, expectedSeconds: 4,
             why: 'six opening angles against the float64 direct sum and the CPU replica medians' },
         { key: 'nbody-scaling', exampleId: 'nbody', experimentId: 'scaling',
-            settings: { preset: 'plummer' }, expectedSeconds: 7,
-            why: 'Barnes-Hut to N = 65,536, brute force to 16,384: the crossover' },
+            settings: { preset: 'plummer', maxN: 262144 }, expectedSeconds: 8,
+            why: 'Barnes-Hut to N = 262,144, brute force to 65,536: floor-corrected slopes, the crossover, the fixed cost' },
         { key: 'nbody-drift-brute', exampleId: 'nbody', experimentId: 'energy-drift',
             settings: { n: 2048, mode: 'brute', preset: 'plummer' }, expectedSeconds: 4,
             why: 'second-order energy error with exact forces' },
@@ -43,10 +43,10 @@ export const VALIDATION_PLAN = Object.freeze({
             settings: { n: 2048, mode: 'bh', preset: 'plummer' }, expectedSeconds: 5,
             why: 'the Barnes-Hut energy floor' },
         { key: 'sort-u32', exampleId: 'parallel-sort', experimentId: 'scaling',
-            settings: { dataType: 'u32', maxN: 1048576 }, expectedSeconds: 6,
-            why: 'seven sizes to 1,048,576 u32 keys, every sort checked bit for bit' },
+            settings: { dataType: 'u32', maxN: 4194304 }, expectedSeconds: 7,
+            why: 'nine sizes to 4,194,304 u32 keys, every sort checked bit for bit' },
         { key: 'sort-f32', exampleId: 'parallel-sort', experimentId: 'scaling',
-            settings: { dataType: 'f32', maxN: 1048576 }, expectedSeconds: 7,
+            settings: { dataType: 'f32', maxN: 4194304 }, expectedSeconds: 8,
             why: 'the same with f32 keys (encode → sort → decode) and the key-map checks' },
     ].map(e => Object.freeze({ ...e, settings: Object.freeze(e.settings) }))),
 });
