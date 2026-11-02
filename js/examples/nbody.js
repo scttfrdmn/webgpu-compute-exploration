@@ -54,7 +54,8 @@
 //   • Traversal: at most MAX_VISITS node visits per body. If the cap were hit, the nodes still on
 //     the stack are added as monopoles (an approximation, not a hang).
 //   • Karras searches: the exponential and binary searches are capped at 32 iterations.
-//   • N ≤ 262,144 for Barnes-Hut, ≤ 32,768 for brute force (128 tiles), at most 4 steps per frame,
+//   • N ≤ 262,144 for Barnes-Hut, ≤ 32,768 for brute force in Explore, ≤ 65,536 (256 tiles, one
+//     dispatch of 4.3·10⁹ interactions) in the compute-only Measure API, at most 4 steps per frame,
 //     θ ≥ 0.3. The CPU replica of the traversal at N = 262,144, θ = 0.3 needs at most ~12,500
 //     visits per body (Plummer), well under MAX_VISITS.
 //   • Per frame: steps are dropped (down to 1) when steps × interactions per step (N(N − 1) for
@@ -129,6 +130,10 @@ import { PhaseClock } from '../phase-clock.js';
 export const WG = 256;
 export const MAX_BH = 262144;
 export const MAX_BRUTE = 32768;
+// The compute-only API (measureForces) allows brute force to this N: one force evaluation, never a frame
+// loop. 4.3·10⁹ interactions in one dispatch: ~50 ms on an Apple M4 Pro, well under a second on a slow
+// integrated GPU (~10⁹–10¹⁰ interactions/s); the shader's tile cap MAX_TILES follows it.
+export const MEASURE_MAX_BRUTE = 65536;
 export const MAX_STEPS_PER_FRAME = 4;
 export const STACK_SIZE = 64;
 export const MAX_DEPTH = 64;
@@ -210,7 +215,7 @@ export const bruteShader = simStruct + `
 @group(0) @binding(1) var<storage, read_write> accel: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> params: SimParams;
 
-const MAX_TILES: u32 = ${MAX_BRUTE / WG}u;
+const MAX_TILES: u32 = ${MEASURE_MAX_BRUTE / WG}u;
 
 var<workgroup> tile: array<vec4<f32>, ${WG}>;
 
@@ -1524,6 +1529,7 @@ export class NBodySimulation {
 
         this.count = count;
         this.mode = 'bh';             // 'bh' | 'brute'
+        this.bruteLimit = MAX_BRUTE;  // brute force only up to this N (the compute-only API: MEASURE_MAX_BRUTE)
         this.presetKey = 'spiral';
         this.theta = 0.5;
         this.softening = 0.05;
@@ -1856,7 +1862,7 @@ export class NBodySimulation {
     }
 
     effectiveMode() {
-        return this.mode === 'brute' && this.count <= MAX_BRUTE ? 'brute' : 'bh';
+        return this.mode === 'brute' && this.count <= this.bruteLimit ? 'brute' : 'bh';
     }
 
     // Writes SimParams (layout table at the top of the file)
@@ -2212,10 +2218,10 @@ export const MAX_MEASURE_REPEATS = 10;   // timed force evaluations per measureF
 function computeOnly(gpuDevice, n, { mode, theta, softening, dt }) {
     if (!Number.isInteger(n) || n < 2 || n > MAX_BH) throw new RangeError(`N = ${n} is outside 2 … ${MAX_BH}`);
     if (mode !== 'bh' && mode !== 'brute') throw new RangeError(`unknown mode ${mode}`);
-    if (mode === 'brute' && n > MAX_BRUTE) throw new RangeError(`brute force is limited to N ≤ ${MAX_BRUTE}`);
+    if (mode === 'brute' && n > MEASURE_MAX_BRUTE) throw new RangeError(`brute force is limited to N ≤ ${MEASURE_MAX_BRUTE}`);
     if (!(theta > 0) || !(softening > 0) || !(dt > 0)) throw new RangeError('θ, ε and dt must be positive');
     const sim = new NBodySimulation(gpuDevice.device ?? gpuDevice, null, { count: n });
-    Object.assign(sim, { mode, theta, softening, dt });
+    Object.assign(sim, { mode, theta, softening, dt, bruteLimit: MEASURE_MAX_BRUTE });
     return sim;
 }
 

@@ -14,8 +14,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { device } from './harness.mjs';
 import { generateBodies, measureForces, measureEnergyDrift } from '../../js/examples/nbody.js';
-import { directForces, relErrors } from '../../js/refs/nbody.js';
-import experiments from '../../js/teach/experiments/nbody.js';
+import { directForces, directForcesAt, relErrors } from '../../js/refs/nbody.js';
+import experiments, { SCALING_LIMITS, sampleTargets } from '../../js/teach/experiments/nbody.js';
 import { makeTestContext } from '../../js/teach/measure.js';
 import { buildResultRecord, validateResultRecord, SCHEMA_PATH } from '../../js/teach/result-record.js';
 import { readFileSync } from 'node:fs';
@@ -200,7 +200,40 @@ test('experiment scaling (Plummer): rows up to the caps, brute force stops at 16
     }
     // Timing verdicts depend on the device and are printed, not asserted; the entries must exist, and on the
     // software GPU the crossover falls inside the sweep
-    const verdicts = interpretation(record, t, 5);
+    const verdicts = interpretation(record, t, 6);
     assert.equal(verdicts[3], true, 'crossover bracketed inside the sweep');
     t.diagnostic(`tree share: ${show(rows, ['n', 'treeShare'])}; gpu ms: ${show(rows, ['n', 'bhGpu', 'bruteGpu'])}`);
+});
+
+// The scaling experiment's Largest N = 262,144 option (#83, #85) reaches sizes the default sweep does not: Barnes-Hut at
+// 262,144 and brute force at 65,536 (above Explore's 32,768, allowed by the compute-only API's MEASURE_MAX_BRUTE). The
+// whole sweep would take minutes on this software GPU, so each new size runs once here, checked on SAMPLE targets
+// against the float64 direct sum (the same bounds as at 4,096 for Barnes-Hut; f32 sums of 65,536 terms for brute force).
+test('measureForces at the Largest N = 262,144 sizes: Barnes-Hut 262,144 and brute force 65,536 vs float64 direct sum', async (t) => {
+    const { bh: bhN, brute: bruteN } = SCALING_LIMITS[262144];
+    assert.deepEqual([bhN, bruteN], [262144, 65536]);
+    for (const [mode, n] of [['bh', bhN], ['brute', bruteN]]) {
+        const { positions } = generateBodies('plummer', n, EPS, 5);
+        const targets = sampleTargets(n);
+        const t0 = performance.now();
+        const r = await measureForces(gpuDevice, { positions, mode, theta: 0.5, softening: EPS, warmup: 0, repeats: 1 });
+        const seconds = (performance.now() - t0) / 1000;
+        const ref = directForcesAt(positions, n, EPS * EPS, targets);
+        const acc = new Float64Array(3 * targets.length);
+        targets.forEach((i, k) => { for (let c = 0; c < 3; c++) acc[3 * k + c] = r.accel[4 * i + c]; });
+        const e = relErrors(acc, ref.acc, targets.length);
+        t.diagnostic(`${mode} N = ${n}: ${seconds.toFixed(1)} s (wall ${r.wallMs.toFixed(0)} ms per evaluation), median `
+            + `${e.median.toExponential(2)}, p99 ${e.p99.toExponential(2)}, max ${e.max.toExponential(2)}; interactions/body `
+            + `${r.interactionsPerBody.toFixed(1)}; dispatches ${r.dispatches}`);
+        assert.ok(r.accel.every(Number.isFinite));
+        if (mode === 'bh') {
+            assert.equal(r.dispatches, 31);
+            assert.ok(e.median < 7e-3 && e.p99 < 7e-2, `θ=0.5 median ${e.median} p99 ${e.p99}`);
+            assert.ok(r.interactionsPerBody > 100 && r.interactionsPerBody < n / 10);
+        } else {
+            assert.equal(r.dispatches, 1, 'brute force, not a silent fallback to Barnes-Hut');
+            assert.equal(r.interactionsPerBody, n - 1);
+            assert.ok(e.p99 < 1e-3 && e.median < 1e-4, `brute median ${e.median} p99 ${e.p99}`);
+        }
+    }
 });

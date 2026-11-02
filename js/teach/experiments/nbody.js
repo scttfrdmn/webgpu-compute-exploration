@@ -3,7 +3,8 @@
 // The GPU work goes through the example's compute-only API (measureForces, measureEnergyDrift), which
 // runs the shipped pipelines without a canvas; the CPU reference is the float64 direct sum of
 // js/refs/nbody.js. Every sweep is a fixed list with hard caps (exported so test/nbody-measure.test.mjs
-// can check them): Barnes-Hut N ≤ 65,536, brute force N ≤ 16,384, ≤ 400 leapfrog steps per run.
+// can check them): Barnes-Hut N ≤ 65,536, brute force N ≤ 16,384 (the scaling sweep's Largest N option: 262,144
+// and 65,536), ≤ 400 leapfrog steps per run.
 //
 // Timing follows the shared protocol (PROTOCOL: 1 discarded warm-up, then 5 independent repeats, each a
 // fresh measureForces call that sets up, uploads, dispatches once and reads back); timed columns are
@@ -253,13 +254,60 @@ export function interpretThetaError(rows, { n, preset } = {}) {
 }
 
 // ---- 2. Scaling: Barnes-Hut vs brute force ----------------------------------------------------------
-export const SCALING_COUNTS = [1024, 2048, 4096, 8192, 16384, 32768, 65536];
+export const SCALING_COUNTS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144];
+// The maxN setting: the largest Barnes-Hut and brute-force N of the sweep. The default keeps the original sweep
+// (it is what CI's software GPU runs); 262,144 gives a fast GPU enough sizes above its fixed cost to fit a slope.
+// Caps: Barnes-Hut ≤ MAX_BH = 262,144; brute force ≤ MEASURE_MAX_BRUTE = 65,536, one dispatch of 4.3·10⁹
+// interactions (≈ 50 ms on an Apple M4 Pro, under a second on a slow integrated GPU, ≈ 5 s on CI's lavapipe).
+export const SCALING_LIMITS = { 65536: { bh: 65536, brute: 16384 }, 262144: { bh: 262144, brute: 65536 } };
+export const SCALING_DEFAULT_MAX = 65536;
+export const scalingLimits = (maxN) => SCALING_LIMITS[Number(maxN)] ?? SCALING_LIMITS[SCALING_DEFAULT_MAX];
+export const scalingCounts = (maxN) => SCALING_COUNTS.filter(n => n <= scalingLimits(maxN).bh);
+
+// Scaling predictions.
+//   The fixed floor. Every evaluation pays a cost that does not grow with N: the submission and synchronisation,
+//   and for Barnes-Hut 31 dispatches (30 for the tree build, 1 traversal) of which most do little work at small N;
+//   a small brute-force dispatch also cannot fill a large GPU. On a fast GPU that floor is a large part of the time
+//   over much of the sweep (Apple M4 Pro, GPU ms: Barnes-Hut 0.6 ms at N = 1,024 and only 3–5× that at 16,384),
+//   so a log-log fit over every size measures the floor, not the algorithm (slopes 0.7 for Barnes-Hut, 1.2–1.4 for
+//   brute force there). The fits therefore (1) estimate the floor as the median at the smallest N (an upper bound on
+//   the fixed cost, since it includes that N's work), (2) keep only sizes whose median is at least FLOOR_FACTOR × the
+//   floor and at least FIT_MIN_MS, and (3) fit t − floor. At FLOOR_FACTOR = 4 the floor is at most a quarter of each
+//   fitted time, so how well it is estimated barely moves the slope; FIT_MIN_MS = 1 keeps the timer's resolution
+//   (65 µs GPU ticks in Chrome, 0.1–1 ms wall clocks) small. The floor is an upper bound: where the smallest-N time
+//   is really work (a slow GPU), subtracting it steepens the fit a little (≤ +0.1 for N² and N^1.1 power laws with
+//   no floor at all, see test/nbody-interpret.test.mjs). With fewer than 3 such sizes, or a 95% interval wider than
+//   ± MAX_CI_HALF (which cannot tell N log N from N²), the verdict is undetermined, and the note gives the slope over
+//   all sizes for contrast.
+//   Brute force: exactly N − 1 interactions for each of N bodies, so time ∝ N²: prediction 2, ± 0.1 for what is left
+//   of the fixed cost and for a GPU that is not yet full at the smallest fitted N.
+//   Barnes-Hut: O(N log N). N log₂ N has an effective power-law slope over the fitted sizes (nlognSlope: 1.11 over
+//   1,024 … 65,536, 1.09 over 32,768 … 262,144). The O(N) tree build pulls the slope towards 1; the interactions per
+//   body, which grow faster than log N at these N (CI: ∝ N^0.37), push the traversal up. So the prediction is the
+//   band 1.0 … nlognSlope + BH_EXTRA (≈ 1.3), tested as an overlap of the 95% interval with it (slopeAgrees about
+//   its center with half its width). CI (software GPU, wall ms): 1.1.
+//   Crossover: O(N²) must overtake O(N log N) at some N; where depends on the device. CI: 8,192 … 16,384.
+//   Tree-build share: the build is O(N) plus ~30 fixed dispatches, the traversal O(N log N), so the share falls.
+export const BRUTE_ORDER = 2, BRUTE_ORDER_TOLERANCE = 0.1;
+export const BH_LOWER = 1, BH_EXTRA = 0.2;
+export const FLOOR_FACTOR = 4;
+export const FIT_MIN_MS = 1;
+export const MAX_CI_HALF = 0.5;     // a wider 95% interval cannot separate N log N (≈ 1.1) from N² (2): undetermined
+export const BH_DISPATCHES = 31;    // per Barnes-Hut force evaluation (measureForces' `dispatches`; brute force: 1)
+// Effective log-log slope of N log₂ N over the given sizes (null for fewer than 2)
+export const nlognSlope = (ns) => fitPowerLaw(ns, ns.map(n => n * Math.log2(n))).slope;
+export const NLOGN_EFFECTIVE = nlognSlope(scalingCounts(SCALING_DEFAULT_MAX));   // 1.11 over 1,024 … 65,536
 
 const scaling = {
     id: 'scaling',
     title: 'Scaling: Barnes-Hut vs brute force',
     question: 'At what N does the O(N log N) tree, rebuilt every step, beat the O(N²) tiled direct sum on your GPU?',
-    settings: [presetSetting],
+    settings: [presetSetting, {
+        key: 'maxN', label: 'Largest N',
+        options: Object.entries(SCALING_LIMITS).map(([max, l]) => ({ value: Number(max),
+            label: `Barnes-Hut ${count(l.bh)}, brute force ${count(l.brute)}${Number(max) > SCALING_DEFAULT_MAX ? ' (fast GPUs)' : ''}` })),
+        default: SCALING_DEFAULT_MAX,
+    }],
     budgetMs: 20000,
     columns: [
         { key: 'n', label: 'N' },
@@ -285,19 +333,21 @@ const scaling = {
     ],
     baseline: 'Brute force does exactly N − 1 interactions per body; Barnes-Hut at θ = 0.5 does a few hundred to about a '
         + 'thousand (248 at N = 1,024, 1,140 at 65,536 in CI) plus a 30-dispatch tree build, so it loses at small N and wins '
-        + 'at large N. In CI, on a CPU-emulated GPU (no timestamp-query, so wall ms), the wall times cross between N = 8,192 '
-        + '(brute force about 30% faster) and 16,384 (Barnes-Hut about 10% faster; log-interpolated ≈ 14,000), and the fitted '
-        + 'slopes (95% CI) were 1.86 (1.56 … 2.15) for brute force, 1.11 (1.04 … 1.17) for Barnes-Hut and 0.36 (0.30 … 0.43) '
-        + `for interactions per body. Brute force stops at N = ${BRUTE_MAX_N.toLocaleString('en-US')} here `
-        + '(the example allows 32,768). Where the crossover falls depends on the GPU, driver and browser: read it from '
-        + 'your medians and their spread, not from one number. Compile is pipeline and buffer creation after the warm-up '
-        + '(usually a pipeline-cache hit); the cold compile is in the discarded warm-up.',
-    // Budget: 7 Barnes-Hut and 5 brute-force points × (1 warm-up + 5 repeats) = 72 evaluations, each with its own
-    // set-up and read-back. On a discrete or recent integrated GPU that is a few seconds; on the CPU-emulated GPU in
-    // CI it is 26 s. Every point keeps the full protocol (so the record's warm-up/repeat counts hold for every row);
-    // instead, a brute-force point whose projected cost would leave too little of the budget for the remaining
-    // Barnes-Hut points is skipped (see skipBrute), and interpret() says so.
-    async *run(ctx, { preset }) {
+        + 'at large N. In CI, on a CPU-emulated GPU (no timestamp-query, so wall ms; Largest N 65,536), the wall times cross '
+        + 'between N = 8,192 (brute force about 30% faster) and 16,384 (Barnes-Hut about 10% faster; log-interpolated '
+        + '≈ 14,000); with the fixed floor (the time at N = 1,024: 1.4 ms brute force, 16 ms Barnes-Hut) subtracted and only '
+        + `the sizes at least ${FLOOR_FACTOR}× above it fitted, the slopes were about 1.9 for brute force and 1.1 for Barnes-Hut. `
+        + 'On an Apple M4 Pro (GPU ms) the floor is 0.6 ms for Barnes-Hut and under 0.1 ms for brute force, and it covers most '
+        + 'of the default sweep: choose Largest N 262,144 on a fast GPU. Where the crossover falls depends on the GPU, driver '
+        + 'and browser: read it from your medians and their spread, not from one number. Compile is pipeline and buffer '
+        + 'creation after the warm-up (usually a pipeline-cache hit); the cold compile is in the discarded warm-up.',
+    // Budget: up to 9 Barnes-Hut and 7 brute-force points × (1 warm-up + 5 repeats) = 96 evaluations, each with its own
+    // set-up and read-back (default Largest N: 7 and 5, 72 evaluations). On a discrete or recent integrated GPU that is a
+    // few seconds; on the CPU-emulated GPU in CI the default is 17–26 s. Every point keeps the full protocol (so the
+    // record's warm-up/repeat counts hold for every row); instead, a brute-force point whose projected cost would leave
+    // too little of the budget for the remaining Barnes-Hut points is skipped (see skipBrute), and interpret() says so.
+    async *run(ctx, { preset, maxN }) {
+        const limits = scalingLimits(maxN);
         const perCall = { bh: null, brute: null };   // ms per evaluation at the previous N (set-up to read-back)
         let prevN = null, bruteSkipped = false;
         const timed = async (mode, run) => {
@@ -306,8 +356,7 @@ const scaling = {
             perCall[mode] = (performance.now() - t0) / (PROTOCOL.warmup + PROTOCOL.repeats);
             return m;
         };
-        for (const n of SCALING_COUNTS) {
-            if (n > BH_MAX_N) break;
+        for (const n of scalingCounts(maxN)) {
             const { positions } = generateBodies(preset, n, SOFTENING, SEED);
             await ctx.step();
             const bh = await timed('bh', forceRun(ctx, positions, { mode: 'bh', theta: 0.5, accel: false }));
@@ -318,8 +367,8 @@ const scaling = {
                 treeShare: share.median, interactions: last.interactionsPerBody,
                 ...withSpread('compileMs', bh.phases.compile), ...withSpread('uploadMs', bh.phases.upload),
                 ...withSpread('readbackMs', bh.phases.readback) };
-            if (n <= BRUTE_MAX_N && !bruteSkipped) {
-                bruteSkipped = prevN !== null && skipBrute(n, prevN, perCall, ctx.remainingMs?.() ?? Infinity);
+            if (n <= limits.brute && !bruteSkipped) {
+                bruteSkipped = prevN !== null && skipBrute(n, prevN, perCall, ctx.remainingMs?.() ?? Infinity, limits.bh);
                 if (!bruteSkipped) {
                     await ctx.step();
                     const brute = await timed('brute', forceRun(ctx, positions, { mode: 'brute', accel: false }));
@@ -337,12 +386,14 @@ const scaling = {
             'How the time of one brute-force and one Barnes-Hut (θ = 0.5) force evaluation grows with N on your device, '
                 + 'as medians with their interquartile range over 5 repeats.',
             'Where on your device Barnes-Hut starts to win, bracketed between two sweep points.',
-            'How much of the Barnes-Hut GPU time is the tree build (needs timestamp-query).',
+            'How large the fixed cost of one evaluation is (the time at the smallest N), and how much of the Barnes-Hut GPU '
+                + 'time is the tree build (needs timestamp-query).',
         ],
         doesNotShow: [
             'A ranking of GPUs or browsers: one device, one browser, one run. Compare medians only where the spreads do not overlap.',
-            'Asymptotic complexity: N goes to 65,536 (brute force to 16,384), where fixed per-dispatch and set-up costs '
-                + 'still flatten the small-N times, and interactions per body have not reached their log N regime.',
+            'Asymptotic complexity: N goes to 65,536 or 262,144 (brute force to 16,384 or 65,536). The slopes are fitted only '
+                + `over the sizes at least ${FLOOR_FACTOR}× above the fixed floor, with the floor subtracted, and interactions per `
+                + 'body have not reached their log N regime.',
             'Accuracy: every point is θ = 0.5 (the θ-error experiment measures what that costs).',
             'Simulation frame rate: each evaluation here sets up, uploads, dispatches once and reads back; Explore pipelines its steps.',
         ],
@@ -350,29 +401,16 @@ const scaling = {
 };
 
 // Whether to skip brute force at N (and above): its projected cost, from the previous N's per-evaluation time
-// scaled by (N / prevN)², plus the remaining Barnes-Hut points (from this N's Barnes-Hut time, measured just
-// before, scaled by (M / N)^1.2), would not fit in the remaining budget. Exported for tests.
-export function skipBrute(n, prevN, perCall, remainingMs) {
+// scaled by (N / prevN)², plus the remaining Barnes-Hut points up to bhMax (from this N's Barnes-Hut time,
+// measured just before, scaled by (M / N)^1.2), would not fit in the remaining budget. Exported for tests.
+export function skipBrute(n, prevN, perCall, remainingMs, bhMax = SCALING_DEFAULT_MAX) {
     if (!(perCall.brute > 0) || !Number.isFinite(remainingMs)) return false;
     const calls = PROTOCOL.warmup + PROTOCOL.repeats;
     const brute = calls * perCall.brute * (n / prevN) ** 2;
-    const bh = SCALING_COUNTS.filter(m => m > n && m <= BH_MAX_N)
+    const bh = SCALING_COUNTS.filter(m => m > n && m <= bhMax)
         .reduce((s, m) => s + calls * (perCall.bh ?? 0) * (m / n) ** 1.2, 0);
     return brute + bh > remainingMs;
 }
-
-// Scaling predictions.
-//   Brute force: exactly N − 1 interactions for each of N bodies, so time ∝ N² once the arithmetic dominates the
-//   fixed cost of a submission. Prediction 2, with ±0.1 tolerance for the remaining fixed cost at N = 1,024.
-//   Barnes-Hut: O(N log N). Over N = 1,024 … 65,536, N log₂ N has an effective power-law slope of 1.11. At these N
-//   the interactions per body grow faster than log N (CI: ∝ N^0.37), which would push the traversal towards 1.4,
-//   while the O(N) tree build and fixed per-dispatch costs pull the total down; so the prediction is a band,
-//   1.0 … 1.3 (slopeAgrees with 1.15 ± 0.15), not a number. CI (software GPU, wall ms): 1.11 (1.04 … 1.17).
-//   Crossover: O(N²) must overtake O(N log N) at some N; where depends on the device. CI: 8,192 … 16,384.
-//   Tree-build share: the build is O(N) plus ~30 fixed dispatches, the traversal O(N log N), so the share falls.
-export const BRUTE_ORDER = 2, BRUTE_ORDER_TOLERANCE = 0.1;
-export const BH_ORDER = 1.15, BH_ORDER_TOLERANCE = 0.15;
-export const NLOGN_EFFECTIVE = fitPowerLaw(SCALING_COUNTS, SCALING_COUNTS.map(n => n * Math.log2(n))).slope;   // 1.11
 
 // The times to compare for one method: GPU ms when every measured point has them (timestamp-query), else wall ms
 function timeBasis(rows, mode) {
@@ -405,21 +443,66 @@ export function crossover(rows) {
         clear: separated(a) && separated(b), monotone };
 }
 
-export function interpretScaling(rows) {
+// The floor-corrected fit of one method (see "Scaling predictions"): the floor (median at the smallest measured N),
+// the threshold max(FLOOR_FACTOR × floor, FIT_MIN_MS), the sizes at or above it, the fit of time − floor over them,
+// and the plain fit over every size for contrast
+export function floorFit(rows, key) {
+    const all = rows.filter(r => typeof r[key] === 'number' && Number.isFinite(r[key]) && r[key] >= 0)
+        .sort((a, b) => a.n - b.n);
+    if (!all.length) return { floor: null, floorN: null, threshold: null, used: [], fit: fitPowerLaw([], []), allFit: fitPowerLaw([], []) };
+    const floor = all[0][key], threshold = Math.max(FLOOR_FACTOR * floor, FIT_MIN_MS);
+    const used = all.filter(r => r[key] >= threshold);
+    return {
+        floor, floorN: all[0].n, threshold, used: used.map(r => r.n),
+        fit: fitPowerLaw(used.map(r => r.n), used.map(r => r[key] - floor)),
+        allFit: fitPowerLaw(all.map(r => r.n), all.map(r => r[key])),
+    };
+}
+
+// A slope interval wider than ± MAX_CI_HALF cannot tell N log N (≈ 1.1) from N² (2): no verdict
+const tooWide = (fit) => fit.ci95 !== null && (fit.ci95[1] - fit.ci95[0]) / 2 > MAX_CI_HALF;
+const range = (ns) => (ns.length ? `N = ${count(ns[0])} … ${count(ns.at(-1))}` : 'no sizes');
+const floorMs = (v) => (v >= 0.1 ? `${v.toFixed(2)} ms` : `${(1000 * v).toFixed(0)} µs`);
+
+// measured text and the method note shared by the two slope claims
+function floorClaimText(f, basis) {
+    const measured = f.fit.slope === null
+        ? `${f.used.length} size${f.used.length === 1 ? '' : 's'} with a median ≥ ${floorMs(f.threshold ?? FIT_MIN_MS)} (no fit)`
+        : `${slopeText(f.fit)} over ${range(f.used)}, floor subtracted`;
+    const notes = f.floor === null ? [] : [`Fitted over the sizes whose median ${basis} is at least ${FLOOR_FACTOR}× the floor `
+        + `(the median at ${at(f.floorN)}, ${floorMs(f.floor)}) and at least ${FIT_MIN_MS} ms, i.e. ≥ ${floorMs(f.threshold)}: `
+        + `${range(f.used)}; the floor is subtracted before fitting. Smaller sizes are mostly fixed cost, so their time does `
+        + 'not grow with the algorithm\'s work yet.'];
+    if (f.allFit.slope !== null) notes.push(`Over all ${f.allFit.n} sizes, without the correction, the slope is ${f2(f.allFit.slope)}.`);
+    if (f.floor !== null && !f.fit.ci95) notes.push('At least 3 sizes above the threshold are needed for an uncertainty, so this '
+        + 'stays undetermined; on a fast GPU choose a larger Largest N.');
+    else if (tooWide(f.fit)) notes.push(`Too noisy to decide: the 95% interval is wider than ± ${MAX_CI_HALF}, enough to fit both `
+        + 'N log N and N²; rerun, or choose a larger Largest N.');
+    return { measured, notes };
+}
+const at = (n) => `N = ${count(n)}`;
+
+export function interpretScaling(rows, { maxN } = {}) {
+    const limits = scalingLimits(maxN);
     const brute = timeBasis(rows, 'brute'), bh = timeBasis(rows, 'bh');
-    const bruteFit = fitRows(brute.rows, 'n', brute.key), bhFit = fitRows(bh.rows, 'n', bh.key);
-    const bruteAgrees = slopeAgrees(bruteFit, BRUTE_ORDER, BRUTE_ORDER_TOLERANCE);
-    const bhAgrees = slopeAgrees(bhFit, BH_ORDER, BH_ORDER_TOLERANCE);
-    const skipped = rows.filter(r => r.n <= BRUTE_MAX_N && typeof r.bruteWall !== 'number').map(r => count(r.n));
+    const bruteF = floorFit(brute.rows, brute.key), bhF = floorFit(bh.rows, bh.key);
+    const bruteAgrees = tooWide(bruteF.fit) ? null : slopeAgrees(bruteF.fit, BRUTE_ORDER, BRUTE_ORDER_TOLERANCE);
+    // N log N over the fitted sizes (all measured sizes, or the sweep, when there are fewer than 2)
+    const bhNs = bhF.used.length >= 2 ? bhF.used : bh.rows.length >= 2 ? bh.rows.map(r => r.n) : scalingCounts(maxN);
+    const nlogn = nlognSlope(bhNs), bhUpper = nlogn + BH_EXTRA;
+    const bhAgrees = tooWide(bhF.fit) ? null : slopeAgrees(bhF.fit, (BH_LOWER + bhUpper) / 2, (bhUpper - BH_LOWER) / 2);
+    const skipped = rows.filter(r => r.n <= limits.brute && typeof r.bruteWall !== 'number').map(r => count(r.n));
+    const bruteText = floorClaimText(bruteF, brute.label), bhText = floorClaimText(bhF, bh.label);
     const claims = [{
         key: 'brute-n2',
         claim: `Brute-force time vs N (log-log slope, ${brute.label})`,
-        predicted: `${BRUTE_ORDER}: N − 1 interactions for each of N bodies, O(N²) (± ${BRUTE_ORDER_TOLERANCE} for fixed costs)`,
-        measured: slopeText(bruteFit),
+        predicted: `${BRUTE_ORDER}: N − 1 interactions for each of N bodies, O(N²) (± ${BRUTE_ORDER_TOLERANCE} for the rest of `
+            + `the fixed cost), fitted above ${FLOOR_FACTOR}× the fixed floor`,
+        measured: bruteText.measured,
         agrees: bruteAgrees,
-        note: [bruteAgrees === null ? tooFew(bruteFit, 'N values') : bruteAgrees ? null
-            : bruteFit.slope < BRUTE_ORDER ? 'Below 2: fixed per-evaluation costs (submission, synchronisation, read-back) are still '
-                + 'a large part of the time at these N on this device. GPU ms (with timestamp-query) remove most of them.'
+        note: [...bruteText.notes, bruteAgrees === null || bruteAgrees ? null
+            : bruteF.fit.slope < BRUTE_ORDER ? 'Below 2 even above the floor: at the smallest fitted N the GPU is not yet full '
+                + '(too few bodies for its cores), or the floor estimate is off; a larger Largest N decides.'
                 : 'Above 2: the large-N points are slower than N² predicts (clocks, caches or occupancy changing during the run); '
                     + 'check whether the spreads overlap.',
         skipped.length ? `Brute force was skipped at N = ${skipped.join(', ')} to leave budget for the Barnes-Hut points.` : null]
@@ -427,23 +510,26 @@ export function interpretScaling(rows) {
     }, {
         key: 'bh-nlogn',
         claim: `Barnes-Hut time vs N (log-log slope, ${bh.label})`,
-        predicted: `about N log N: ${f2(NLOGN_EFFECTIVE)} over N = 1,024 … 65,536; accepted ${f2(BH_ORDER - BH_ORDER_TOLERANCE)} … `
-            + `${f2(BH_ORDER + BH_ORDER_TOLERANCE)}, because interactions per body still grow faster than log N here`,
-        measured: slopeText(bhFit),
+        predicted: `about N log N: ${f2(nlogn)} over ${range(bhNs)}${bhF.used.length >= 2 ? ' (the fitted sizes)' : ''}; accepted `
+            + `${f2(BH_LOWER)} … ${f2(bhUpper)} (the O(N) tree build pulls it to 1, interactions per body growing faster than `
+            + `log N push it up), fitted above ${FLOOR_FACTOR}× the fixed floor`,
+        measured: bhText.measured,
         agrees: bhAgrees,
-        note: bhAgrees === null ? tooFew(bhFit, 'N values') : bhAgrees ? null
-            : bhFit.slope < BH_ORDER ? 'Below 1: fixed costs (about 30 tree-build dispatches per evaluation) dominate over this '
-                + 'whole range on this device, so the time barely grows with N.'
-                : 'Above 1.3: the traversal grows faster than N log N here (scattered memory access at large N, or the growth of '
-                    + 'interactions per body below).',
+        note: [...bhText.notes, bhAgrees === null || bhAgrees ? null
+            : bhF.fit.slope < BH_LOWER ? 'Below 1 even above the floor: a fixed or slowly growing cost is still a large part of '
+                + 'the time at the fitted sizes; a larger Largest N decides.'
+                : `Above ${f2(bhUpper)}: the traversal grows faster than N log N here (scattered memory access once the tree `
+                    + 'leaves the caches, or the growth of interactions per body below).'].filter(Boolean).join(' ') || null,
     }];
 
     const work = fitRows(rows, 'n', 'interactions');
     const workAgrees = rangeVerdict(work, 0, 1);
+    const workNs = rows.filter(r => r.interactions > 0).map(r => r.n);
     claims.push({
         key: 'bh-interactions',
         claim: 'Barnes-Hut interactions per body vs N (log-log slope)',
-        predicted: `between 0 and 1: grows, but slower than brute force's N − 1 (→ log N for large N, ${f2(NLOGN_EFFECTIVE - 1)} here; CI: 0.37)`,
+        predicted: `between 0 and 1: grows, but slower than brute force's N − 1 (→ log N for large N, `
+            + `${f2((workNs.length >= 2 ? nlognSlope(workNs) : NLOGN_EFFECTIVE) - 1)} here; CI: 0.37)`,
         measured: slopeText(work),
         agrees: workAgrees,
         note: workAgrees === null ? (work.ci95 ? 'The interval straddles a bound of the predicted range.' : tooFew(work, 'N values'))
@@ -451,7 +537,6 @@ export function interpretScaling(rows) {
     });
 
     const x = crossover(rows);
-    const at = (n) => `N = ${count(n)}`;
     let measured, agrees, note = `Compared on ${x.basis}. Device-dependent: compare it with other devices, not with a fixed number.`;
     if (!x.points) { measured = 'no N with both methods'; agrees = null; }
     else if (x.state === 'bracketed') {
@@ -464,7 +549,8 @@ export function interpretScaling(rows) {
         measured = `below ${at(x.firstN)}: Barnes-Hut is faster at every N measured`;
         agrees = true;
     } else {
-        // Brute force faster everywhere it ran: extrapolate the two fits (only meaningful if the slopes differ)
+        // Brute force faster everywhere it ran: extrapolate the two plain fits (only meaningful if the slopes differ)
+        const bruteFit = bruteF.allFit, bhFit = bhF.allFit;
         const sameBasis = brute.label === bh.label && bruteFit.slope !== null && bhFit.slope !== null;
         const extrapolated = sameBasis && bruteFit.slope > bhFit.slope
             ? 10 ** ((bhFit.intercept - bruteFit.intercept) / (bruteFit.slope - bhFit.slope)) : null;
@@ -494,6 +580,24 @@ export function interpretScaling(rows) {
         note: !shares.length ? 'This browser or GPU does not offer timestamp-query, so the split cannot be measured.'
             : shareAgrees === null ? (shareFit.ci95 ? 'The share does not change clearly with N.' : tooFew(shareFit, 'N values'))
                 : shareAgrees ? null : 'The share grows with N: the tree build scales worse than the traversal on this device.',
+    });
+
+    // Informational: the floor itself, which the two slope fits subtract
+    const floors = [bhF.floor !== null ? `Barnes-Hut ${floorMs(bhF.floor)} at ${at(bhF.floorN)} (${bh.label}; ≤ `
+        + `${floorMs(bhF.floor / BH_DISPATCHES)} per dispatch over ${BH_DISPATCHES})` : null,
+    bruteF.floor !== null ? `brute force ${floorMs(bruteF.floor)} at ${at(bruteF.floorN)} (${brute.label}; 1 dispatch)` : null]
+        .filter(Boolean);
+    const largestBh = bh.rows.at(-1);
+    claims.push({
+        key: 'fixed-floor',
+        claim: 'Fixed cost per force evaluation (the time at the smallest N)',
+        predicted: `informational, no verdict: a cost that does not grow with N (submission, synchronisation, and for Barnes-Hut `
+            + `${BH_DISPATCHES} dispatches, 30 of them the tree build); the time at the smallest N bounds it from above`,
+        measured: floors.length ? floors.join('; ') : 'no rows yet',
+        agrees: null,
+        note: !floors.length ? null : [`The slope fits above use only sizes at least ${FLOOR_FACTOR}× above these (and ≥ ${FIT_MIN_MS} ms) `
+            + 'and subtract them.', largestBh && bhF.floor > 0 ? `At the largest Barnes-Hut N (${count(largestBh.n)}) the floor is `
+            + `${pct(bhF.floor / largestBh[bh.key])} of the time.` : null].filter(Boolean).join(' '),
     });
     return claims;
 }
