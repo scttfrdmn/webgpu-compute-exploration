@@ -25,3 +25,6 @@ node_modules/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Written by tools/local-version.mjs for local validation runs
+/version.json

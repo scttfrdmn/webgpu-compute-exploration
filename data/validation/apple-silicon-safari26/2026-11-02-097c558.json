@@ -1,0 +1,3032 @@
+{
+  "bundleVersion": 1,
+  "plan": 2,
+  "smoke": false,
+  "generatedAt": "2026-11-02T02:35:56.903Z",
+  "environment": {
+    "id": "apple-silicon-safari26",
+    "browser": {
+      "name": "safari",
+      "version": "27.2",
+      "source": "user-agent"
+    },
+    "os": {
+      "name": "macos",
+      "version": "27.2",
+      "source": "entered"
+    },
+    "architecture": null,
+    "hardware": "M4 Pro",
+    "notes": "macOS version added after the run: same Mac as the apple-silicon-chrome bundle, which reports 27.2.0 (maintainer)",
+    "adapter": {
+      "vendor": "apple",
+      "architecture": "apple",
+      "device": "apple",
+      "description": "apple",
+      "isFallbackAdapter": false
+    },
+    "timestampQuery": {
+      "adapter": true,
+      "device": true
+    },
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+    "source": {
+      "version": "0.6.0",
+      "commit": "097c5589009c740b524695fc8ba812d129d94922",
+      "builtAt": "2026-11-02T02:29:58.590Z"
+    }
+  },
+  "records": [
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:47.371Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "matrix-multiplication",
+        "id": "cpu-naive-tiled",
+        "title": "CPU vs naive GPU vs tiled GPU"
+      },
+      "settings": {
+        "maxN": 2048
+      },
+      "protocol": {
+        "warmup": 1,
+        "repeats": 5,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "median",
+        "spread": "iqr"
+      },
+      "verification": [
+        {
+          "metric": "naive GPU: max over n of (max rel. error) / (√n·u)",
+          "value": 1.1956027019296334,
+          "tolerance": "<= 4 (error ≤ 4·√n·u)",
+          "reference": "float64 product of 16 sampled rows at n = 64, 128, 256, 384, 512, 768, 1024, 1536, 2048",
+          "status": "pass"
+        },
+        {
+          "metric": "tiled GPU: max over n of (max rel. error) / (√n·u)",
+          "value": 1.1956027019296334,
+          "tolerance": "<= 4 (error ≤ 4·√n·u)",
+          "reference": "float64 product of 16 sampled rows at n = 64, 128, 256, 384, 512, 768, 1024, 1536, 2048",
+          "status": "pass"
+        },
+        {
+          "metric": "CPU baseline: max over n of (max rel. error) / (√n·u)",
+          "value": 1.0007183008107219,
+          "tolerance": "<= 4 (error ≤ 4·√n·u)",
+          "reference": "float64 product of 16 sampled rows at n = 64, 128, 256, 384, 512",
+          "status": "pass"
+        },
+        {
+          "metric": "naive vs tiled: max over n of max |naive − tiled| / |C| / (√n·u)",
+          "value": 0,
+          "tolerance": "<= 4 (error ≤ 4·√n·u)",
+          "reference": "the two GPU kernels on the same inputs (same summation order: expected 0 without FMA differences)",
+          "status": "pass"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "naive GPU: time grows like n³",
+          "predicted": "log-log slope 3 (2n³ flops; ±0.15 for cache effects)",
+          "measured": "2.98 (95% CI 2.96 … 3.00) over n = 512 … 2048",
+          "agrees": true,
+          "note": "Fitted over the sizes with n ≥ 512 (n² threads, enough to fill the GPU) whose timed sample (GPU (timestamp) time per product × products per pass) is at least 1 ms (n = 512 … 2048); smaller grids leave the GPU partly idle, so their times do not grow like n³ yet. Over all 9 sizes the slope is 1.99."
+        },
+        {
+          "claim": "tiled GPU: time grows like n³",
+          "predicted": "log-log slope 3 (2n³ flops; ±0.15 for cache effects)",
+          "measured": "2.97 (95% CI 2.94 … 2.99) over n = 512 … 2048",
+          "agrees": true,
+          "note": "Fitted over the sizes with n ≥ 512 (n² threads, enough to fill the GPU) whose timed sample (GPU (timestamp) time per product × products per pass) is at least 1 ms (n = 512 … 2048); smaller grids leave the GPU partly idle, so their times do not grow like n³ yet. Over all 9 sizes the slope is 2.03."
+        },
+        {
+          "claim": "CPU (blocked JS): time grows like n³",
+          "predicted": "log-log slope 3 (2n³ flops; ±0.15 for cache effects)",
+          "measured": "2.19 (95% CI 0.93 … 3.45) over n = 64 … 512",
+          "agrees": null,
+          "note": "Fitted over the sizes whose median time is at least 1 ms (n = 64 … 512), so the timer resolves them. Over all 5 sizes the slope is 2.19. The 95% interval is wider than ±0.5, too wide to tell n³ from n², so the claim stays undecided."
+        },
+        {
+          "claim": "Tiling speeds the GPU kernel up",
+          "predicted": "tiled faster (speedup > 1): 16× fewer global loads (arithmetic intensity 4 vs 0.25 flop/byte); typically 2–10× on real GPUs",
+          "measured": "1.16× (1.15×–1.16×) at n = 2048",
+          "agrees": true,
+          "note": "The range is conservative (naive q1 / tiled q3 … naive q3 / tiled q1); undecided when it contains 1. The tiled kernel also reads A and B along rows (coalesced) where the naive one reads A across rows, so part of the gain is access pattern, not only reuse. On a software GPU workgroup memory is ordinary memory and barriers are expensive, so tiling can lose."
+        },
+        {
+          "claim": "The naive kernel is bound by memory traffic, not arithmetic",
+          "predicted": "naive GFLOPS ≤ 0.25 × the bandwidth that serves its loads (8 bytes per multiply-add); tiled ≤ 4 × bandwidth",
+          "measured": "naive: 1237 GB/s of loads, tiled: 89 GB/s of global loads, at n = 2048",
+          "agrees": null,
+          "note": "Compare with your GPU's memory bandwidth (not known to the page). If the naive figure exceeds it, caches are serving most of its loads: the reuse happens, but in cache rather than in workgroup memory, and cache bandwidth is the limit."
+        },
+        {
+          "claim": "The GPU beats one CPU core from some n on",
+          "predicted": "yes: GPU time is ≈ a fixed launch cost until the GPU is full, CPU time grows like n³ from the start (CPU measured up to n = 512)",
+          "measured": "GPU faster from n = 64 on; at n = 512: tiled GPU 0.783 (0.776–0.794) ms vs CPU 70.0 (70.0–70.0) ms",
+          "agrees": true,
+          "note": "Kernel time only; with upload and readback the tiled GPU takes 1.000 ms (wall). Where the crossover falls depends on the GPU, the CPU and the browser; undecided when the spreads overlap."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 9
+      },
+      "columns": [
+        {
+          "key": "n",
+          "label": "n (n × n · n × n)"
+        },
+        {
+          "key": "timing",
+          "label": "GPU time from"
+        },
+        {
+          "key": "cpuGflops",
+          "label": "CPU GFLOPS",
+          "unit": "GFLOP/s",
+          "range": true
+        },
+        {
+          "key": "naiveGflops",
+          "label": "naive GPU GFLOPS",
+          "unit": "GFLOP/s",
+          "range": true
+        },
+        {
+          "key": "tiledGflops",
+          "label": "tiled GPU GFLOPS",
+          "unit": "GFLOP/s",
+          "range": true
+        },
+        {
+          "key": "cpuMs",
+          "label": "CPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "naiveMs",
+          "label": "naive GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "tiledMs",
+          "label": "tiled GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "naiveBatch",
+          "label": "naive products per timed pass"
+        },
+        {
+          "key": "tiledBatch",
+          "label": "tiled products per timed pass"
+        },
+        {
+          "key": "speedup",
+          "label": "tiled vs naive",
+          "range": true
+        },
+        {
+          "key": "cpuErr",
+          "label": "CPU max rel. error"
+        },
+        {
+          "key": "naiveErr",
+          "label": "naive max rel. error"
+        },
+        {
+          "key": "tiledErr",
+          "label": "tiled max rel. error"
+        },
+        {
+          "key": "naiveVsTiled",
+          "label": "max |naive − tiled| / |C|"
+        },
+        {
+          "key": "sqrtNu",
+          "label": "√n·u"
+        },
+        {
+          "key": "naiveCompile",
+          "label": "naive compile ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "naiveUpload",
+          "label": "naive upload ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "naiveDispatch",
+          "label": "naive dispatch ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "naiveReadback",
+          "label": "naive readback ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "tiledCompile",
+          "label": "tiled compile ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "tiledUpload",
+          "label": "tiled upload ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "tiledDispatch",
+          "label": "tiled dispatch ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "tiledReadback",
+          "label": "tiled readback ms",
+          "unit": "ms",
+          "range": true
+        }
+      ],
+      "rows": [
+        {
+          "n": 64,
+          "timing": "timestamps",
+          "cpuGflops": 0.524288,
+          "cpuGflopsLo": 0.524288,
+          "cpuGflopsHi": 0.524288,
+          "naiveGflops": 10.303154976532,
+          "naiveGflopsLo": 10.217549330085262,
+          "naiveGflopsHi": 10.376436826294398,
+          "tiledGflops": 12.81360820207007,
+          "tiledGflopsLo": 12.43360922048047,
+          "tiledGflopsHi": 12.83965371569912,
+          "cpuMs": 1,
+          "cpuMsLo": 0,
+          "cpuMsHi": 1,
+          "naiveMs": 0.050886160714285714,
+          "naiveMsLo": 0.05052678571428571,
+          "naiveMsHi": 0.0513125,
+          "tiledMs": 0.0409165,
+          "tiledMsLo": 0.0408335,
+          "tiledMsHi": 0.042167,
+          "naiveBatch": 56,
+          "tiledBatch": 2,
+          "speedup": 1.2436586881645721,
+          "speedupLo": 1.198254220463531,
+          "speedupHi": 1.25662752396929,
+          "cpuErr": 3.397100300954936e-7,
+          "naiveErr": 3.397100300954936e-7,
+          "tiledErr": 3.397100300954936e-7,
+          "naiveVsTiled": 0,
+          "sqrtNu": 4.76837158203125e-7,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 0.07142857142857142,
+          "naiveDispatchLo": 0.07142857142857142,
+          "naiveDispatchHi": 0.07142857142857142,
+          "naiveReadback": 0,
+          "naiveReadbackLo": 0,
+          "naiveReadbackHi": 1,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 0,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 0,
+          "tiledDispatch": 0.5,
+          "tiledDispatchLo": 0.5,
+          "tiledDispatchHi": 0.5,
+          "tiledReadback": 1,
+          "tiledReadbackLo": 0,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 128,
+          "timing": "timestamps",
+          "cpuGflops": 4.194304,
+          "cpuGflopsLo": 2.097152,
+          "cpuGflopsHi": 4.194304,
+          "naiveGflops": 41.55862273965816,
+          "naiveGflopsLo": 40.893428373926426,
+          "naiveGflopsHi": 42.09035624686402,
+          "tiledGflops": 50.72771438539365,
+          "tiledGflopsLo": 50.61977576364668,
+          "tiledGflopsHi": 51.13407537795417,
+          "cpuMs": 1,
+          "cpuMsLo": 1,
+          "cpuMsHi": 2,
+          "naiveMs": 0.100925,
+          "naiveMsLo": 0.09965,
+          "naiveMsHi": 0.10256670000000001,
+          "tiledMs": 0.0826826923076923,
+          "tiledMsLo": 0.08202561538461538,
+          "tiledMsHi": 0.082859,
+          "naiveBatch": 10,
+          "tiledBatch": 13,
+          "speedup": 1.2206303058495174,
+          "speedupLo": 1.2026454579466321,
+          "speedupHi": 1.2504228041334182,
+          "cpuErr": 5.703763132020279e-7,
+          "naiveErr": 5.703763132020279e-7,
+          "tiledErr": 5.703763132020279e-7,
+          "naiveVsTiled": 0,
+          "sqrtNu": 6.743495761743046e-7,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 0.2,
+          "naiveDispatchLo": 0.2,
+          "naiveDispatchHi": 0.2,
+          "naiveReadback": 0,
+          "naiveReadbackLo": 0,
+          "naiveReadbackHi": 0,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 0,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 0,
+          "tiledDispatch": 0.15384615384615385,
+          "tiledDispatchLo": 0.15384615384615385,
+          "tiledDispatchHi": 0.15384615384615385,
+          "tiledReadback": 0,
+          "tiledReadbackLo": 0,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 256,
+          "timing": "timestamps",
+          "cpuGflops": 3.728270222222222,
+          "cpuGflopsLo": 3.0504029090909093,
+          "cpuGflopsHi": 3.728270222222222,
+          "naiveGflops": 56.97896183270402,
+          "naiveGflopsLo": 56.75648173207037,
+          "naiveGflopsHi": 57.124466880357154,
+          "tiledGflops": 64.51150191009572,
+          "tiledGflopsLo": 64.43554375071498,
+          "tiledGflopsHi": 65.82910851385718,
+          "cpuMs": 9,
+          "cpuMsLo": 9,
+          "cpuMsHi": 11,
+          "naiveMs": 0.5888916,
+          "naiveMsLo": 0.5873916,
+          "naiveMsHi": 0.5912,
+          "tiledMs": 0.520131,
+          "tiledMsLo": 0.5097202857142857,
+          "tiledMsHi": 0.5207441428571429,
+          "naiveBatch": 5,
+          "tiledBatch": 7,
+          "speedup": 1.1321986191940105,
+          "speedupLo": 1.127985034602954,
+          "speedupHi": 1.1598518178877937,
+          "cpuErr": 7.968735179735179e-7,
+          "naiveErr": 7.968735179735179e-7,
+          "tiledErr": 7.968735179735179e-7,
+          "naiveVsTiled": 0,
+          "sqrtNu": 9.5367431640625e-7,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 0.8,
+          "naiveDispatchLo": 0.8,
+          "naiveDispatchHi": 0.8,
+          "naiveReadback": 0,
+          "naiveReadbackLo": 0,
+          "naiveReadbackHi": 0,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 0,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 0,
+          "tiledDispatch": 0.7142857142857143,
+          "tiledDispatchLo": 0.5714285714285714,
+          "tiledDispatchHi": 0.7142857142857143,
+          "tiledReadback": 0,
+          "tiledReadbackLo": 0,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 384,
+          "timing": "timestamps",
+          "cpuGflops": 3.7748736000000003,
+          "cpuGflopsLo": 3.653103483870968,
+          "cpuGflopsHi": 3.7748736000000003,
+          "naiveGflops": 102.21545663783377,
+          "naiveGflopsLo": 63.20964368661032,
+          "naiveGflopsHi": 244.61425542255424,
+          "tiledGflops": 295.12540230913504,
+          "tiledGflopsLo": 282.90923201832,
+          "tiledGflopsHi": 295.61768457689794,
+          "cpuMs": 30,
+          "cpuMsLo": 30,
+          "cpuMsHi": 31,
+          "naiveMs": 1.1079166666666667,
+          "naiveMsLo": 0.46295833333333336,
+          "naiveMsHi": 1.791597,
+          "tiledMs": 0.38372233333333333,
+          "tiledMsLo": 0.3830833333333334,
+          "tiledMsHi": 0.40029166666666666,
+          "naiveBatch": 3,
+          "tiledBatch": 3,
+          "speedup": 2.887287422241951,
+          "speedupLo": 1.1565525137920267,
+          "speedupHi": 4.676781379160322,
+          "cpuErr": 0.0000011688467088943835,
+          "naiveErr": 0.0000011688467088943835,
+          "tiledErr": 0.0000011688467088943835,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000011680077279964342,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 0.6666666666666666,
+          "naiveDispatchLo": 0.6666666666666666,
+          "naiveDispatchHi": 1.3333333333333333,
+          "naiveReadback": 1,
+          "naiveReadbackLo": 0,
+          "naiveReadbackHi": 1,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 0,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 0,
+          "tiledDispatch": 0.6666666666666666,
+          "tiledDispatchLo": 0.6666666666666666,
+          "tiledDispatchHi": 0.6666666666666666,
+          "tiledReadback": 0,
+          "tiledReadbackLo": 0,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 512,
+          "timing": "timestamps",
+          "cpuGflops": 3.8347922285714287,
+          "cpuGflopsLo": 3.8347922285714287,
+          "cpuGflopsHi": 3.8347922285714287,
+          "naiveGflops": 302.0795678717119,
+          "naiveGflopsLo": 83.82004552038848,
+          "naiveGflopsHi": 302.1363485949814,
+          "tiledGflops": 342.87691424968665,
+          "tiledGflopsLo": 338.00542197878303,
+          "tiledGflopsHi": 345.7845567560521,
+          "cpuMs": 70,
+          "cpuMsLo": 70,
+          "cpuMsHi": 70,
+          "naiveMs": 0.888625,
+          "naiveMsLo": 0.888458,
+          "naiveMsHi": 3.202521,
+          "tiledMs": 0.7828916,
+          "tiledMsLo": 0.7763084,
+          "tiledMsHi": 0.794175,
+          "naiveBatch": 2,
+          "tiledBatch": 5,
+          "speedup": 1.1350549680185609,
+          "speedupLo": 1.1187181666509272,
+          "speedupHi": 4.125320555593627,
+          "cpuErr": 0.00000115988343434018,
+          "naiveErr": 0.00000115988343434018,
+          "tiledErr": 0.00000115988343434018,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000013486991523486091,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 1.5,
+          "naiveDispatchLo": 1.5,
+          "naiveDispatchHi": 1.5,
+          "naiveReadback": 1,
+          "naiveReadbackLo": 1,
+          "naiveReadbackHi": 1,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 0,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 0,
+          "tiledDispatch": 1,
+          "tiledDispatchLo": 1,
+          "tiledDispatchHi": 1.2,
+          "tiledReadback": 0,
+          "tiledReadbackLo": 0,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 768,
+          "timing": "timestamps",
+          "cpuGflops": null,
+          "cpuGflopsLo": null,
+          "cpuGflopsHi": null,
+          "naiveGflops": 306.82452199304436,
+          "naiveGflopsLo": 306.82452199304436,
+          "naiveGflopsHi": 308.1769511978995,
+          "tiledGflops": 349.56464586970327,
+          "tiledGflopsLo": 349.56464586970327,
+          "tiledGflopsHi": 354.71710813654715,
+          "cpuMs": null,
+          "cpuMsLo": null,
+          "cpuMsHi": null,
+          "naiveMs": 2.952729,
+          "naiveMsLo": 2.939771,
+          "naiveMsHi": 2.952729,
+          "tiledMs": 2.5917085,
+          "tiledMsLo": 2.5540625,
+          "tiledMsHi": 2.5917085,
+          "naiveBatch": 2,
+          "tiledBatch": 2,
+          "speedup": 1.1392982659894042,
+          "speedupLo": 1.1342984753107843,
+          "speedupHi": 1.156091129328276,
+          "cpuErr": null,
+          "naiveErr": 0.0000017652411477266053,
+          "tiledErr": 0.0000017652411477266053,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000016518123698891422,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 1,
+          "naiveDispatch": 3.5,
+          "naiveDispatchLo": 3.5,
+          "naiveDispatchHi": 3.5,
+          "naiveReadback": 1,
+          "naiveReadbackLo": 1,
+          "naiveReadbackHi": 1,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 1,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 1,
+          "tiledDispatch": 3,
+          "tiledDispatchLo": 3,
+          "tiledDispatchHi": 3,
+          "tiledReadback": 1,
+          "tiledReadbackLo": 1,
+          "tiledReadbackHi": 1
+        },
+        {
+          "n": 1024,
+          "timing": "timestamps",
+          "cpuGflops": null,
+          "cpuGflopsLo": null,
+          "cpuGflopsHi": null,
+          "naiveGflops": 309.09051822532473,
+          "naiveGflopsLo": 293.41216668943844,
+          "naiveGflopsHi": 309.09051822532473,
+          "tiledGflops": 356.8853976174,
+          "tiledGflopsLo": 353.72576927087135,
+          "tiledGflopsHi": 357.2069692067783,
+          "cpuMs": null,
+          "cpuMsLo": null,
+          "cpuMsHi": null,
+          "naiveMs": 6.94775,
+          "naiveMsLo": 6.94775,
+          "naiveMsHi": 7.319,
+          "tiledMs": 6.017292,
+          "tiledMsLo": 6.011875,
+          "tiledMsHi": 6.071041,
+          "naiveBatch": 1,
+          "tiledBatch": 1,
+          "speedup": 1.1546306876914068,
+          "speedupLo": 1.144408347761117,
+          "speedupHi": 1.217423848632914,
+          "cpuErr": null,
+          "naiveErr": 0.0000016446067873555334,
+          "tiledErr": 0.0000016446067873555334,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000019073486328125,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 0,
+          "naiveUploadLo": 0,
+          "naiveUploadHi": 0,
+          "naiveDispatch": 8,
+          "naiveDispatchLo": 8,
+          "naiveDispatchHi": 8,
+          "naiveReadback": 2,
+          "naiveReadbackLo": 2,
+          "naiveReadbackHi": 2,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 1,
+          "tiledUploadLo": 0,
+          "tiledUploadHi": 1,
+          "tiledDispatch": 8,
+          "tiledDispatchLo": 8,
+          "tiledDispatchHi": 8,
+          "tiledReadback": 1,
+          "tiledReadbackLo": 1,
+          "tiledReadbackHi": 2
+        },
+        {
+          "n": 1536,
+          "timing": "timestamps",
+          "cpuGflops": null,
+          "cpuGflopsLo": null,
+          "cpuGflopsHi": null,
+          "naiveGflops": 310.6387037326025,
+          "naiveGflopsLo": 310.6387037326025,
+          "naiveGflopsHi": 312.46338733810956,
+          "tiledGflops": 357.05290604637224,
+          "tiledGflopsLo": 356.71095346006445,
+          "tiledGflopsHi": 358.27958112708995,
+          "cpuMs": null,
+          "cpuMsLo": null,
+          "cpuMsHi": null,
+          "naiveMs": 23.331791,
+          "naiveMsLo": 23.195541,
+          "naiveMsHi": 23.331791,
+          "tiledMs": 20.298833,
+          "tiledMsLo": 20.229334,
+          "tiledMsHi": 20.318292,
+          "naiveBatch": 1,
+          "tiledBatch": 1,
+          "speedup": 1.1494153875742512,
+          "speedupLo": 1.141608802550923,
+          "speedupHi": 1.1533642679487124,
+          "cpuErr": null,
+          "naiveErr": 0.0000027929463909344577,
+          "tiledErr": 0.0000027929463909344577,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000023360154559928683,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 1,
+          "naiveUploadLo": 1,
+          "naiveUploadHi": 2,
+          "naiveDispatch": 26,
+          "naiveDispatchLo": 25,
+          "naiveDispatchHi": 26,
+          "naiveReadback": 3,
+          "naiveReadbackLo": 3,
+          "naiveReadbackHi": 4,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 1,
+          "tiledUploadLo": 1,
+          "tiledUploadHi": 2,
+          "tiledDispatch": 23,
+          "tiledDispatchLo": 22,
+          "tiledDispatchHi": 23,
+          "tiledReadback": 2,
+          "tiledReadbackLo": 2,
+          "tiledReadbackHi": 3
+        },
+        {
+          "n": 2048,
+          "timing": "timestamps",
+          "cpuGflops": null,
+          "cpuGflopsLo": null,
+          "cpuGflopsHi": null,
+          "naiveGflops": 309.32890104975644,
+          "naiveGflopsLo": 309.13385547482744,
+          "naiveGflopsHi": 309.41106835934903,
+          "tiledGflops": 357.96023752405307,
+          "tiledGflopsLo": 356.10435993412386,
+          "tiledGflopsHi": 359.2733794069748,
+          "cpuMs": null,
+          "cpuMsLo": null,
+          "cpuMsHi": null,
+          "naiveMs": 55.539166,
+          "naiveMsLo": 55.524417,
+          "naiveMsHi": 55.574208,
+          "tiledMs": 47.993792,
+          "tiledMsLo": 47.818375,
+          "tiledMsHi": 48.243917,
+          "naiveBatch": 1,
+          "tiledBatch": 1,
+          "speedup": 1.1572156248874854,
+          "speedupLo": 1.150910217344085,
+          "speedupHi": 1.1621935709860487,
+          "cpuErr": null,
+          "naiveErr": 0.0000025459359082693466,
+          "tiledErr": 0.0000025459359082693466,
+          "naiveVsTiled": 0,
+          "sqrtNu": 0.0000026973983046972182,
+          "naiveCompile": 0,
+          "naiveCompileLo": 0,
+          "naiveCompileHi": 0,
+          "naiveUpload": 2,
+          "naiveUploadLo": 2,
+          "naiveUploadHi": 2,
+          "naiveDispatch": 60,
+          "naiveDispatchLo": 60,
+          "naiveDispatchHi": 60,
+          "naiveReadback": 5,
+          "naiveReadbackLo": 5,
+          "naiveReadbackHi": 5,
+          "tiledCompile": 0,
+          "tiledCompileLo": 0,
+          "tiledCompileHi": 0,
+          "tiledUpload": 3,
+          "tiledUploadLo": 3,
+          "tiledUploadHi": 3,
+          "tiledDispatch": 52,
+          "tiledDispatchLo": 52,
+          "tiledDispatchHi": 52,
+          "tiledReadback": 5,
+          "tiledReadbackLo": 5,
+          "tiledReadbackHi": 5
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:47.536Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "nbody",
+        "id": "theta-error",
+        "title": "Opening angle vs force error"
+      },
+      "settings": {
+        "n": 16384,
+        "preset": "plummer"
+      },
+      "protocol": {
+        "warmup": 1,
+        "repeats": 5,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "median",
+        "spread": "iqr"
+      },
+      "verification": [
+        {
+          "metric": "median rel. error at θ = 0.3",
+          "value": 0.0008579177895157728,
+          "tolerance": "5.0e-4 … 1.5e-3",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 8.58e-4 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "median rel. error at θ = 0.4",
+          "value": 0.0016547718613523581,
+          "tolerance": "9.7e-4 … 2.8e-3",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 1.65e-3 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "median rel. error at θ = 0.5",
+          "value": 0.002642519450966721,
+          "tolerance": "1.6e-3 … 4.5e-3",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 2.64e-3 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "median rel. error at θ = 0.7",
+          "value": 0.005266654387091382,
+          "tolerance": "3.1e-3 … 9.0e-3",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 5.27e-3 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "median rel. error at θ = 0.9",
+          "value": 0.009163940256536907,
+          "tolerance": "5.4e-3 … 1.6e-2",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 9.16e-3 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "median rel. error at θ = 1.2",
+          "value": 0.01704465896451294,
+          "tolerance": "1.0e-2 … 2.9e-2",
+          "reference": "CPU replica of cs_bh_force on the same bodies: 1.70e-2 (× / ÷ 1.7)",
+          "status": "pass"
+        },
+        {
+          "metric": "θ steps where the median error does not grow",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "the error of the monopole approximation grows with θ (about θ²)",
+          "status": "pass"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Median force error vs θ (log-log slope)",
+          "predicted": "2: error ∝ θ² (the quadrupole term of a node's monopole about its center of mass, l/d ≤ θ); accepted 2 ± 0.25 for the θ³ term at large θ",
+          "measured": "2.14 (95% CI 2.10 … 2.18, 6 points)",
+          "agrees": true,
+          "note": "The measured exponent is consistent with θ²."
+        },
+        {
+          "claim": "Interactions per body vs θ (log-log slope)",
+          "predicted": "falls, exponent between −3 and 0: θ⁻³ cells per tree level in the large-N, uniform-density limit; flatter at these N, where the near field and the ~log N levels add a θ-independent part (CI, Plummer 4,096: −1.47)",
+          "measured": "-1.79 (95% CI -1.86 … -1.71, 6 points)",
+          "agrees": true,
+          "note": "At θ = 1.2 each body does 173 interactions, 1% of brute force's 16,383."
+        },
+        {
+          "claim": "Your GPU vs the float64 CPU replica (same bodies)",
+          "predicted": "GPU median / replica median = 1 at every θ, within × / ÷ 1.7 (f32 arithmetic, tree-build order)",
+          "measured": "ratio 1.00 … 1.00 over 6 θ values",
+          "agrees": true,
+          "note": "Your GPU runs the same approximation as the reference; the trends above are the algorithm's, not the device's."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 6
+      },
+      "columns": [
+        {
+          "key": "theta",
+          "label": "θ"
+        },
+        {
+          "key": "median",
+          "label": "median rel. error"
+        },
+        {
+          "key": "p99",
+          "label": "p99 rel. error"
+        },
+        {
+          "key": "interactions",
+          "label": "interactions / body"
+        },
+        {
+          "key": "traversalMs",
+          "label": "traversal GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "gpuMs",
+          "label": "GPU ms (tree + traversal)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "wallMs",
+          "label": "wall ms",
+          "unit": "ms",
+          "range": true
+        }
+      ],
+      "rows": [
+        {
+          "theta": 0.3,
+          "median": 0.0008579177895157728,
+          "p99": 0.004417551065019214,
+          "interactions": 1972.1524047851562,
+          "traversalMs": 4.894417,
+          "traversalMsLo": 4.873417,
+          "traversalMsHi": 4.942042,
+          "gpuMs": 5.226042,
+          "gpuMsLo": 5.198917,
+          "gpuMsHi": 5.282875,
+          "wallMs": 6,
+          "wallMsLo": 6,
+          "wallMsHi": 6
+        },
+        {
+          "theta": 0.4,
+          "median": 0.0016547718613523581,
+          "p99": 0.00800121081159507,
+          "interactions": 1220.0258178710938,
+          "traversalMs": 2.604167,
+          "traversalMsLo": 2.579292,
+          "traversalMsHi": 2.607875,
+          "gpuMs": 2.929334,
+          "gpuMsLo": 2.9137079999999997,
+          "gpuMsHi": 2.935375,
+          "wallMs": 3,
+          "wallMsLo": 3,
+          "wallMsHi": 4
+        },
+        {
+          "theta": 0.5,
+          "median": 0.002642519450966721,
+          "p99": 0.011933869437922151,
+          "interactions": 818.7750244140625,
+          "traversalMs": 1.583083,
+          "traversalMsLo": 1.58025,
+          "traversalMsHi": 1.584291,
+          "gpuMs": 1.908792,
+          "gpuMsLo": 1.9075410000000002,
+          "gpuMsHi": 1.910792,
+          "wallMs": 2,
+          "wallMsLo": 2,
+          "wallMsHi": 3
+        },
+        {
+          "theta": 0.7,
+          "median": 0.005266654387091382,
+          "p99": 0.026252426278671324,
+          "interactions": 435.42236328125,
+          "traversalMs": 0.758875,
+          "traversalMsLo": 0.757583,
+          "traversalMsHi": 0.802125,
+          "gpuMs": 1.082458,
+          "gpuMsLo": 1.081083,
+          "gpuMsHi": 1.127541,
+          "wallMs": 1,
+          "wallMsLo": 1,
+          "wallMsHi": 2
+        },
+        {
+          "theta": 0.9,
+          "median": 0.009163940256536907,
+          "p99": 0.0447295734702207,
+          "interactions": 269.8829345703125,
+          "traversalMs": 0.437458,
+          "traversalMsLo": 0.43425,
+          "traversalMsHi": 0.442,
+          "gpuMs": 0.763374,
+          "gpuMsLo": 0.756583,
+          "gpuMsHi": 0.765791,
+          "wallMs": 1,
+          "wallMsLo": 1,
+          "wallMsHi": 1
+        },
+        {
+          "theta": 1.2,
+          "median": 0.01704465896451294,
+          "p99": 0.08372706104208914,
+          "interactions": 173.2772216796875,
+          "traversalMs": 0.281208,
+          "traversalMsLo": 0.278042,
+          "traversalMsHi": 0.28125,
+          "gpuMs": 0.610542,
+          "gpuMsLo": 0.605791,
+          "gpuMsHi": 0.6146259999999999,
+          "wallMs": 1,
+          "wallMsLo": 1,
+          "wallMsHi": 1
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:48.616Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "nbody",
+        "id": "scaling",
+        "title": "Scaling: Barnes-Hut vs brute force"
+      },
+      "settings": {
+        "preset": "plummer",
+        "maxN": 262144
+      },
+      "protocol": {
+        "warmup": 1,
+        "repeats": 5,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "median",
+        "spread": "iqr"
+      },
+      "verification": [
+        {
+          "metric": "none",
+          "value": null,
+          "tolerance": null,
+          "reference": "This experiment has no automatic check",
+          "status": "not-checked"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Brute-force time vs N (log-log slope, GPU ms)",
+          "predicted": "2: N − 1 interactions for each of N bodies, O(N²) (± 0.1 for the rest of the fixed cost), fitted above 4× the fixed floor",
+          "measured": "1.99 (95% CI 1.61 … 2.37, 3 points) over N = 16,384 … 65,536, floor subtracted",
+          "agrees": true,
+          "note": "Fitted over the sizes whose median GPU ms is at least 4× the floor (the median at N = 1,024, 85 µs) and at least 1 ms, i.e. ≥ 1.00 ms: N = 16,384 … 65,536; the floor is subtracted before fitting. Smaller sizes are mostly fixed cost, so their time does not grow with the algorithm's work yet. Over all 7 sizes, without the correction, the slope is 1.44."
+        },
+        {
+          "claim": "Barnes-Hut time vs N (log-log slope, GPU ms)",
+          "predicted": "about N log N: 1.09 over N = 32,768 … 262,144 (the fitted sizes); accepted 1.00 … 1.29 (the O(N) tree build pulls it to 1, interactions per body growing faster than log N push it up), fitted above 4× the fixed floor",
+          "measured": "1.21 (95% CI 1.02 … 1.39, 4 points) over N = 32,768 … 262,144, floor subtracted",
+          "agrees": true,
+          "note": "Fitted over the sizes whose median GPU ms is at least 4× the floor (the median at N = 1,024, 0.59 ms) and at least 1 ms, i.e. ≥ 2.38 ms: N = 32,768 … 262,144; the floor is subtracted before fitting. Smaller sizes are mostly fixed cost, so their time does not grow with the algorithm's work yet. Over all 9 sizes, without the correction, the slope is 0.81."
+        },
+        {
+          "claim": "Barnes-Hut interactions per body vs N (log-log slope)",
+          "predicted": "between 0 and 1: grows, but slower than brute force's N − 1 (→ log N for large N, 0.11 here; CI: 0.37)",
+          "measured": "0.31 (95% CI 0.25 … 0.37, 9 points)",
+          "agrees": true,
+          "note": "Deterministic counts (one distribution, one seed): the interval reflects curvature, not noise."
+        },
+        {
+          "claim": "Crossover N (Barnes-Hut faster from here)",
+          "predicted": "exists: O(N²) overtakes O(N log N) at some N (CI, software GPU, wall ms: between 8,192 and 16,384)",
+          "measured": "between N = 8,192 and N = 16,384 (log-interpolated ≈ 14,100)",
+          "agrees": true,
+          "note": "Compared on GPU ms. Device-dependent: compare it with other devices, not with a fixed number. The interquartile ranges do not overlap at either point, so the bracket is resolved."
+        },
+        {
+          "claim": "Tree-build share of Barnes-Hut GPU time vs N",
+          "predicted": "falls with N: the build is O(N) plus about 30 fixed dispatches, the traversal O(N log N)",
+          "measured": "48% at N = 1,024 → 3% at N = 262,144; slope -0.54 (95% CI -0.62 … -0.46, 9 points)",
+          "agrees": true,
+          "note": null
+        },
+        {
+          "claim": "Fixed cost per force evaluation (the time at the smallest N)",
+          "predicted": "informational, no verdict: a cost that does not grow with N (submission, synchronisation, and for Barnes-Hut 31 dispatches, 30 of them the tree build); the time at the smallest N bounds it from above",
+          "measured": "Barnes-Hut 0.59 ms at N = 1,024 (GPU ms; ≤ 19 µs per dispatch over 31); brute force 85 µs at N = 1,024 (GPU ms; 1 dispatch)",
+          "agrees": null,
+          "note": "The slope fits above use only sizes at least 4× above these (and ≥ 1 ms) and subtract them. At the largest Barnes-Hut N (262,144) the floor is 1% of the time."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 9
+      },
+      "columns": [
+        {
+          "key": "n",
+          "label": "N"
+        },
+        {
+          "key": "bhGpu",
+          "label": "Barnes-Hut GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "bruteGpu",
+          "label": "brute force GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "bhWall",
+          "label": "Barnes-Hut wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "bruteWall",
+          "label": "brute force wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "treeShare",
+          "label": "tree build share"
+        },
+        {
+          "key": "interactions",
+          "label": "BH interactions / body"
+        },
+        {
+          "key": "compileMs",
+          "label": "BH compile ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "uploadMs",
+          "label": "BH upload ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "readbackMs",
+          "label": "BH readback ms",
+          "unit": "ms",
+          "range": true
+        }
+      ],
+      "rows": [
+        {
+          "n": 1024,
+          "bhGpu": 0.5947089999999999,
+          "bhGpuLo": 0.594292,
+          "bhGpuHi": 0.5950420000000001,
+          "bhWall": 1,
+          "bhWallLo": 1,
+          "bhWallHi": 1,
+          "bruteGpu": 0.085084,
+          "bruteGpuLo": 0.084459,
+          "bruteGpuHi": 0.085167,
+          "bruteWall": 0,
+          "bruteWallLo": 0,
+          "bruteWallHi": 1,
+          "treeShare": 0.48264738991504164,
+          "interactions": 247.822265625,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0
+        },
+        {
+          "n": 2048,
+          "bhGpu": 0.748292,
+          "bhGpuLo": 0.747709,
+          "bhGpuHi": 0.77,
+          "bhWall": 1,
+          "bhWallLo": 1,
+          "bhWallHi": 1,
+          "bruteGpu": 0.163584,
+          "bruteGpuLo": 0.163584,
+          "bruteGpuHi": 0.163708,
+          "bruteWall": 0,
+          "bruteWallLo": 0,
+          "bruteWallHi": 1,
+          "treeShare": 0.3938569685422843,
+          "interactions": 360.0751953125,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1
+        },
+        {
+          "n": 4096,
+          "bhGpu": 0.946874,
+          "bhGpuLo": 0.946584,
+          "bhGpuHi": 0.948041,
+          "bhWall": 1,
+          "bhWallLo": 1,
+          "bhWallHi": 2,
+          "bruteGpu": 0.321625,
+          "bruteGpuLo": 0.321333,
+          "bruteGpuHi": 0.321625,
+          "bruteWall": 1,
+          "bruteWallLo": 1,
+          "bruteWallHi": 1,
+          "treeShare": 0.3152110509988492,
+          "interactions": 487.33447265625,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0
+        },
+        {
+          "n": 8192,
+          "bhGpu": 1.3494579999999998,
+          "bhGpuLo": 1.346875,
+          "bhGpuHi": 1.350374,
+          "bhWall": 2,
+          "bhWallLo": 2,
+          "bhWallHi": 2,
+          "bruteGpu": 0.707875,
+          "bruteGpuLo": 0.70775,
+          "bruteGpuHi": 0.708417,
+          "bruteWall": 1,
+          "bruteWallLo": 1,
+          "bruteWallHi": 1,
+          "treeShare": 0.22919720361804521,
+          "interactions": 652.271484375,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0
+        },
+        {
+          "n": 16384,
+          "bhGpu": 1.913417,
+          "bhGpuLo": 1.910625,
+          "bhGpuHi": 1.9148749999999999,
+          "bhWall": 3,
+          "bhWallLo": 3,
+          "bhWallHi": 3,
+          "bruteGpu": 2.288084,
+          "bruteGpuLo": 2.287916,
+          "bruteGpuHi": 2.288125,
+          "bruteWall": 3,
+          "bruteWallLo": 3,
+          "bruteWallHi": 3,
+          "treeShare": 0.17844924603433646,
+          "interactions": 818.7750244140625,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0
+        },
+        {
+          "n": 32768,
+          "bhGpu": 4.375459,
+          "bhGpuLo": 4.368083,
+          "bhGpuHi": 4.496792,
+          "bhWall": 5,
+          "bhWallLo": 5,
+          "bhWallHi": 5,
+          "bruteGpu": 8.522042,
+          "bruteGpuLo": 8.522042,
+          "bruteGpuHi": 8.527042,
+          "bruteWall": 10,
+          "bruteWallLo": 9,
+          "bruteWallHi": 11,
+          "treeShare": 0.09399615346136965,
+          "interactions": 971.1317443847656,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1
+        },
+        {
+          "n": 65536,
+          "bhGpu": 10.476667,
+          "bhGpuLo": 9.972583,
+          "bhGpuHi": 10.776792,
+          "bhWall": 11,
+          "bhWallLo": 11,
+          "bhWallHi": 12,
+          "bruteGpu": 34.806042,
+          "bruteGpuLo": 34.780625,
+          "bruteGpuHi": 34.941417,
+          "bruteWall": 36,
+          "bruteWallLo": 35,
+          "bruteWallHi": 36,
+          "treeShare": 0.05132042471140869,
+          "interactions": 1138.4141845703125,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0
+        },
+        {
+          "n": 131072,
+          "bhGpu": 21.670040999999998,
+          "bhGpuLo": 21.531333,
+          "bhGpuHi": 21.951874999999998,
+          "bhWall": 23,
+          "bhWallLo": 23,
+          "bhWallHi": 23,
+          "bruteGpu": null,
+          "bruteGpuLo": null,
+          "bruteGpuHi": null,
+          "bruteWall": null,
+          "bruteWallLo": null,
+          "bruteWallHi": null,
+          "treeShare": 0.03934865942192202,
+          "interactions": 1275.247901916504,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1
+        },
+        {
+          "n": 262144,
+          "bhGpu": 48.25025,
+          "bhGpuLo": 48.159292,
+          "bhGpuHi": 48.349500000000006,
+          "bhWall": 50,
+          "bhWallLo": 50,
+          "bhWallHi": 50,
+          "bruteGpu": null,
+          "bruteGpuLo": null,
+          "bruteGpuHi": null,
+          "bruteWall": null,
+          "bruteWallLo": null,
+          "bruteWallHi": null,
+          "treeShare": 0.03141693566354579,
+          "interactions": 1402.477207183838,
+          "compileMs": 0,
+          "compileMsLo": 0,
+          "compileMsHi": 0,
+          "uploadMs": 1,
+          "uploadMsLo": 1,
+          "uploadMsHi": 1,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:48.786Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "nbody",
+        "id": "energy-drift",
+        "title": "Time step vs energy error"
+      },
+      "settings": {
+        "n": 2048,
+        "mode": "brute",
+        "preset": "plummer"
+      },
+      "protocol": {
+        "warmup": null,
+        "repeats": null,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "as-reported",
+        "spread": "none"
+      },
+      "verification": [
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.04",
+          "value": 0.00003377440575531862,
+          "tolerance": "<= 1.0e-3",
+          "reference": "float64 leapfrog on the same bodies: ≤ 7.4e-5 at dt = 0.04",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.02",
+          "value": 0.000005495835256042971,
+          "tolerance": "<= 1.0e-3",
+          "reference": "float64 leapfrog on the same bodies: ≤ 7.4e-5 at dt = 0.04",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.01",
+          "value": 0.0000013989398833563925,
+          "tolerance": "<= 1.0e-3",
+          "reference": "float64 leapfrog on the same bodies: ≤ 7.4e-5 at dt = 0.04",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.005",
+          "value": 3.9969710953039785e-7,
+          "tolerance": "<= 1.0e-3",
+          "reference": "float64 leapfrog on the same bodies: ≤ 7.4e-5 at dt = 0.04",
+          "status": "pass"
+        },
+        {
+          "metric": "dt halvings where the error does not fall",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "leapfrog error ∝ dt² for exact forces",
+          "status": "pass"
+        },
+        {
+          "metric": "observed order between dt = 0.02 and 0.01",
+          "value": 1.9740047914670555,
+          "tolerance": "1 … 3",
+          "reference": "second-order leapfrog: 2 (CI: 2.1)",
+          "status": "pass"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Max |ΔE/E₀| vs dt, exact forces (log-log slope = order)",
+          "predicted": "2: leapfrog is second order and symplectic, so the energy error stays in a band ∝ dt²",
+          "measured": "2.12 (95% CI 1.55 … 2.69, 4 points)",
+          "agrees": true,
+          "note": "The measured order is consistent with second-order leapfrog."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 4
+      },
+      "columns": [
+        {
+          "key": "dt",
+          "label": "dt"
+        },
+        {
+          "key": "steps",
+          "label": "steps"
+        },
+        {
+          "key": "maxDrift",
+          "label": "max |ΔE/E₀|"
+        },
+        {
+          "key": "finalDrift",
+          "label": "final ΔE/E₀"
+        },
+        {
+          "key": "wallMs",
+          "label": "wall ms",
+          "unit": "ms"
+        }
+      ],
+      "rows": [
+        {
+          "dt": 0.04,
+          "steps": 50,
+          "maxDrift": 0.00003377440575531862,
+          "finalDrift": -0.000021283871082493686,
+          "wallMs": 19
+        },
+        {
+          "dt": 0.02,
+          "steps": 100,
+          "maxDrift": 0.000005495835256042971,
+          "finalDrift": -0.0000019984855476519894,
+          "wallMs": 25
+        },
+        {
+          "dt": 0.01,
+          "steps": 200,
+          "maxDrift": 0.0000013989398833563925,
+          "finalDrift": -4.996213869129974e-7,
+          "wallMs": 42
+        },
+        {
+          "dt": 0.005,
+          "steps": 400,
+          "maxDrift": 3.9969710953039785e-7,
+          "finalDrift": 1.9984855476519893e-7,
+          "wallMs": 76
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:49.408Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "nbody",
+        "id": "energy-drift",
+        "title": "Time step vs energy error"
+      },
+      "settings": {
+        "n": 2048,
+        "mode": "bh",
+        "preset": "plummer"
+      },
+      "protocol": {
+        "warmup": null,
+        "repeats": null,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "as-reported",
+        "spread": "none"
+      },
+      "verification": [
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.04",
+          "value": 0.000685903817178653,
+          "tolerance": "<= 1.0e-2",
+          "reference": "CI bound for Barnes-Hut θ = 0.5 (measured floor 6.4e-4 … 6.9e-4)",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.02",
+          "value": 0.0006581239131612192,
+          "tolerance": "<= 1.0e-2",
+          "reference": "CI bound for Barnes-Hut θ = 0.5 (measured floor 6.4e-4 … 6.9e-4)",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.01",
+          "value": 0.0006429349008926943,
+          "tolerance": "<= 1.0e-2",
+          "reference": "CI bound for Barnes-Hut θ = 0.5 (measured floor 6.4e-4 … 6.9e-4)",
+          "status": "pass"
+        },
+        {
+          "metric": "max |ΔE/E₀| at dt = 0.005",
+          "value": 0.0006361398164567752,
+          "tolerance": "<= 1.0e-2",
+          "reference": "CI bound for Barnes-Hut θ = 0.5 (measured floor 6.4e-4 … 6.9e-4)",
+          "status": "pass"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Max |ΔE/E₀| vs dt, Barnes-Hut θ = 0.5 (log-log slope)",
+          "predicted": "0: dt-independent, set by the tree's force error (accepted ± 0.2 for a residual dt² part)",
+          "measured": "0.04 (95% CI 0.01 … 0.07, 4 points)",
+          "agrees": true,
+          "note": "A smaller dt does not help: the tree, not the integrator, limits the energy error."
+        },
+        {
+          "claim": "Size of the Barnes-Hut floor",
+          "predicted": "1.0e-4 … 1.0e-2: of the order of the tree's relative potential error at θ = 0.5 (≈ 4e-3 per body), partly averaged out; far above the exact-force error (≤ 7.4e-5)",
+          "measured": "6.51e-4 (median over 4 dt; 6.36e-4 … 6.86e-4)",
+          "agrees": true,
+          "note": "An order-of-magnitude prediction, not a fit; one distribution, one seed (CI, Plummer 2,048: 6.4e-4 … 6.9e-4)."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 4
+      },
+      "columns": [
+        {
+          "key": "dt",
+          "label": "dt"
+        },
+        {
+          "key": "steps",
+          "label": "steps"
+        },
+        {
+          "key": "maxDrift",
+          "label": "max |ΔE/E₀|"
+        },
+        {
+          "key": "finalDrift",
+          "label": "final ΔE/E₀"
+        },
+        {
+          "key": "wallMs",
+          "label": "wall ms",
+          "unit": "ms"
+        }
+      ],
+      "rows": [
+        {
+          "dt": 0.04,
+          "steps": 50,
+          "maxDrift": 0.000685903817178653,
+          "finalDrift": -0.0003460496676704072,
+          "wallMs": 49
+        },
+        {
+          "dt": 0.02,
+          "steps": 100,
+          "maxDrift": 0.0006581239131612192,
+          "finalDrift": -0.0003360568964411145,
+          "wallMs": 87
+        },
+        {
+          "dt": 0.01,
+          "steps": 200,
+          "maxDrift": 0.0006429349008926943,
+          "finalDrift": -0.00031976867933736734,
+          "wallMs": 163
+        },
+        {
+          "dt": 0.005,
+          "steps": 400,
+          "maxDrift": 0.0006361398164567752,
+          "finalDrift": -0.0003135731611752059,
+          "wallMs": 317
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:52.451Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "parallel-sort",
+        "id": "scaling",
+        "title": "Sorting N keys: bitonic, bitonic with workgroup memory, radix, CPU"
+      },
+      "settings": {
+        "dataType": "u32",
+        "maxN": 4194304
+      },
+      "protocol": {
+        "warmup": 1,
+        "repeats": 3,
+        "repeatsMax": 5,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "median",
+        "spread": "iqr"
+      },
+      "verification": [
+        {
+          "metric": "bitonic (global): keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Uint32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "bitonic (workgroup memory): keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Uint32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "radix: keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Uint32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "f32 key map round trip",
+          "value": null,
+          "tolerance": "0",
+          "reference": "u32 keys: no key map in this run",
+          "status": "not-checked"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Bitonic sort (global): time vs N",
+          "predicted": "O(N log² N), the slope of N·log₂N(log₂N+1)/2: slope 1.14 over N = 131,072 … 4,194,304 (± 0.05)",
+          "measured": "slope 0.63 (95% CI -0.12 … 1.38, R² 0.574) from GPU-timestamp medians at 6 sizes",
+          "agrees": null,
+          "note": "Too noisy to decide: the 95% interval is wider than ± 0.2, enough to fit both O(N) and O(N log² N). Rerun, or run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (GPU-timestamp resolution 7.2 µs), up to the largest N of the run."
+        },
+        {
+          "claim": "Bitonic sort (workgroup memory): time vs N",
+          "predicted": "O(N log² N) compare-exchanges, global traffic N × dispatches",
+          "measured": "1 size(s) with a wall-clock median ≥ 1 ms",
+          "agrees": null,
+          "note": "Undetermined: needs at least 3 sizes with a median of at least 1 ms (and 10× the timer resolution), 1 here; run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run. GPU timestamps not used: at N = 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Radix sort: time vs N",
+          "predicted": "O(N · 8 passes)",
+          "measured": "0 size(s) with a wall-clock median ≥ 1 ms",
+          "agrees": null,
+          "note": "Undetermined: needs at least 3 sizes with a median of at least 1 ms (and 10× the timer resolution), 0 here; run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run. GPU timestamps not used: at N = 1,048,576, 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "CPU sort (TypedArray.prototype.sort): time vs N",
+          "predicted": "O(N log N), the slope of N·log₂N: slope 1.07 over N = 131,072 … 4,194,304 (± 0.05)",
+          "measured": "slope 1.05 (95% CI 1.04 … 1.07, R² 1.000) from wall-clock medians at 6 sizes",
+          "agrees": true,
+          "note": "Within the interval: time grows like the operation count over this range. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run."
+        },
+        {
+          "claim": "Crossover: bitonic (global) (GPU timestamps) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "faster from the smallest N with resolvable times on (bitonic (global) 0.20 ms (0.19–0.20) vs CPU 0.33 ms (0.33–0.36) at N = 32,768); below that N a time is under 10× the timer resolution, so whether the crossover lies lower is undetermined; not compared (a time below 10× the timer resolution): N = 16,384",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 7.2 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point."
+        },
+        {
+          "claim": "Crossover: bitonic (workgroup memory) (wall) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "faster from the smallest N with resolvable times on (bitonic (workgroup memory) 16.0 ms (16.0–16.5) vs CPU 70.0 ms (69.5–70.0) at N = 4,194,304); below that N a time is under 10× the timer resolution, so whether the crossover lies lower is undetermined; not compared (a time below 10× the timer resolution): N = 16,384, 32,768, 65,536, 131,072, 262,144, 524,288, 1,048,576, 2,097,152",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 7.2 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point. GPU timestamps not used: at N = 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Crossover: radix (wall) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "undetermined: below timer resolution at every N (radix 8.00 ms (8.00–8.00) vs CPU 70.0 ms (69.5–70.0) at N = 4,194,304)",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 7.2 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point. GPU timestamps not used: at N = 1,048,576, 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Ranking at the largest N (N = 4,194,304, wall clock)",
+          "predicted": "fastest first: radix < bitonic (workgroup memory) < bitonic (global), on a GPU with fast workgroup memory",
+          "measured": "radix 8.00 ms (8.00–8.00) < bitonic (workgroup memory) 16.0 ms (16.0–16.5) < bitonic (global) 29.0 ms (28.0–29.0)",
+          "agrees": true,
+          "note": "A prediction for GPUs with fast workgroup memory, not a law: other GPUs and drivers may order them differently. Each adjacent pair counts as decided only when the interquartile ranges are more than one clock tick apart; GPU timestamps are used only when every algorithm's are consistent with the wall clock. On the CPU-emulated GPU in CI the order is inverted (global bitonic fastest, radix slowest): there barriers are expensive and workgroup memory is ordinary cache. GPU timestamps not used: at N = 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 9
+      },
+      "columns": [
+        {
+          "key": "n",
+          "label": "N"
+        },
+        {
+          "key": "repeats",
+          "label": "repeats"
+        },
+        {
+          "key": "bitonicGpu",
+          "label": "bitonic GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "sharedGpu",
+          "label": "bitonic (workgroup) GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "radixGpu",
+          "label": "radix GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "cpuMs",
+          "label": "CPU sort ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "cpuReps",
+          "label": "CPU sorts per sample"
+        },
+        {
+          "key": "bitonicWall",
+          "label": "bitonic wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "sharedWall",
+          "label": "bitonic (workgroup) wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "radixWall",
+          "label": "radix wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "uploadMs",
+          "label": "upload ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "readbackMs",
+          "label": "readback ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "setupMs",
+          "label": "buffers + bind groups ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "pipelineMs",
+          "label": "pipeline compile ms (once per run)",
+          "unit": "ms"
+        },
+        {
+          "key": "timerMs",
+          "label": "performance.now() resolution ms",
+          "unit": "ms"
+        },
+        {
+          "key": "radixKeysPerUs",
+          "label": "radix M keys/s (wall)"
+        },
+        {
+          "key": "dispatches",
+          "label": "dispatches (bitonic / workgroup / radix)"
+        },
+        {
+          "key": "bitonicWrong",
+          "label": "bitonic keys ≠ CPU"
+        },
+        {
+          "key": "sharedWrong",
+          "label": "workgroup keys ≠ CPU"
+        },
+        {
+          "key": "radixWrong",
+          "label": "radix keys ≠ CPU"
+        }
+      ],
+      "rows": [
+        {
+          "n": 16384,
+          "repeats": 5,
+          "cpuMs": 0.125,
+          "cpuMsLo": 0.125,
+          "cpuMsHi": 0.125,
+          "cpuReps": 64,
+          "timerMs": 1,
+          "bitonicGpu": 0.182333,
+          "bitonicGpuLo": 0.181791,
+          "bitonicGpuHi": 0.186625,
+          "bitonicWall": 1,
+          "bitonicWallLo": 1,
+          "bitonicWallHi": 1,
+          "sharedGpu": 0.283375,
+          "sharedGpuLo": 0.276292,
+          "sharedGpuHi": 0.301375,
+          "sharedWall": 1,
+          "sharedWallLo": 0,
+          "sharedWallHi": 1,
+          "radixGpu": 0.08675,
+          "radixGpuLo": 0.083916,
+          "radixGpuHi": 0.090583,
+          "radixWall": 1,
+          "radixWallLo": 0,
+          "radixWallHi": 1,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": 0,
+          "radixKeysPerUs": 16.384,
+          "dispatches": "105 / 21 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 32768,
+          "repeats": 5,
+          "cpuMs": 0.328125,
+          "cpuMsLo": 0.328125,
+          "cpuMsHi": 0.359375,
+          "cpuReps": 64,
+          "timerMs": 1,
+          "bitonicGpu": 0.196959,
+          "bitonicGpuLo": 0.18975,
+          "bitonicGpuHi": 0.20025,
+          "bitonicWall": 1,
+          "bitonicWallLo": 1,
+          "bitonicWallHi": 1,
+          "sharedGpu": 0.360375,
+          "sharedGpuLo": 0.356459,
+          "sharedGpuHi": 0.370667,
+          "sharedWall": 0,
+          "sharedWallLo": 0,
+          "sharedWallHi": 1,
+          "radixGpu": 0.133791,
+          "radixGpuLo": 0.129042,
+          "radixGpuHi": 0.147791,
+          "radixWall": 0,
+          "radixWallLo": 0,
+          "radixWallHi": 0,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": null,
+          "dispatches": "120 / 28 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 65536,
+          "repeats": 5,
+          "cpuMs": 0.8125,
+          "cpuMsLo": 0.8125,
+          "cpuMsHi": 0.8125,
+          "cpuReps": 32,
+          "timerMs": 1,
+          "bitonicGpu": 0.319375,
+          "bitonicGpuLo": 0.27275,
+          "bitonicGpuHi": 0.329375,
+          "bitonicWall": 2,
+          "bitonicWallLo": 2,
+          "bitonicWallHi": 2,
+          "sharedGpu": 0.733833,
+          "sharedGpuLo": 0.586917,
+          "sharedGpuHi": 0.741542,
+          "sharedWall": 1,
+          "sharedWallLo": 1,
+          "sharedWallHi": 1,
+          "radixGpu": 0.353125,
+          "radixGpuLo": 0.312959,
+          "radixGpuHi": 0.393959,
+          "radixWall": 1,
+          "radixWallLo": 1,
+          "radixWallHi": 1,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 65.536,
+          "dispatches": "136 / 36 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 131072,
+          "repeats": 5,
+          "cpuMs": 1.8125,
+          "cpuMsLo": 1.8125,
+          "cpuMsHi": 1.8125,
+          "cpuReps": 16,
+          "timerMs": 1,
+          "bitonicGpu": 1.573958,
+          "bitonicGpuLo": 1.545666,
+          "bitonicGpuHi": 1.591708,
+          "bitonicWall": 3,
+          "bitonicWallLo": 3,
+          "bitonicWallHi": 3,
+          "sharedGpu": 1.657583,
+          "sharedGpuLo": 1.656667,
+          "sharedGpuHi": 2.872333,
+          "sharedWall": 2,
+          "sharedWallLo": 2,
+          "sharedWallHi": 2,
+          "radixGpu": 1.817792,
+          "radixGpuLo": 1.772291,
+          "radixGpuHi": 1.901875,
+          "radixWall": 2,
+          "radixWallLo": 2,
+          "radixWallHi": 2,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 65.536,
+          "dispatches": "153 / 45 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 262144,
+          "repeats": 5,
+          "cpuMs": 3.75,
+          "cpuMsLo": 3.75,
+          "cpuMsHi": 3.875,
+          "cpuReps": 8,
+          "timerMs": 1,
+          "bitonicGpu": 2.64,
+          "bitonicGpuLo": 2.634333,
+          "bitonicGpuHi": 2.641,
+          "bitonicWall": 6,
+          "bitonicWallLo": 6,
+          "bitonicWallHi": 6,
+          "sharedGpu": 4.805,
+          "sharedGpuLo": 4.560333,
+          "sharedGpuHi": 4.896291,
+          "sharedWall": 4,
+          "sharedWallLo": 4,
+          "sharedWallHi": 4,
+          "radixGpu": 3.062083,
+          "radixGpuLo": 2.64,
+          "radixGpuHi": 3.665292,
+          "radixWall": 3,
+          "radixWallLo": 1,
+          "radixWallHi": 3,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 87.38133333333333,
+          "dispatches": "171 / 55 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 524288,
+          "repeats": 5,
+          "cpuMs": 8,
+          "cpuMsLo": 8,
+          "cpuMsHi": 8,
+          "cpuReps": 4,
+          "timerMs": 1,
+          "bitonicGpu": 1.544,
+          "bitonicGpuLo": 1.066584,
+          "bitonicGpuHi": 2.882917,
+          "bitonicWall": 6,
+          "bitonicWallLo": 5,
+          "bitonicWallHi": 10,
+          "sharedGpu": 5.717209,
+          "sharedGpuLo": 3.437667,
+          "sharedGpuHi": 8.550083,
+          "sharedWall": 3,
+          "sharedWallLo": 3,
+          "sharedWallHi": 3,
+          "radixGpu": 2.503125,
+          "radixGpuLo": 1.773833,
+          "radixGpuHi": 2.563,
+          "radixWall": 2,
+          "radixWallLo": 2,
+          "radixWallHi": 3,
+          "uploadMs": 1,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 1,
+          "readbackMsLo": 1,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 262.144,
+          "dispatches": "190 / 66 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 1048576,
+          "repeats": 5,
+          "cpuMs": 16.5,
+          "cpuMsLo": 16,
+          "cpuMsHi": 16.5,
+          "cpuReps": 2,
+          "timerMs": 1,
+          "bitonicGpu": 1.92475,
+          "bitonicGpuLo": 1.921333,
+          "bitonicGpuHi": 2.18475,
+          "bitonicWall": 9,
+          "bitonicWallLo": 9,
+          "bitonicWallHi": 10,
+          "sharedGpu": 8.200667,
+          "sharedGpuLo": 7.933,
+          "sharedGpuHi": 8.855208,
+          "sharedWall": 7,
+          "sharedWallLo": 7,
+          "sharedWallHi": 8,
+          "radixGpu": 6.858042,
+          "radixGpuLo": 6.792542,
+          "radixGpuHi": 6.881417,
+          "radixWall": 3,
+          "radixWallLo": 2,
+          "radixWallHi": 3,
+          "uploadMs": 1,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 1,
+          "readbackMsLo": 1,
+          "readbackMsHi": 2,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 349.5253333333333,
+          "dispatches": "210 / 78 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 2097152,
+          "repeats": 3,
+          "cpuMs": 33,
+          "cpuMsLo": 33,
+          "cpuMsHi": 33.5,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 3.59925,
+          "bitonicGpuLo": 3.5835415,
+          "bitonicGpuHi": 12.726854499999998,
+          "bitonicWall": 22,
+          "bitonicWallLo": 22,
+          "bitonicWallHi": 23,
+          "sharedGpu": 21.854459,
+          "sharedGpuLo": 21.4194795,
+          "sharedGpuHi": 22.393749999999997,
+          "sharedWall": 8,
+          "sharedWallLo": 8,
+          "sharedWallHi": 8,
+          "radixGpu": 7.23875,
+          "radixGpuLo": 7.2175625,
+          "radixGpuHi": 7.2650625,
+          "radixWall": 5,
+          "radixWallLo": 5,
+          "radixWallHi": 5,
+          "uploadMs": 1,
+          "uploadMsLo": 1,
+          "uploadMsHi": 1,
+          "readbackMs": 2,
+          "readbackMsLo": 2,
+          "readbackMsHi": 2,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 419.4304,
+          "dispatches": "231 / 91 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 4194304,
+          "repeats": 3,
+          "cpuMs": 70,
+          "cpuMsLo": 69.5,
+          "cpuMsHi": 70,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 26.106667,
+          "bitonicGpuLo": 16.667688,
+          "bitonicGpuHi": 27.4827295,
+          "bitonicWall": 29,
+          "bitonicWallLo": 28,
+          "bitonicWallHi": 29,
+          "sharedGpu": 26.106667,
+          "sharedGpuLo": 20.7317085,
+          "sharedGpuHi": 27.014375,
+          "sharedWall": 16,
+          "sharedWallLo": 16,
+          "sharedWallHi": 16.5,
+          "radixGpu": 15.399541,
+          "radixGpuLo": 11.314125,
+          "radixGpuHi": 15.407833,
+          "radixWall": 8,
+          "radixWallLo": 8,
+          "radixWallHi": 8,
+          "uploadMs": 3,
+          "uploadMsLo": 3,
+          "uploadMsHi": 3.5,
+          "readbackMs": 5,
+          "readbackMsLo": 4.5,
+          "readbackMsHi": 5,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 524.288,
+          "dispatches": "253 / 105 / 24",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        }
+      ]
+    },
+    {
+      "schemaVersion": 1,
+      "generatedAt": "2026-11-02T02:35:56.892Z",
+      "source": {
+        "version": "0.6.0",
+        "commit": "097c5589009c740b524695fc8ba812d129d94922",
+        "url": "https://github.com/scttfrdmn/webgpu-compute-exploration/tree/097c5589009c740b524695fc8ba812d129d94922",
+        "builtAt": "2026-11-02T02:29:58.590Z"
+      },
+      "experiment": {
+        "exampleId": "parallel-sort",
+        "id": "scaling",
+        "title": "Sorting N keys: bitonic, bitonic with workgroup memory, radix, CPU"
+      },
+      "settings": {
+        "dataType": "f32",
+        "maxN": 4194304
+      },
+      "protocol": {
+        "warmup": 1,
+        "repeats": 3,
+        "repeatsMax": 5,
+        "timing": "timestamp-query",
+        "budgetMs": 20000,
+        "statistic": "median",
+        "spread": "iqr"
+      },
+      "verification": [
+        {
+          "metric": "bitonic (global): keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Float32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "bitonic (workgroup memory): keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Float32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "radix: keys that differ from the CPU sort",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "Float32Array.prototype.sort of the same keys, bit for bit: 50 sorts (warm-ups included) at N = 16,384 … 4,194,304",
+          "status": "pass"
+        },
+        {
+          "metric": "f32 key map: decode(encode(u)) ≠ u",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "65550 values: ±0, ±denormals, ±FLT_MAX, ±∞ and seeded keys (the GPU round trip is covered by the sorts above)",
+          "status": "pass"
+        },
+        {
+          "metric": "f32 key map: encoded order ≠ float order",
+          "value": 0,
+          "tolerance": "0",
+          "reference": "neighbours in Float32Array sort order (−0 before +0) must encode to non-decreasing u32 keys",
+          "status": "pass"
+        }
+      ],
+      "interpretation": [
+        {
+          "claim": "Bitonic sort (global): time vs N",
+          "predicted": "O(N log² N), the slope of N·log₂N(log₂N+1)/2: slope 1.15 over N = 65,536 … 4,194,304 (± 0.05)",
+          "measured": "slope 0.44 (95% CI 0.20 … 0.69, R² 0.865) from GPU-timestamp medians at 6 sizes",
+          "agrees": null,
+          "note": "Too noisy to decide: the 95% interval is wider than ± 0.2, enough to fit both O(N) and O(N log² N). Rerun, or run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (GPU-timestamp resolution 3.8 µs), up to the largest N of the run."
+        },
+        {
+          "claim": "Bitonic sort (workgroup memory): time vs N",
+          "predicted": "O(N log² N) compare-exchanges, global traffic N × dispatches",
+          "measured": "1 size(s) with a wall-clock median ≥ 1 ms",
+          "agrees": null,
+          "note": "Undetermined: needs at least 3 sizes with a median of at least 1 ms (and 10× the timer resolution), 1 here; run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run. GPU timestamps not used: at N = 1,048,576, 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Radix sort: time vs N",
+          "predicted": "O(N · 8 passes)",
+          "measured": "0 size(s) with a wall-clock median ≥ 1 ms",
+          "agrees": null,
+          "note": "Undetermined: needs at least 3 sizes with a median of at least 1 ms (and 10× the timer resolution), 0 here; run to a larger N. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run. GPU timestamps not used: at N = 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "CPU sort (TypedArray.prototype.sort): time vs N",
+          "predicted": "O(N log N), the slope of N·log₂N: slope 1.08 over N = 32,768 … 4,194,304 (± 0.05)",
+          "measured": "slope 1.10 (95% CI 1.08 … 1.12, R² 1.000) from wall-clock medians at 8 sizes",
+          "agrees": true,
+          "note": "Within the interval: time grows like the operation count over this range. Fitted over the sizes whose median is at least 1 ms and 10× the timer resolution (wall-clock resolution 1 ms), up to the largest N of the run."
+        },
+        {
+          "claim": "Crossover: bitonic (global) (GPU timestamps) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "between N = 16,384 and 32,768: bitonic (global) 0.77 ms (0.48–0.83) vs CPU 0.44 ms (0.42–0.44) at N = 16,384; bitonic (global) 0.90 ms (0.88–0.91) vs CPU 1.19 ms (1.19–1.22) at N = 32,768",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 3.8 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point."
+        },
+        {
+          "claim": "Crossover: bitonic (workgroup memory) (wall) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "faster from the smallest N with resolvable times on (bitonic (workgroup memory) 16.0 ms (16.0–16.5) vs CPU 249 ms (249–249) at N = 4,194,304); below that N a time is under 10× the timer resolution, so whether the crossover lies lower is undetermined; not compared (a time below 10× the timer resolution): N = 16,384, 32,768, 65,536, 131,072, 262,144, 524,288, 1,048,576, 2,097,152",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 3.8 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point. GPU timestamps not used: at N = 1,048,576, 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Crossover: radix (wall) becomes faster than the CPU sort",
+          "predicted": "device-dependent, no universal N; \"none in range\" is a valid outcome",
+          "measured": "undetermined: below timer resolution at every N (radix 9.00 ms (8.50–9.00) vs CPU 249 ms (249–249) at N = 4,194,304)",
+          "agrees": null,
+          "note": "The GPU time is the sort pass alone (no upload or readback): GPU timestamps when the browser has timestamp-query and they are consistent with the wall clock, else submit → done wall time. The CPU sort is wall-clock; each sample is a batch of back-to-back sorts long enough to resolve. A GPU is \"faster\" at an N only when its q3 is below the CPU sort's q1, and an N is compared only when both medians are at least 10× their clock's resolution (performance.now(): 1 ms, measured; GPU timestamps: 3.8 µs, inferred from the medians). In CI, on a CPU-emulated GPU, there is no crossover. Your GPU, driver, browser and CPU all move this point. GPU timestamps not used: at N = 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        },
+        {
+          "claim": "Ranking at the largest N (N = 4,194,304, wall clock)",
+          "predicted": "fastest first: radix < bitonic (workgroup memory) < bitonic (global), on a GPU with fast workgroup memory",
+          "measured": "radix 9.00 ms (8.50–9.00) < bitonic (workgroup memory) 16.0 ms (16.0–16.5) < bitonic (global) 29.0 ms (28.5–33.0)",
+          "agrees": true,
+          "note": "A prediction for GPUs with fast workgroup memory, not a law: other GPUs and drivers may order them differently. Each adjacent pair counts as decided only when the interquartile ranges are more than one clock tick apart; GPU timestamps are used only when every algorithm's are consistent with the wall clock. On the CPU-emulated GPU in CI the order is inverted (global bitonic fastest, radix slowest): there barriers are expensive and workgroup memory is ordinary cache. GPU timestamps not used: at N = 1,048,576, 2,097,152, 4,194,304 they exceed the wall time of the same sorts (submit → done), which a pass cannot do, so the wall clock is used."
+        }
+      ],
+      "environment": {
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+        "adapter": {
+          "vendor": "apple",
+          "architecture": "apple",
+          "device": "apple",
+          "description": "apple",
+          "isFallbackAdapter": false
+        },
+        "features": [
+          "core-features-and-limits",
+          "timestamp-query"
+        ],
+        "limits": {
+          "maxBufferSize": 268435456,
+          "maxStorageBufferBindingSize": 134217728,
+          "maxComputeWorkgroupStorageSize": 16384,
+          "maxComputeInvocationsPerWorkgroup": 256,
+          "maxComputeWorkgroupSizeX": 256,
+          "maxComputeWorkgroupsPerDimension": 65535,
+          "maxStorageBuffersPerShaderStage": 8
+        }
+      },
+      "outcome": {
+        "status": "done",
+        "steps": 9
+      },
+      "columns": [
+        {
+          "key": "n",
+          "label": "N"
+        },
+        {
+          "key": "repeats",
+          "label": "repeats"
+        },
+        {
+          "key": "bitonicGpu",
+          "label": "bitonic GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "sharedGpu",
+          "label": "bitonic (workgroup) GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "radixGpu",
+          "label": "radix GPU ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "cpuMs",
+          "label": "CPU sort ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "cpuReps",
+          "label": "CPU sorts per sample"
+        },
+        {
+          "key": "bitonicWall",
+          "label": "bitonic wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "sharedWall",
+          "label": "bitonic (workgroup) wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "radixWall",
+          "label": "radix wall ms",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "uploadMs",
+          "label": "upload ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "readbackMs",
+          "label": "readback ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "setupMs",
+          "label": "buffers + bind groups ms (radix)",
+          "unit": "ms",
+          "range": true
+        },
+        {
+          "key": "pipelineMs",
+          "label": "pipeline compile ms (once per run)",
+          "unit": "ms"
+        },
+        {
+          "key": "timerMs",
+          "label": "performance.now() resolution ms",
+          "unit": "ms"
+        },
+        {
+          "key": "radixKeysPerUs",
+          "label": "radix M keys/s (wall)"
+        },
+        {
+          "key": "dispatches",
+          "label": "dispatches (bitonic / workgroup / radix)"
+        },
+        {
+          "key": "bitonicWrong",
+          "label": "bitonic keys ≠ CPU"
+        },
+        {
+          "key": "sharedWrong",
+          "label": "workgroup keys ≠ CPU"
+        },
+        {
+          "key": "radixWrong",
+          "label": "radix keys ≠ CPU"
+        }
+      ],
+      "rows": [
+        {
+          "n": 16384,
+          "repeats": 5,
+          "cpuMs": 0.4375,
+          "cpuMsLo": 0.421875,
+          "cpuMsHi": 0.4375,
+          "cpuReps": 64,
+          "timerMs": 1,
+          "bitonicGpu": 0.766792,
+          "bitonicGpuLo": 0.475667,
+          "bitonicGpuHi": 0.829709,
+          "bitonicWall": 1,
+          "bitonicWallLo": 1,
+          "bitonicWallHi": 2,
+          "sharedGpu": 0.876042,
+          "sharedGpuLo": 0.819958,
+          "sharedGpuHi": 0.881667,
+          "sharedWall": 1,
+          "sharedWallLo": 0,
+          "sharedWallHi": 1,
+          "radixGpu": 0.356584,
+          "radixGpuLo": 0.348125,
+          "radixGpuHi": 0.35825,
+          "radixWall": 1,
+          "radixWallLo": 1,
+          "radixWallHi": 1,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 0,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": 0,
+          "radixKeysPerUs": 16.384,
+          "dispatches": "107 / 23 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 32768,
+          "repeats": 5,
+          "cpuMs": 1.1875,
+          "cpuMsLo": 1.1875,
+          "cpuMsHi": 1.21875,
+          "cpuReps": 32,
+          "timerMs": 1,
+          "bitonicGpu": 0.901209,
+          "bitonicGpuLo": 0.879666,
+          "bitonicGpuHi": 0.912291,
+          "bitonicWall": 2,
+          "bitonicWallLo": 2,
+          "bitonicWallHi": 2,
+          "sharedGpu": 1.097709,
+          "sharedGpuLo": 1.076333,
+          "sharedGpuHi": 1.193459,
+          "sharedWall": 1,
+          "sharedWallLo": 1,
+          "sharedWallHi": 1,
+          "radixGpu": 0.574584,
+          "radixGpuLo": 0.554792,
+          "radixGpuHi": 0.578458,
+          "radixWall": 1,
+          "radixWallLo": 1,
+          "radixWallHi": 2,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 32.768,
+          "dispatches": "122 / 30 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 65536,
+          "repeats": 5,
+          "cpuMs": 2.75,
+          "cpuMsLo": 2.75,
+          "cpuMsHi": 2.75,
+          "cpuReps": 8,
+          "timerMs": 1,
+          "bitonicGpu": 1.034417,
+          "bitonicGpuLo": 0.601167,
+          "bitonicGpuHi": 1.037917,
+          "bitonicWall": 2,
+          "bitonicWallLo": 2,
+          "bitonicWallHi": 2,
+          "sharedGpu": 1.01875,
+          "sharedGpuLo": 0.783209,
+          "sharedGpuHi": 1.598625,
+          "sharedWall": 1,
+          "sharedWallLo": 1,
+          "sharedWallHi": 1,
+          "radixGpu": 0.578375,
+          "radixGpuLo": 0.434667,
+          "radixGpuHi": 0.969541,
+          "radixWall": 1,
+          "radixWallLo": 1,
+          "radixWallHi": 2,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 0,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 65.536,
+          "dispatches": "138 / 38 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 131072,
+          "repeats": 5,
+          "cpuMs": 6,
+          "cpuMsLo": 6,
+          "cpuMsHi": 6,
+          "cpuReps": 4,
+          "timerMs": 1,
+          "bitonicGpu": 0.9185,
+          "bitonicGpuLo": 0.691625,
+          "bitonicGpuHi": 1.629125,
+          "bitonicWall": 2,
+          "bitonicWallLo": 2,
+          "bitonicWallHi": 3,
+          "sharedGpu": 1.531041,
+          "sharedGpuLo": 1.151875,
+          "sharedGpuHi": 1.566625,
+          "sharedWall": 2,
+          "sharedWallLo": 2,
+          "sharedWallHi": 2,
+          "radixGpu": 1.040083,
+          "radixGpuLo": 0.724208,
+          "radixGpuHi": 1.079375,
+          "radixWall": 1,
+          "radixWallLo": 1,
+          "radixWallHi": 2,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 131.072,
+          "dispatches": "155 / 47 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 262144,
+          "repeats": 5,
+          "cpuMs": 12.5,
+          "cpuMsLo": 12.5,
+          "cpuMsHi": 13,
+          "cpuReps": 2,
+          "timerMs": 1,
+          "bitonicGpu": 1.447042,
+          "bitonicGpuLo": 1.204459,
+          "bitonicGpuHi": 2.769083,
+          "bitonicWall": 3,
+          "bitonicWallLo": 3,
+          "bitonicWallHi": 6,
+          "sharedGpu": 1.567875,
+          "sharedGpuLo": 1.211833,
+          "sharedGpuHi": 4.742958,
+          "sharedWall": 2,
+          "sharedWallLo": 2,
+          "sharedWallHi": 4,
+          "radixGpu": 1.347167,
+          "radixGpuLo": 1.2215,
+          "radixGpuHi": 3.680167,
+          "radixWall": 2,
+          "radixWallLo": 2,
+          "radixWallHi": 3,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 0,
+          "readbackMs": 1,
+          "readbackMsLo": 0,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 131.072,
+          "dispatches": "173 / 57 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 524288,
+          "repeats": 5,
+          "cpuMs": 27,
+          "cpuMsLo": 27,
+          "cpuMsHi": 27,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 1.69475,
+          "bitonicGpuLo": 1.606084,
+          "bitonicGpuHi": 1.790875,
+          "bitonicWall": 4,
+          "bitonicWallLo": 4,
+          "bitonicWallHi": 4,
+          "sharedGpu": 3.263084,
+          "sharedGpuLo": 2.983458,
+          "sharedGpuHi": 3.390666,
+          "sharedWall": 4,
+          "sharedWallLo": 3,
+          "sharedWallHi": 4,
+          "radixGpu": 2.871833,
+          "radixGpuLo": 2.859209,
+          "radixGpuHi": 2.893458,
+          "radixWall": 2,
+          "radixWallLo": 2,
+          "radixWallHi": 3,
+          "uploadMs": 0,
+          "uploadMsLo": 0,
+          "uploadMsHi": 1,
+          "readbackMs": 1,
+          "readbackMsLo": 1,
+          "readbackMsHi": 1,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 262.144,
+          "dispatches": "192 / 68 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 1048576,
+          "repeats": 5,
+          "cpuMs": 57,
+          "cpuMsLo": 57,
+          "cpuMsHi": 57,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 1.956458,
+          "bitonicGpuLo": 1.94725,
+          "bitonicGpuHi": 1.968125,
+          "bitonicWall": 10,
+          "bitonicWallLo": 7,
+          "bitonicWallHi": 16,
+          "sharedGpu": 9.828208,
+          "sharedGpuLo": 6.928125,
+          "sharedGpuHi": 14.944834,
+          "sharedWall": 5,
+          "sharedWallLo": 5,
+          "sharedWallHi": 5,
+          "radixGpu": 3.577041,
+          "radixGpuLo": 3.489583,
+          "radixGpuHi": 4.227292,
+          "radixWall": 3,
+          "radixWallLo": 3,
+          "radixWallHi": 3,
+          "uploadMs": 1,
+          "uploadMsLo": 1,
+          "uploadMsHi": 1,
+          "readbackMs": 1,
+          "readbackMsLo": 1,
+          "readbackMsHi": 2,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 349.5253333333333,
+          "dispatches": "212 / 80 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 2097152,
+          "repeats": 3,
+          "cpuMs": 119,
+          "cpuMsLo": 119,
+          "cpuMsHi": 119.5,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 3.732125,
+          "bitonicGpuLo": 3.7084580000000003,
+          "bitonicGpuHi": 3.740167,
+          "bitonicWall": 20,
+          "bitonicWallLo": 18,
+          "bitonicWallHi": 23.5,
+          "sharedGpu": 19.285625,
+          "sharedGpuLo": 13.994583500000001,
+          "sharedGpuHi": 22.769854000000002,
+          "sharedWall": 9,
+          "sharedWallLo": 8.5,
+          "sharedWallHi": 9,
+          "radixGpu": 7.396584,
+          "radixGpuLo": 7.360396,
+          "radixGpuHi": 8.050063,
+          "radixWall": 4,
+          "radixWallLo": 4,
+          "radixWallHi": 4.5,
+          "uploadMs": 2,
+          "uploadMsLo": 2,
+          "uploadMsHi": 2,
+          "readbackMs": 3,
+          "readbackMsLo": 2.5,
+          "readbackMsHi": 3,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 524.288,
+          "dispatches": "233 / 93 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        },
+        {
+          "n": 4194304,
+          "repeats": 3,
+          "cpuMs": 249,
+          "cpuMsLo": 249,
+          "cpuMsHi": 249,
+          "cpuReps": 1,
+          "timerMs": 1,
+          "bitonicGpu": 7.346375,
+          "bitonicGpuLo": 7.3298749999999995,
+          "bitonicGpuHi": 7.3551044999999995,
+          "bitonicWall": 29,
+          "bitonicWallLo": 28.5,
+          "bitonicWallHi": 33,
+          "sharedGpu": 28.207,
+          "sharedGpuLo": 27.564896,
+          "sharedGpuHi": 31.617021,
+          "sharedWall": 16,
+          "sharedWallLo": 16,
+          "sharedWallHi": 16.5,
+          "radixGpu": 15.476875,
+          "radixGpuLo": 15.44625,
+          "radixGpuHi": 15.637,
+          "radixWall": 9,
+          "radixWallLo": 8.5,
+          "radixWallHi": 9,
+          "uploadMs": 3,
+          "uploadMsLo": 3,
+          "uploadMsHi": 3.5,
+          "readbackMs": 4,
+          "readbackMsLo": 4,
+          "readbackMsHi": 4.5,
+          "setupMs": 0,
+          "setupMsLo": 0,
+          "setupMsHi": 0,
+          "pipelineMs": null,
+          "radixKeysPerUs": 466.03377777777774,
+          "dispatches": "255 / 107 / 26",
+          "bitonicWrong": 0,
+          "sharedWrong": 0,
+          "radixWrong": 0
+        }
+      ]
+    }
+  ]
+}

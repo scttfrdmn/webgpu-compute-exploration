@@ -194,6 +194,59 @@ $10^{-6}$ relative (99th percentile $2.6 \times 10^{-6}$ for 3,000 bodies). The 
 reaches the same level, $8.8 \times 10^{-7}$ median, although it adds in a different order. The energy
 reduction is good to about $10^{-7}$, below every drift above.
 
+### How to read the Measure results
+
+Each experiment ends with a **Measured vs predicted** table. The measured value of a trend is the slope
+of a least-squares line through the points on log-log axes, so $y \propto x^{p}$ gives slope $p$. It
+comes with a 95% interval from the scatter of the points about that line. A verdict of *agrees* means
+the prediction lies inside that interval, widened by a stated tolerance where the theory is itself only
+approximate. *Disagrees* means it lies outside. *Undetermined* means there are too few points (fewer
+than three give no interval), or the interval straddles the edge of a predicted range.
+
+| Experiment | Claim | Prediction | CI, software GPU |
+|---|---|---|---|
+| θ vs error | median force error vs $\theta$ | slope 2 ± 0.25 (quadrupole term, $l/d \le \theta$; the $\theta^3$ term steepens it a little) | 2.09 (2.01 … 2.16) |
+| θ vs error | interactions per body vs $\theta$ | slope between −3 and 0 | −1.46 (−1.50 … −1.42) |
+| Scaling | brute-force time vs $N$, above the fixed floor | slope 2 ± 0.1 | 1.94 (0.83 … 3.05), only 3 sizes: undetermined |
+| Scaling | Barnes-Hut time vs $N$, above the fixed floor | 1.0 … $s + 0.2$, where $s$ is the slope of $N \log_2 N$ over the fitted sizes (1.11 over 1,024 … 65,536) | 1.23 (1.16 … 1.30) |
+| Scaling | crossover | exists; where is device-dependent | between 8,192 and 16,384 |
+| Scaling | fixed cost per evaluation (the time at the smallest $N$) | reported, no verdict | 17 ms Barnes-Hut, 2.5 ms brute force (wall) |
+| Energy | max $\lvert\Delta E/E_0\rvert$ vs $\Delta t$, brute force | slope 2 | 2.25 (1.87 … 2.64) |
+| Energy | the same, Barnes-Hut $\theta = 0.5$ | slope 0 ± 0.2, floor $10^{-4}$ … $10^{-2}$ | 0.04 (0.01 … 0.07), floor 6.5e-4 |
+
+Some of these predictions are bands rather than numbers, and the reasons are physics, not slack. The
+$\theta^{-3}$ count of accepted cells per tree level holds only for large $N$ and uniform density. At
+4,096 bodies the near field and the roughly $\log N$ levels add work that does not depend on $\theta$,
+so the measured fall is shallower. For the same reason, the interactions per body still grow like
+$N^{0.37}$ here, not like $\log N$, and that is why the Barnes-Hut band reaches above 1.11. The
+Barnes-Hut energy floor is an order-of-magnitude scale set by the tree's potential error, not a fit.
+
+**The fixed floor.** Every force evaluation pays a cost that does not grow with $N$: submitting the
+work and waiting for it, and for Barnes-Hut 31 dispatches, 30 of them the tree build, most of which
+do little at small $N$. On a fast GPU that floor is a large part of the time over much of the sweep.
+On an Apple M4 Pro, Barnes-Hut takes 0.6 ms at 1,024 bodies and only three to five times that at
+16,384. A slope fitted through every point then measures the floor, not the algorithm: it came out at
+0.7 for Barnes-Hut, against a prediction of about 1.1. So the two time slopes are fitted only over the
+sizes whose median is at least four times the floor and at least 1 ms, and the floor is subtracted
+first. The floor is estimated as the time at the smallest $N$. That is an upper bound, since it
+includes that $N$'s own work. Requiring four times the floor keeps the floor below a quarter of every
+fitted time, so a rough estimate barely moves the slope. With fewer than three such sizes, or an
+interval wider than ±0.5 (too wide to tell $N \log N$ from $N^2$), the verdict is *undetermined*, and
+the note gives the slope over all sizes for contrast. On a fast GPU, choose **Largest N** 262,144
+(Barnes-Hut to 262,144, brute force to 65,536) so that enough sizes rise clear of the floor. The floor
+itself is reported as its own line, with the Barnes-Hut floor divided by its 31 dispatches.
+
+**Uncertainty.** The force errors and interaction counts are deterministic: for one set of bodies, their
+interval measures how far the points bend away from a straight line, not noise. The timings carry real
+noise, which shows as each point's interquartile range. Read the crossover from points whose ranges do
+not overlap; the table says when they do.
+
+**What a disagreement means.** If the θ slope is well below 2, something other than the multipole
+truncation sets the error: a precision floor, or a fault in the tree. If a time slope is still below
+its prediction after the floor correction, a cost that grows slowly with $N$ (a GPU that is not yet full
+at the smallest fitted size) is left; a larger **Largest N** decides. A slope in the energy test that falls short of 2 points to a floor at small $\Delta t$. None of these
+is a ranking of devices: one device, one browser, one run.
+
 ## Why it maps well — or poorly — to a GPU
 
 **Brute force maps very well.** The work is uniform, the inner loop has no branches (the self-interaction
@@ -229,7 +282,9 @@ of which (the scans, the final reductions) run as a single workgroup.
 - Load **Cold collapse** with softening 0.005, then 0.1. The collapse at $t \approx \pi$ is the
   hardest moment for a fixed step, and the energy readout shows it.
 - Run [Barnes-Hut vs brute force](#nbody/measure) to find the crossover $N$ on your GPU. Is it above
-  or below the CI value? The tree-build share column shows how much of Barnes-Hut is fixed overhead.
+  or below the CI value? The tree-build share column shows how much of Barnes-Hut is fixed overhead,
+  and the fixed-cost line how large that overhead is. On a fast GPU, run it again with **Largest N**
+  262,144 and compare the two slopes.
 - Run [time step vs energy error](#nbody/measure) with brute force and then Barnes-Hut. The first
   should fall about 4× per halving of $\Delta t$; the second should flatten at the tree's force error.
 - Set the time step to 0.02 in [Explore](#nbody) with the Galaxy collision, then to 0.005. The

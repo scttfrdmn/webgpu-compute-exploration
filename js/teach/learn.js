@@ -5,6 +5,7 @@
 
 import { TRACKS, EXAMPLES } from './path.js';
 import { formatRoute } from './routes.js';
+import { renderFlagshipPointer } from './flagships.js';
 
 const CATALOG = 'index.html';
 const VIEWS = [['explore', 'Explore'], ['understand', 'Understand'], ['measure', 'Measure']];
@@ -127,4 +128,6 @@ export function renderLearningPath(root, tracks = TRACKS) {
 if (typeof document !== 'undefined') {
     const root = document.getElementById('learning-path');
     if (root) renderLearningPath(root);
+    const pointer = document.getElementById('flagship-pointer');
+    if (pointer) renderFlagshipPointer(pointer);
 }

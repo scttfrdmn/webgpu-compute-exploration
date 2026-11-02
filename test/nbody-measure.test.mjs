@@ -9,12 +9,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     generateBodies, measureForces, measureEnergyDrift, wgslModules, WG, REDUCE_TILE, RADIX_TILE, RADIX_PASSES,
-    MAX_BH, MAX_BRUTE, MAX_MEASURE_STEPS,
+    MAX_BH, MAX_BRUTE, MEASURE_MAX_BRUTE, MAX_MEASURE_STEPS,
 } from '../js/examples/nbody.js';
 import { directForces, directForcesAt } from '../js/refs/nbody.js';
 import experiments, {
     BH_MAX_N, BRUTE_MAX_N, THETAS, ERROR_COUNTS, SCALING_COUNTS, DTS, DRIFT_TIME, DRIFT_COUNTS, SAMPLE, sampleTargets,
+    PROTOCOL, REPLICA_MEDIANS, REPLICA_FACTOR, SOFTENING, SEED, DRIFT_BOUNDS,
+    SCALING_LIMITS, SCALING_DEFAULT_MAX, scalingCounts, scalingLimits, BH_DISPATCHES,
 } from '../js/teach/experiments/nbody.js';
+import { buildBH, forceReplica, relErrors } from './helpers/nbody-refs.mjs';
 import { runExperiment, makeContext } from '../js/teach/measure.js';
 import { structLayout, decodeStruct } from './helpers/wgsl-layout.mjs';
 import { mockDevice } from './helpers/mock-gpu.mjs';
@@ -75,6 +78,75 @@ test('measureForces on a mock device: SimParams / RadixParams bytes, buffer size
     assert.equal(brute.interactionsPerBody, n - 1);
     assert.equal(brute.accel, undefined);
     assert.deepEqual(Object.keys(brute.passes), ['force']);
+
+    // Wall-clock phases (js/phase-clock.js): all four, non-negative, dispatch = the evaluation's wall time
+    for (const res of [r, brute]) {
+        assert.deepEqual(Object.keys(res.phases).sort(), ['compile', 'dispatch', 'readback', 'upload']);
+        for (const v of Object.values(res.phases)) assert.ok(v >= 0);
+        assert.equal(res.phases.dispatch, res.wallMs);
+    }
+});
+
+test('REPLICA_MEDIANS are the CPU replica of cs_bh_force on the experiment\'s bodies and targets', (t) => {
+    for (const [config, medians] of Object.entries(REPLICA_MEDIANS)) {
+        const [preset, nText] = config.split('/');
+        const n = Number(nText);
+        assert.ok(ERROR_COUNTS.includes(n));
+        const { positions } = generateBodies(preset, n, SOFTENING, SEED);
+        const bh = buildBH(positions, n);
+        const targets = sampleTargets(n);
+        const ref = directForcesAt(positions, n, SOFTENING * SOFTENING, targets);
+        const got = THETAS.map(theta => {
+            const r = forceReplica(positions, bh.vals, bh, theta, SOFTENING * SOFTENING);
+            const acc = new Float64Array(3 * targets.length);
+            targets.forEach((i, k) => { for (let c = 0; c < 3; c++) acc[3 * k + c] = r.acc[3 * i + c]; });
+            return relErrors(acc, ref.acc, targets.length).median;
+        });
+        t.diagnostic(`${config}: ${got.map(v => v.toExponential(2)).join(' ')}`);
+        got.forEach((v, i) => assert.ok(Math.abs(v / medians[i] - 1) < 0.01, `${config} θ = ${THETAS[i]}: ${v} vs ${medians[i]}`));
+    }
+    assert.ok(REPLICA_FACTOR > 1 && REPLICA_FACTOR <= 2);
+});
+
+test('N-body verify(): pass, fail and not-checked on synthetic rows', () => {
+    const byId = Object.fromEntries(experiments.map(e => [e.id, e]));
+    const status = (checks) => checks.map(c => c.status);
+
+    // theta-error: rows at exactly the replica medians pass; a 3× error fails that θ; a non-growing step fails
+    const settings = { n: 4096, preset: 'plummer' };
+    const good = THETAS.map((theta, i) => ({ theta, median: REPLICA_MEDIANS['plummer/4096'][i] }));
+    let checks = byId['theta-error'].verify(good, settings);
+    assert.equal(checks.length, THETAS.length + 1);
+    assert.ok(checks.every(c => c.status === 'pass'), JSON.stringify(checks));
+    const bad = good.map((r, i) => (i === 2 ? { ...r, median: 3 * r.median } : r));
+    checks = byId['theta-error'].verify(bad, settings);
+    assert.equal(checks[2].status, 'fail');
+    assert.equal(checks[THETAS.length].status, 'fail', 'median falls from θ = 0.5 to 0.7');
+    assert.equal(checks[THETAS.length].value, 1);
+    // a partial run: missing θ are not checked, not failed
+    checks = byId['theta-error'].verify(good.slice(0, 1), settings);
+    assert.deepEqual(status(checks), ['pass', ...Array(THETAS.length - 1).fill('not-checked'), 'not-checked']);
+    // a config without replica values
+    assert.ok(byId['theta-error'].verify(good, { n: 1234, preset: 'plummer' }).slice(0, THETAS.length).every(c => c.status === 'not-checked'));
+
+    // energy-drift, brute force: CI values pass; a rising error and an out-of-bound value fail
+    const ci = [3.4e-5, 5.5e-6, 1.3e-6, 3.0e-7].map((maxDrift, i) => ({ dt: DTS[i], maxDrift }));
+    checks = byId['energy-drift'].verify(ci, { mode: 'brute' });
+    assert.equal(checks.length, DTS.length + 2);
+    assert.ok(checks.every(c => c.status === 'pass'), JSON.stringify(checks));
+    assert.ok(Math.abs(checks[DTS.length + 1].value - Math.log2(5.5 / 1.3)) < 1e-12);
+    const rising = ci.map((r, i) => (i === 3 ? { ...r, maxDrift: 2 * DRIFT_BOUNDS.brute } : r));
+    checks = byId['energy-drift'].verify(rising, { mode: 'brute' });
+    assert.equal(checks[3].status, 'fail');
+    assert.equal(checks[DTS.length].status, 'fail');
+    // Barnes-Hut: a flat floor is fine (no monotonicity or order check), only the bound
+    const floor = DTS.map(dt => ({ dt, maxDrift: 6.6e-4 }));
+    checks = byId['energy-drift'].verify(floor, { mode: 'bh' });
+    assert.deepEqual(status(checks), Array(DTS.length).fill('pass'));
+    assert.equal(byId['energy-drift'].verify([{ dt: 0.04, maxDrift: 0.02 }], { mode: 'bh' })[0].status, 'fail');
+
+    // scaling: no verify (the record says not-checked)
+    assert.equal(byId.scaling.verify, undefined);
 });
 
 test('compute-only API enforces the caps', async () => {
@@ -82,7 +154,7 @@ test('compute-only API enforces the caps', async () => {
     const bodies = (n) => new Float32Array(4 * n);
     await assert.rejects(measureForces({ device }, { positions: bodies(1) }), RangeError);
     await assert.rejects(measureForces({ device }, { positions: bodies(MAX_BH + 1) }), RangeError);
-    await assert.rejects(measureForces({ device }, { positions: bodies(MAX_BRUTE + 1), mode: 'brute' }), RangeError);
+    await assert.rejects(measureForces({ device }, { positions: bodies(MEASURE_MAX_BRUTE + 1), mode: 'brute' }), RangeError);
     await assert.rejects(measureForces({ device }, { positions: bodies(1024), mode: 'direct' }), RangeError);
     await assert.rejects(measureForces({ device }, { positions: bodies(1024), theta: 0 }), RangeError);
     await assert.rejects(measureEnergyDrift({ device }, { positions: bodies(1024), velocities: bodies(1024), steps: MAX_MEASURE_STEPS + 1 }), RangeError);
@@ -91,6 +163,14 @@ test('compute-only API enforces the caps', async () => {
     const r = await measureForces({ device }, { positions: bodies(1024), warmup: 50, repeats: 50, accel: false });
     assert.equal(simParamsWrites(device).length, 20);
     assert.equal(r.n, 1024);
+    assert.equal(r.dispatches, BH_DISPATCHES, 'the per-dispatch floor of the scaling experiment divides by this');
+    // brute force above Explore's MAX_BRUTE stays brute force in the compute-only API (one dispatch), up to MEASURE_MAX_BRUTE
+    assert.ok(MEASURE_MAX_BRUTE > MAX_BRUTE && MEASURE_MAX_BRUTE <= MAX_BH);
+    const big = await measureForces({ device: mockDevice() }, { positions: bodies(MEASURE_MAX_BRUTE), mode: 'brute', warmup: 0, accel: false });
+    assert.deepEqual([big.dispatches, Object.keys(big.passes), big.interactionsPerBody], [1, ['force'], MEASURE_MAX_BRUTE - 1]);
+    // the brute-force shader's tile cap covers MEASURE_MAX_BRUTE
+    const brute = wgslModules().find(m => /cs_brute_force/.test(m.code));
+    assert.match(brute.code, new RegExp(`const MAX_TILES: u32 = ${MEASURE_MAX_BRUTE / WG}u;`));
 });
 
 test('measureEnergyDrift on a mock device: dt in SimParams, samples at even steps, between() after each, cancel', async () => {
@@ -133,7 +213,13 @@ test('directForcesAt equals the rows of directForces', () => {
 
 test('experiment sweeps stay within the caps', () => {
     assert.ok(BH_MAX_N <= 65536 && BRUTE_MAX_N <= 16384 && BH_MAX_N <= MAX_BH && BRUTE_MAX_N <= MAX_BRUTE);
-    assert.ok([...ERROR_COUNTS, ...SCALING_COUNTS].every(n => n <= BH_MAX_N));
+    assert.ok(ERROR_COUNTS.every(n => n <= BH_MAX_N));
+    // scaling: the default Largest N keeps the original sweep; the larger option stays within the example's caps
+    assert.deepEqual(scalingLimits(SCALING_DEFAULT_MAX), { bh: BH_MAX_N, brute: BRUTE_MAX_N });
+    assert.deepEqual(scalingLimits(undefined), scalingLimits(SCALING_DEFAULT_MAX));
+    assert.deepEqual(scalingCounts(SCALING_DEFAULT_MAX), [1024, 2048, 4096, 8192, 16384, 32768, 65536]);
+    for (const l of Object.values(SCALING_LIMITS)) assert.ok(l.bh <= MAX_BH && l.brute <= MEASURE_MAX_BRUTE && l.brute <= l.bh);
+    assert.ok(SCALING_COUNTS.every(n => n <= MAX_BH));
     assert.ok(DRIFT_COUNTS.every(n => n <= BRUTE_MAX_N));
     assert.ok(THETAS.every(t => t >= 0.3 && t <= 1.2));
     assert.ok(DTS.every(dt => Math.round(DRIFT_TIME / dt) <= 400), 'at most 400 leapfrog steps per run');
@@ -141,7 +227,8 @@ test('experiment sweeps stay within the caps', () => {
     for (const e of experiments) {
         assert.ok(e.budgetMs <= 20000, `${e.id}: budget ≤ 20 s`);
         for (const s of e.settings ?? []) {
-            for (const o of s.options) if (typeof o.value === 'number') assert.ok(o.value <= BH_MAX_N, `${e.id}/${s.key}`);
+            const cap = e.id === 'scaling' && s.key === 'maxN' ? MAX_BH : BH_MAX_N;
+            for (const o of s.options) if (typeof o.value === 'number') assert.ok(o.value <= cap, `${e.id}/${s.key}`);
         }
     }
 });
@@ -151,7 +238,8 @@ test('experiments run on a mock device: one row per sweep value, declared column
     const cases = [
         ['theta-error', { n: 16384, preset: 'spiral' }, THETAS.length],
         ['theta-error', { n: 4096, preset: 'plummer' }, THETAS.length],
-        ['scaling', { preset: 'plummer' }, SCALING_COUNTS.length],
+        ['scaling', { preset: 'plummer', maxN: 65536 }, 7],
+        ['scaling', { preset: 'spiral', maxN: 262144 }, 9],
         ['energy-drift', { n: 4096, mode: 'brute', preset: 'plummer' }, DTS.length],
         ['energy-drift', { n: 2048, mode: 'bh', preset: 'spiral' }, DTS.length],
     ];
@@ -163,14 +251,31 @@ test('experiments run on a mock device: one row per sweep value, declared column
         const rows = await runExperiment(experiment, settings, ctx);
         t.diagnostic(`${id} ${JSON.stringify(settings)}: ${rows.length} rows in ${(performance.now() - t0).toFixed(0)} ms on the mock`);
         assert.equal(rows.length, expected, `${id}: rows`);
+        // row keys = the columns, plus <key>Lo / <key>Hi (the protocol's spread) for some of them
+        const allowed = new Set(experiment.columns.flatMap(c => [c.key, `${c.key}Lo`, `${c.key}Hi`]));
         for (const row of rows) {
-            assert.deepEqual(Object.keys(row).sort(), experiment.columns.map(c => c.key).sort(), `${id}: row keys = columns`);
+            for (const c of experiment.columns) assert.ok(c.key in row, `${id}: row has column ${c.key}`);
+            for (const k of Object.keys(row)) assert.ok(allowed.has(k), `${id}: unexpected row key ${k}`);
+        }
+        if (id !== 'energy-drift') {
+            assert.equal(ctx.measured.calls > 0 && ctx.measured.repeats, PROTOCOL.repeats, `${id}: uses ctx.measure`);
+            assert.equal(ctx.measured.warmup, PROTOCOL.warmup);
+            const key = id === 'scaling' ? 'bhWall' : 'wallMs';
+            for (const row of rows) assert.ok(row[`${key}Lo`] <= row[key] && row[key] <= row[`${key}Hi`], `${id}: q1 ≤ median ≤ q3`);
+        } else {
+            assert.equal(ctx.measured.calls, 0, 'energy-drift reports single runs');
         }
         const counts = simParamsWrites(device).map(s => s.count);
-        assert.ok(counts.length > 0 && Math.max(...counts) <= BH_MAX_N, `${id}: N ≤ ${BH_MAX_N}`);
+        const limits = id === 'scaling' ? scalingLimits(settings.maxN) : { bh: BH_MAX_N, brute: BRUTE_MAX_N };
+        assert.ok(counts.length > 0 && Math.max(...counts) <= limits.bh, `${id}: N ≤ ${limits.bh}`);
         if (id === 'scaling') {
-            assert.deepEqual(rows.map(r => r.n), SCALING_COUNTS);
-            for (const r of rows) assert.equal(r.bruteWall === null, r.n > BRUTE_MAX_N, `brute force only up to ${BRUTE_MAX_N}`);
+            assert.deepEqual(rows.map(r => r.n), scalingCounts(settings.maxN));
+            for (const r of rows) assert.equal(r.bruteWall === null, r.n > limits.brute, `brute force only up to ${limits.brute}`);
+            for (const r of rows) for (const k of ['compileMs', 'uploadMs', 'readbackMs']) assert.ok(r[k] >= 0, `phase ${k}`);
+            // 1 warm-up + 5 repeats per mode and N, one SimParams write each
+            const ns = scalingCounts(settings.maxN);
+            const evaluations = ns.length * 6 + ns.filter(n => n <= limits.brute).length * 6;
+            assert.equal(simParamsWrites(device).length, evaluations);
         }
         if (id === 'energy-drift') {
             assert.deepEqual(rows.map(r => r.steps), DTS.map(dt => Math.round(DRIFT_TIME / dt)));

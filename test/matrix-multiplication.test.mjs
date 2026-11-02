@@ -86,3 +86,71 @@ test('non-square 37x23 * 23x19 exercises row/col mapping and bounds', (t) => {
     assert.ok(out.every(Number.isFinite));
     assert.ok(maxAbs < 1e-5, 'f32 dot products of length 23 with |terms| <= 1');
 });
+
+// ---- Tiled kernel (`tiled` module, Measure tab) -----------------------------------------------------------
+// Replica of the tiled main(): 16 × 16 workgroups over ⌈K/16⌉ × ⌈M/16⌉; thread (lx, ly) of workgroup (wx, wy)
+// owns row = 16·wy + ly, col = 16·wx + lx. Per phase t every thread stores one zero-padded element of A and of
+// B into the tiles; after the (simulated) barrier each thread does 16 multiply-adds from the tiles in f32.
+const T = 16;
+function tiledReplica(A, B, M, N, K) {
+    const out = new Float32Array(M * K).fill(NaN);
+    let writes = 0;
+    const wgx = Math.ceil(K / T), wgy = Math.ceil(M / T), phases = Math.ceil(N / T);
+    for (let wy = 0; wy < wgy; wy++) for (let wx = 0; wx < wgx; wx++) {
+        const sum = new Float32Array(T * T);   // one accumulator per thread, index ly·T + lx
+        const tileA = new Float32Array(T * T), tileB = new Float32Array(T * T);
+        for (let t = 0; t < phases; t++) {
+            for (let ly = 0; ly < T; ly++) for (let lx = 0; lx < T; lx++) {   // every thread loads, then the barrier
+                const row = wy * T + ly, col = wx * T + lx, ka = t * T + lx, kb = t * T + ly;
+                tileA[ly * T + lx] = row < M && ka < N ? A[row * N + ka] : 0;
+                tileB[ly * T + lx] = kb < N && col < K ? B[kb * K + col] : 0;
+            }
+            for (let ly = 0; ly < T; ly++) for (let lx = 0; lx < T; lx++) {
+                let s = sum[ly * T + lx];
+                for (let kk = 0; kk < T; kk++) s = Math.fround(s + Math.fround(tileA[ly * T + kk] * tileB[kk * T + lx]));
+                sum[ly * T + lx] = s;
+            }
+        }
+        for (let ly = 0; ly < T; ly++) for (let lx = 0; lx < T; lx++) {
+            const row = wy * T + ly, col = wx * T + lx;
+            if (row < M && col < K) { out[row * K + col] = sum[ly * T + lx]; writes++; }
+        }
+    }
+    return { out, writes };
+}
+
+test('tiled module: 16 × 16 tiles in workgroup memory, two barriers, same uniform layout', (t) => {
+    const mods = wgslModules();
+    assert.deepEqual(mods.map(m => m.name), ['compute', 'tiled'], 'naive stays first (test/gpu/basic.gpu.test.mjs uses index 0)');
+    const code = mods[1].code;
+    assert.match(code, /const T = 16u;/);
+    assert.match(code, /@workgroup_size\(16, 16\)/);
+    assert.equal((code.match(/var<workgroup> tile[AB]: array<array<f32, 16>, 16>;/g) ?? []).length, 2);
+    assert.equal((code.match(/workgroupBarrier\(\)/g) ?? []).length, 2);
+    assert.match(code, /var<uniform> dimensions: vec3<u32>; \/\/ M, N, K/);
+    const bytes = 2 * T * T * 4;
+    t.diagnostic(`workgroup memory ${bytes} bytes (WebGPU guarantees 16,384)`);
+    assert.ok(bytes <= 16384);
+    // No barrier under a non-uniform branch: the `if` blocks only guard loads and the final store
+    for (const block of code.matchAll(/if \(([^)]*)\) \{([^}]*)\}/g)) assert.doesNotMatch(block[2], /Barrier/);
+});
+
+test('tiled replica equals the naive replica bit for bit and writes every element once (non-square, ragged edges)', (t) => {
+    for (const [M, N, K] of [[37, 23, 19], [100, 70, 45], [16, 16, 16], [1, 33, 2], [64, 64, 64]]) {
+        const rand = lcg(M * 7 + N * 3 + K);
+        const A = Float32Array.from({ length: M * N }, () => rand() * 2 - 1);
+        const B = Float32Array.from({ length: N * K }, () => rand() * 2 - 1);
+        const tiled = tiledReplica(A, B, M, N, K);
+        const naive = replica(A, B, M, N, K);
+        assert.equal(tiled.writes, M * K, `${M}x${N}x${K}: every element written once`);
+        const ref = reference(A, B, M, N, K);
+        let same = 0, maxAbs = 0;
+        for (let i = 0; i < M * K; i++) {
+            if (Object.is(tiled.out[i], naive.out[i])) same++;
+            maxAbs = Math.max(maxAbs, Math.abs(tiled.out[i] - ref[i]));
+        }
+        t.diagnostic(`${M}x${N}*${N}x${K}: ${same}/${M * K} identical to naive, max|err| vs float64 ${maxAbs.toExponential(2)}`);
+        assert.equal(same, M * K, 'same summation order k = 0 … N−1; zero padding adds +0');
+        assert.ok(maxAbs < 1e-5);
+    }
+});

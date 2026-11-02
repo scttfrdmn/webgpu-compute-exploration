@@ -8,7 +8,7 @@ const runButtons = (page) => page.locator('.experiment button.primary');
 
 async function runToEnd(card, timeout = 60_000) {
     await card.locator('button.primary').click();
-    await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps\.$/, { timeout });
+    await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps in [\d.]+ s\.$/, { timeout });
 }
 
 test('vector addition: Size vs bandwidth produces rows and charts', async ({ page }) => {
@@ -46,7 +46,7 @@ test('switching tabs during a run leaves the run and the page working', async ({
     await tab(page, 'vector-addition', 'understand').click();
     await tab(page, 'vector-addition', 'measure').click();
     await tab(page, 'game-of-life', 'understand').click();
-    await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps\.$/, { timeout: 60_000 });
+    await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps in [\d.]+ s\.$/, { timeout: 60_000 });
     for (const button of await runButtons(page).all()) await expect(button).toBeEnabled();
     expect(await card.locator('.experiment-table tbody tr').count()).toBeGreaterThanOrEqual(5);
     await expect(panel(page, 'vector-addition', 'understand').locator('article.understand')).toBeHidden();
@@ -77,7 +77,7 @@ test.describe('without timestamp-query', () => {
         await page.locator('#noise-cost-side').selectOption('512');
         await card.locator('button.primary').click();
         // On a slow software GPU the run may stop at its 20 s budget; the charts only need some rows
-        await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps\.$|time budget after \d+ steps\.$/, { timeout: 60_000 });
+        await expect(card.locator('.experiment-status')).toHaveText(/^Done: \d+ steps in [\d.]+ s\.$|time budget \(\d+ steps? completed\)\.$/, { timeout: 60_000 });
         const figures = card.locator('.experiment-charts figure.chart');
         await expect(figures.first().locator('.chart-empty')).toContainText('timestamp-query');
         await expect(figures.nth(1).locator('svg.chart-svg')).toHaveCount(1);   // the wall-time chart still plots

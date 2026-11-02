@@ -6,16 +6,21 @@
 // NBodySimulation without a canvas, exactly as the Measure tab does in a browser. Checked against:
 //   forces: the float64 direct sum (js/refs/nbody.js) with the bounds of nbody.gpu.test.mjs;
 //   energy: E₀ = Σ ½ m v² + ½ Σ m φ in float64 from the same bodies; the drift stays small and shrinks with dt;
-//   experiments: every row has the declared columns, and the trends the Understand page describes hold.
+//   experiments: every row has the declared columns, the trends the Understand page describes hold, and the
+//   record's measured-vs-predicted entries exist (θ slope, interactions and energy order must agree here).
 // The printed numbers are the CI baselines quoted in the experiment file.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { device } from './harness.mjs';
 import { generateBodies, measureForces, measureEnergyDrift } from '../../js/examples/nbody.js';
-import { directForces, relErrors } from '../../js/refs/nbody.js';
-import experiments from '../../js/teach/experiments/nbody.js';
+import { directForces, directForcesAt, relErrors } from '../../js/refs/nbody.js';
+import experiments, { SCALING_LIMITS, sampleTargets } from '../../js/teach/experiments/nbody.js';
 import { makeTestContext } from '../../js/teach/measure.js';
+import { buildResultRecord, validateResultRecord, SCHEMA_PATH } from '../../js/teach/result-record.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 const gpuDevice = { device, timestamps: device.features.has('timestamp-query') };
 const EPS = 0.05;
@@ -86,11 +91,30 @@ test('measureEnergyDrift: E₀ matches the float64 energy; drift stays small (br
 // The Measure tab's ctx without the runner's wall budget (a software GPU is far slower than a visitor's)
 const testContext = () => makeTestContext(gpuDevice);
 
-async function runAll(experiment, settings) {
+const schema = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../..', SCHEMA_PATH), 'utf8'));
+
+// Runs an experiment and checks what the Measure tab would record: a schema-valid result record whose
+// verification is `expected` ('pass' for every check, or 'not-checked'), and q1 ≤ median ≤ q3 for every
+// column with a spread
+async function runAll(experiment, settings, t, expected = 'pass') {
     const rows = [];
+    const ctx = testContext();
     const t0 = performance.now();
-    for await (const row of experiment.run(testContext(), settings)) rows.push(row);
-    return { rows, seconds: (performance.now() - t0) / 1000 };
+    for await (const row of experiment.run(ctx, settings)) rows.push(row);
+    const seconds = (performance.now() - t0) / 1000;
+    const record = buildResultRecord({ exampleId: 'nbody', experiment, settings, rows, outcome: { status: 'done' },
+        measured: ctx.measured, gpuDevice, source: { version: 'ci', commit: 'local', url: null },
+        userAgent: 'node', budgetMs: experiment.budgetMs });
+    assert.deepEqual(validateResultRecord(record, schema).errors, [], 'record matches schema v1');
+    t?.diagnostic(`verify: ${record.verification.map(c => `${c.status} ${c.metric}${c.value === null ? '' : ` = ${c.value.toExponential(2)}`}`).join('; ')}`);
+    for (const c of record.verification) assert.equal(c.status, expected, `${c.metric}: ${c.value} (required ${c.tolerance})`);
+    for (const col of record.columns.filter(c => c.range)) {
+        for (const row of rows) {
+            if (row[col.key] === null) continue;
+            assert.ok(row[`${col.key}Lo`] <= row[col.key] && row[col.key] <= row[`${col.key}Hi`], `${col.key}: q1 ≤ median ≤ q3`);
+        }
+    }
+    return { rows, seconds, record, ctx };
 }
 
 const byId = Object.fromEntries(experiments.map(e => [e.id, e]));
@@ -99,10 +123,24 @@ const show = (rows, keys) => rows.map(r => keys.map(k => {
     return typeof v === 'number' ? (Number.isInteger(v) ? v : v.toExponential(2)) : String(v);
 }).join(' ')).join('; ');
 
+// The record's measured-vs-predicted entries (#75), printed for the baselines; returns the verdicts
+function interpretation(record, t, count) {
+    assert.equal(record.interpretation?.length, count, 'interpretation entries');
+    for (const c of record.interpretation) {
+        assert.ok(c.claim && c.predicted && c.measured && [true, false, null].includes(c.agrees), JSON.stringify(c));
+        t.diagnostic(`interpret: ${c.claim}: measured ${c.measured}; ${c.agrees === true ? 'agrees' : c.agrees === false ? 'DISAGREES' : 'undetermined'}`
+            + ` (predicted ${c.predicted})`);
+    }
+    return record.interpretation.map(c => c.agrees);
+}
+
 test('experiment theta-error (Plummer N = 4,096): error grows ~θ², interactions fall', async (t) => {
     const e = byId['theta-error'];
-    const { rows, seconds } = await runAll(e, { n: 4096, preset: 'plummer' });
-    t.diagnostic(`${seconds.toFixed(1)} s: θ median p99 interactions: ${show(rows, ['theta', 'median', 'p99', 'interactions'])}`);
+    const { rows, seconds, record } = await runAll(e, { n: 4096, preset: 'plummer' }, t);
+    t.diagnostic(`${seconds.toFixed(1)} s: θ median p99 interactions: ${show(rows, ['theta', 'median', 'p99', 'interactions'])}; `
+        + `wall ms median (q1–q3): ${rows.map(r => `${r.wallMs.toFixed(1)} (${r.wallMsLo.toFixed(1)}–${r.wallMsHi.toFixed(1)})`).join(' ')}`);
+    assert.deepEqual([record.protocol.warmup, record.protocol.repeats, record.protocol.statistic, record.protocol.spread], [1, 5, 'median', 'iqr']);
+    assert.equal(record.verification.length, 7);
     assert.equal(rows.length, 6);
     for (const row of rows) for (const c of e.columns) assert.ok(c.key in row, `column ${c.key}`);
     for (let i = 1; i < rows.length; i++) {
@@ -114,11 +152,15 @@ test('experiment theta-error (Plummer N = 4,096): error grows ~θ², interaction
     // θ² from 0.3 to 1.2 would be 16×; allow a generous range around that
     const ratio = rows[5].median / rows[0].median;
     assert.ok(ratio > 6 && ratio < 40, `median(1.2)/median(0.3) = ${ratio}`);
+    // measured vs predicted: θ² slope, interactions falling no faster than θ⁻³, the replica reproduced
+    assert.deepEqual(interpretation(record, t, 3), [true, true, true]);
 });
 
 test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks with dt', async (t) => {
     const e = byId['energy-drift'];
-    const { rows, seconds } = await runAll(e, { n: 2048, mode: 'brute', preset: 'plummer' });
+    const { rows, seconds, record } = await runAll(e, { n: 2048, mode: 'brute', preset: 'plummer' }, t);
+    assert.equal(record.verification.length, 6);
+    assert.equal(record.protocol.statistic, 'as-reported');
     t.diagnostic(`${seconds.toFixed(1)} s: dt steps max|dE/E0| final: ${show(rows, ['dt', 'steps', 'maxDrift', 'finalDrift'])}`);
     assert.equal(rows.length, 4);
     for (const row of rows) for (const c of e.columns) assert.ok(c.key in row, `column ${c.key}`);
@@ -130,23 +172,68 @@ test('experiment energy-drift (brute force, Plummer N = 2,048): error shrinks wi
         const r = rows[i - 1].maxDrift / rows[i].maxDrift;
         assert.ok(r > 2 && r < 8, `dt ${rows[i - 1].dt} → ${rows[i].dt}: ratio ${r}`);
     }
+    assert.deepEqual(interpretation(record, t, 1), [true], 'second order');
 
     // Barnes-Hut at θ = 0.5: the tree's force/potential error sets a floor that a smaller dt cannot remove
-    const bh = await runAll(e, { n: 2048, mode: 'bh', preset: 'plummer' });
+    const bh = await runAll(e, { n: 2048, mode: 'bh', preset: 'plummer' }, t);
     t.diagnostic(`BH ${bh.seconds.toFixed(1)} s: dt steps max|dE/E0| final: ${show(bh.rows, ['dt', 'steps', 'maxDrift', 'finalDrift'])}`);
     assert.equal(bh.rows.length, 4);
     assert.ok(bh.rows.every(r => r.maxDrift < 1e-2));
     assert.ok(bh.rows[3].maxDrift > 10 * rows[3].maxDrift, 'Barnes-Hut floor above the brute-force error at dt = 0.005');
+    assert.deepEqual(interpretation(bh.record, t, 2), [true, true], 'flat floor of the predicted size');
 });
 
 test('experiment scaling (Plummer): rows up to the caps, brute force stops at 16,384', async (t) => {
     const e = byId['scaling'];
-    const { rows, seconds } = await runAll(e, { preset: 'plummer' });
+    const { rows, seconds, record } = await runAll(e, { preset: 'plummer' }, t, 'not-checked');
     t.diagnostic(`${seconds.toFixed(1)} s: N bhWall bruteWall interactions: ${show(rows, ['n', 'bhWall', 'bruteWall', 'interactions'])}`);
+    t.diagnostic(`BH wall (q1–q3): ${rows.map(r => `${r.bhWallLo.toFixed(1)}–${r.bhWallHi.toFixed(1)}`).join(' ')}; `
+        + `phases compile/upload/readback: ${show(rows, ['compileMs', 'uploadMs', 'readbackMs'])}`);
+    assert.deepEqual(record.columns.filter(c => c.range).map(c => c.key),
+        ['bhGpu', 'bruteGpu', 'bhWall', 'bruteWall', 'compileMs', 'uploadMs', 'readbackMs'].filter(k => rows.some(r => r[`${k}Lo`] !== null)));
+    for (const row of rows) for (const k of ['compileMs', 'uploadMs', 'readbackMs']) assert.ok(row[k] >= 0, `${k} at N = ${row.n}`);
     assert.deepEqual(rows.map(r => r.n), [1024, 2048, 4096, 8192, 16384, 32768, 65536]);
     for (const row of rows) {
         for (const c of e.columns) assert.ok(c.key in row, `column ${c.key}`);
         assert.ok(row.bhWall > 0 && row.interactions > 0 && row.interactions < row.n - 1);
         assert.equal(row.bruteWall === null, row.n > 16384);
+    }
+    // Timing verdicts depend on the device and are printed, not asserted; the entries must exist, and on the
+    // software GPU the crossover falls inside the sweep
+    const verdicts = interpretation(record, t, 6);
+    assert.equal(verdicts[3], true, 'crossover bracketed inside the sweep');
+    t.diagnostic(`tree share: ${show(rows, ['n', 'treeShare'])}; gpu ms: ${show(rows, ['n', 'bhGpu', 'bruteGpu'])}`);
+});
+
+// The scaling experiment's Largest N = 262,144 option (#83, #85) reaches sizes the default sweep does not: Barnes-Hut at
+// 262,144 and brute force at 65,536 (above Explore's 32,768, allowed by the compute-only API's MEASURE_MAX_BRUTE). The
+// whole sweep would take minutes on this software GPU, so each new size runs once here, checked on SAMPLE targets
+// against the float64 direct sum (the same bounds as at 4,096 for Barnes-Hut; f32 sums of 65,536 terms for brute force).
+test('measureForces at the Largest N = 262,144 sizes: Barnes-Hut 262,144 and brute force 65,536 vs float64 direct sum', async (t) => {
+    const { bh: bhN, brute: bruteN } = SCALING_LIMITS[262144];
+    assert.deepEqual([bhN, bruteN], [262144, 65536]);
+    for (const [mode, n] of [['bh', bhN], ['brute', bruteN]]) {
+        const { positions } = generateBodies('plummer', n, EPS, 5);
+        const targets = sampleTargets(n);
+        const t0 = performance.now();
+        const r = await measureForces(gpuDevice, { positions, mode, theta: 0.5, softening: EPS, warmup: 0, repeats: 1 });
+        const seconds = (performance.now() - t0) / 1000;
+        const ref = directForcesAt(positions, n, EPS * EPS, targets);
+        const acc = new Float64Array(3 * targets.length);
+        targets.forEach((i, k) => { for (let c = 0; c < 3; c++) acc[3 * k + c] = r.accel[4 * i + c]; });
+        const e = relErrors(acc, ref.acc, targets.length);
+        t.diagnostic(`${mode} N = ${n}: ${seconds.toFixed(1)} s (wall ${r.wallMs.toFixed(0)} ms per evaluation), median `
+            + `${e.median.toExponential(2)}, p99 ${e.p99.toExponential(2)}, max ${e.max.toExponential(2)}; interactions/body `
+            + `${r.interactionsPerBody.toFixed(1)}; dispatches ${r.dispatches}`);
+        assert.ok(r.accel.every(Number.isFinite));
+        if (mode === 'bh') {
+            assert.equal(r.dispatches, 31);
+            assert.ok(e.median < 7e-3 && e.p99 < 7e-2, `θ=0.5 median ${e.median} p99 ${e.p99}`);
+            assert.ok(r.interactionsPerBody > 100 && r.interactionsPerBody < n / 10);
+        } else {
+            assert.equal(r.dispatches, 1, 'brute force, not a silent fallback to Barnes-Hut');
+            assert.equal(r.interactionsPerBody, n - 1);
+            assert.ok(e.p99 < 1e-3 && e.median < 1e-4, `brute median ${e.median} p99 ${e.p99}`);
+        }
     }
 });

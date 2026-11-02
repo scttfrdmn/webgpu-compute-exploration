@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scttfrdmn.github.io/webgpu-compute-exploration/schema/validation-bundle.v1.json",
+  "title": "WebGPU Compute Exploration: physical-GPU validation bundle, version 1",
+  "description": "One run of the validation protocol (validate.html, VALIDATION_PLAN in js/teach/validation.js) in one browser on one device: the environment and one experiment result record (schema/experiment-result.v1.json) per plan entry that ran. Committed as data/validation/<environment>/<date>-<commit>.json and summarized by tools/validation-summary.mjs. Uses the same keyword subset as the record schema, plus $ref to the record schema, which js/teach/validation.js resolves before validating.",
+  "type": "object",
+  "required": [
+    "bundleVersion",
+    "plan",
+    "smoke",
+    "generatedAt",
+    "environment",
+    "records"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "bundleVersion": {
+      "const": 1
+    },
+    "plan": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "VALIDATION_PLAN.version the run followed"
+    },
+    "smoke": {
+      "type": "boolean",
+      "description": "true for the reduced CI plan (validate.html?smoke=1); such bundles are not part of the matrix"
+    },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO 8601 time the bundle was built"
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "id",
+        "browser",
+        "os",
+        "adapter",
+        "timestampQuery",
+        "userAgent",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Environment id from data/validation/matrix.json (\"unlisted\" if none was chosen)"
+        },
+        "browser": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "source"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "enum": [
+                "chrome",
+                "edge",
+                "safari",
+                "firefox",
+                "unknown"
+              ]
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "enum": [
+                "user-agent",
+                "client-hints",
+                "entered",
+                "unknown"
+              ],
+              "description": "Where the version came from"
+            }
+          }
+        },
+        "os": {
+          "type": "object",
+          "required": [
+            "name",
+            "version",
+            "source"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "enum": [
+                "macos",
+                "ios",
+                "windows",
+                "android",
+                "chromeos",
+                "linux",
+                "unknown"
+              ]
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "source": {
+              "enum": [
+                "client-hints",
+                "entered",
+                "unknown"
+              ],
+              "description": "Safari and Firefox freeze the macOS version in the user agent, so it is entered by hand there"
+            }
+          }
+        },
+        "architecture": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hardware": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Entered: Mac model and chip, e.g. \"MacBook Pro 14-inch, M3 Pro\""
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapter": {
+          "type": "object",
+          "required": [
+            "vendor",
+            "architecture",
+            "device",
+            "description",
+            "isFallbackAdapter"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "vendor": {
+              "type": "string"
+            },
+            "architecture": {
+              "type": "string"
+            },
+            "device": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "isFallbackAdapter": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "timestampQuery": {
+          "type": "object",
+          "required": [
+            "adapter",
+            "device"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "adapter": {
+              "type": "boolean",
+              "description": "The adapter offers timestamp-query"
+            },
+            "device": {
+              "type": "boolean",
+              "description": "The device was created with it (GPU times in the records)"
+            }
+          }
+        },
+        "userAgent": {
+          "type": "string"
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "version",
+            "commit",
+            "builtAt"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "commit": {
+              "type": "string",
+              "minLength": 1,
+              "description": "40-hex commit of the site, or \"local\""
+            },
+            "builtAt": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "experiment-result.v1.json"
+      }
+    }
+  }
+}
