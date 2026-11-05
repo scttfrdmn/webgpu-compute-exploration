@@ -5,8 +5,8 @@ abstract: "25 interactive WebGPU/WGSL compute examples, from basic parallel oper
 authors:
   - family-names: Friedman
     given-names: Scott
-version: 0.7.0
-date-released: 2026-11-02
+version: 0.8.0
+date-released: 2026-11-05
 license: MIT
 repository-code: "https://github.com/scttfrdmn/webgpu-compute-exploration"
 url: "https://scttfrdmn.github.io/webgpu-compute-exploration/"
