@@ -1,7 +1,10 @@
-// The guided learning path (learn.html): two ordered tracks through the 25 examples.
-// Pure data, rendered by js/teach/learn.js. test/learn-path.test.mjs checks that every example id is a
-// section in index.html, that every example appears in at least one track, and that every step has its
-// "why" and "try this" text. In `tryThis`, *text* marks an experiment or control name (rendered as <em>).
+// The guided learning path (learn.html), per visitor level (#94): at Advanced, two ordered tracks through
+// all 25 examples (TRACKS); at Intermediate, one core track through the main ideas; at Beginner, a short
+// visual sequence of examples that have a Beginner Understand page. Pure data, rendered by js/teach/learn.js.
+// test/learn-path.test.mjs checks that every example id is a section in index.html, that every example
+// appears in an Advanced track, that Beginner steps only use examples with Beginner pages, that the Beginner
+// and Intermediate text passes that level's reading rules (js/teach/readability.js), and that every *text*
+// in `tryThis` (an experiment or control name, rendered as <em>) is a label in index.html or an experiment.
 
 // Example numbers and titles, as in the <h3> of each section of index.html (the test checks they match)
 export const EXAMPLES = {
@@ -210,3 +213,153 @@ export const TRACKS = [
         ],
     },
 ];
+
+// Intermediate (high school): one track through the core ideas, mostly examples with Intermediate pages
+export const INTERMEDIATE_TRACKS = [
+    {
+        id: 'core',
+        title: 'Core ideas',
+        intro: 'One route through the main ideas of GPU computing, in order: threads that work alone, grids ' +
+            'where each cell reads its neighbours, particles and forces, sorting, random sampling and a ' +
+            'neural network. Each step uses the ideas of the steps before it.',
+        steps: [
+            {
+                title: 'One thread per answer',
+                examples: ['matrix-multiplication', 'wasm-mandelbrot'],
+                why: 'Start here. A GPU runs thousands of small threads at the same time. Here each thread ' +
+                    'works out one answer, one number of the product or one pixel of the picture, and never ' +
+                    'needs the result of another thread. The cost to watch is moving data: to the GPU, from its ' +
+                    'memory to the threads, and back.',
+                tryThis: 'In Matrix Multiplication, run *CPU vs naive GPU vs tiled GPU* on the Measure tab. ' +
+                    'When n doubles, does the time grow about eight times, as the n³ line says?',
+            },
+            {
+                title: 'Grids and neighbours',
+                examples: ['game-of-life', 'falling-sand'],
+                why: 'Now each thread reads the cells next to it. A cell of the Game of Life counts its eight ' +
+                    'neighbours, and a grain of sand looks at the cells below it. Threads must not change a cell ' +
+                    'that another thread is still reading: the Game of Life keeps two copies of the grid and ' +
+                    'swaps them, and Falling Sand gives each thread its own block of 2 by 2 cells.',
+                tryThis: 'In Falling Sand, pour *Water* onto the sand heap, then *Oil* on top. Which ends up ' +
+                    'where? Then run *What is conserved* in Measure.',
+            },
+            {
+                title: 'Waves and the time step',
+                examples: ['wave-equation'],
+                why: 'The same neighbour update, now with physics: each point of the water is pulled toward its ' +
+                    'neighbours, and that makes waves. The size of the time step matters. Past a limit, small ' +
+                    'errors grow at every step until the numbers blow up.',
+                tryThis: 'Set *Wave speed (C)* to 0.70, the top of the slider: nothing goes wrong. Then run ' +
+                    '*Courant number vs stability (CFL)* in Measure and see what happens just past 0.707.',
+            },
+            {
+                title: 'Particles and forces',
+                examples: ['boids', 'nbody'],
+                why: 'Leave the grid: now each thread moves one particle. A boid steers by the boids near it. A ' +
+                    'star is pulled by every other star, which is N² pairs, so N-Body groups far-away stars ' +
+                    'into one and builds a tree of groups at every step.',
+                tryThis: 'In N-Body, switch *Mode* to *Brute force* at 16,384 and then 32,768 bodies. Does the ' +
+                    'time per step go up by about four?',
+            },
+            {
+                title: 'Sorting in parallel',
+                examples: ['parallel-sort'],
+                why: 'Sorting looks like a job for one worker, but it can be split up. Bitonic sort compares ' +
+                    'fixed pairs of keys in stages, so every thread knows its partner ahead of time. Radix sort ' +
+                    'counts the keys digit by digit and sends each key straight to its place.',
+                tryThis: 'In Parallel Sorting, press *Run benchmark* with each *Algorithm* at 1,048,576 keys. ' +
+                    'Which one is fastest on your GPU?',
+            },
+            {
+                title: 'Random samples',
+                examples: ['path-tracer'],
+                why: 'Some answers are averages of many random tries. The path tracer follows one random path ' +
+                    'of light per pixel in each frame and keeps a running average. The noise in the picture is ' +
+                    'the error, and it shrinks slowly: four times the samples cut it in half.',
+                tryThis: 'In Path Tracer, run *Samples per pixel vs noise* on the Measure tab, once with each ' +
+                    '*Light sampling* choice. Which one starts with less noise?',
+            },
+            {
+                title: 'Learning from examples',
+                examples: ['mnist-train', 'mnist-recognize'],
+                why: 'A neural network puts the earlier ideas together. Its first layers slide small filters ' +
+                    'over the image, like a stencil on a grid, its last layer is a matrix product, and training ' +
+                    'adds up the errors over a batch of images. The GPU runs every part.',
+                tryThis: 'In MNIST: Train, press *Start* and watch the test accuracy after each epoch. Then press ' +
+                    '*Use in Recognize* and draw a digit in MNIST: Recognize.',
+            },
+        ],
+    },
+];
+
+// Beginner (middle school): a short visual sequence, only examples with a Beginner Understand page
+export const BEGINNER_TRACKS = [
+    {
+        id: 'first-look',
+        title: 'First look',
+        intro: 'Five pictures that move, in order. Each one shows a new thing a GPU is good at. Open the ' +
+            'example, try the one thing below, then read its Understand tab.',
+        steps: [
+            {
+                title: 'The same rule in every square',
+                examples: ['game-of-life'],
+                why: 'Start here. The picture is a grid of small squares. Each square looks at the eight ' +
+                    'squares around it and follows the same simple rule. The GPU gives every square its own ' +
+                    'small worker, and they all work at the same time.',
+                tryThis: 'Press *Glider*, then *Start*. Follow the little shape as it walks across the grid.',
+            },
+            {
+                title: 'Sand, water and fire',
+                examples: ['falling-sand'],
+                why: 'Now each square holds sand, water, oil or fire, and each one has its own rules. Sand ' +
+                    'falls, water flows to the side, and fire burns oil. The GPU still works on all the squares ' +
+                    'at once.',
+                tryThis: 'Press *Start*, pick *Water* and pour it onto the sand heap. Then pour *Oil* on top. ' +
+                    'Which one ends up on top?',
+            },
+            {
+                title: 'Ripples on a pond',
+                examples: ['wave-equation'],
+                why: 'Each point of the water moves up and down, pulled by the points next to it. That one ' +
+                    'rule is enough to make ripples spread out, bounce off walls and cross each other.',
+                tryThis: 'Load *Double slit* and press *Start*. Where the two waves cross, look for stripes of ' +
+                    'strong and weak waves.',
+            },
+            {
+                title: 'A flock of birds',
+                examples: ['boids'],
+                why: 'Now we leave the grid. Each bird, called a boid, looks at the boids near it. It steers to ' +
+                    'stay close, to fly the same way, and to not bump into them. No one leads, but flocks form ' +
+                    'all the same.',
+                tryThis: 'Press *Start* and watch the flocks form. Then press *Add Predator* and watch the ' +
+                    'others get out of its way.',
+            },
+            {
+                title: 'Stars and galaxies',
+                examples: ['nbody'],
+                why: 'Every star pulls on every other star. With so many stars, that is a huge number of pulls ' +
+                    'at each step. So the GPU takes a shortcut: a group of stars far away counts as one big star.',
+                tryThis: 'Pick *Galaxy collision* and press *Start*. Then set *Mode* to *Brute force*, which ' +
+                    'skips the shortcut, and see how much slower it gets.',
+            },
+        ],
+    },
+];
+
+// The tracks at each visitor level (Advanced: the two full tracks)
+export const TRACKS_BY_LEVEL = { beginner: BEGINNER_TRACKS, intermediate: INTERMEDIATE_TRACKS, advanced: TRACKS };
+
+export const tracksForLevel = (level) => TRACKS_BY_LEVEL[level] ?? TRACKS;
+
+// The page intro at the lower levels, rendered by learn.js (learn.html holds the Advanced one as static HTML)
+export const LEVEL_INTROS = {
+    beginner: 'Five examples to look at and play with, one after the other. Each step says why it comes next ' +
+        'and gives you one thing to try. The links open the example, and its Understand tab tells you how it ' +
+        'works in plain words.',
+    intermediate: 'One route through the main ideas of GPU computing, from threads that work alone to grids, ' +
+        'particles, sorting, random sampling and a neural network. Each step says why it comes next and gives ' +
+        "you one thing to try, with links to the example's Explore, Understand and Measure tabs.",
+};
+
+// At Beginner the reference investigations are not the place to start: this line points at the first step
+export const BEGINNER_START = 'New here? Start with step 1 below and go in order.';

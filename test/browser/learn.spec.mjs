@@ -19,6 +19,32 @@ test('learn.html#science opens the science track', async ({ page }) => {
     expect(await trackPanel(page, 'science').locator('li.step-card').count()).toBeGreaterThan(3);
 });
 
+test('each level has its own path, and the level menu re-renders it (#94)', async ({ page }) => {
+    const stepLinks = () => page.locator('.step-example-links a').evaluateAll(as => as.map(a => a.getAttribute('href')));
+    await page.goto('learn.html?level=beginner#gpu');
+    await expect(page.locator('#track-first-look-panel')).toBeVisible();
+    await expect(page.locator('#learning-path [role="tablist"]')).toHaveCount(0);
+    await expect(page.locator('section.flagship-pointer')).toBeHidden();
+    await expect(page.locator('#learn-start')).toBeVisible();
+    await expect(page.locator('#learn-intro strong')).toHaveCount(0);
+    expect((await stepLinks()).every(h => h.startsWith('index.html?level=beginner#'))).toBe(true);
+
+    await page.selectOption('#level-select', 'intermediate');
+    await expect(page.locator('#track-core-panel')).toBeVisible();
+    await expect(page.locator('#track-first-look-panel')).toHaveCount(0);
+    await expect(page.locator('#learn-start')).toBeHidden();
+    await expect(page.locator('section.flagship-pointer')).toBeVisible();
+    expect((await stepLinks()).every(h => h.startsWith('index.html?level=intermediate#'))).toBe(true);
+
+    await page.selectOption('#level-select', 'advanced');
+    await expectTrack(page, 'gpu');
+    await expect(page.locator('#learn-intro strong')).toHaveCount(2);
+    expect((await stepLinks()).every(h => /^index\.html#/.test(h))).toBe(true);
+    // the hash listeners act on the re-rendered tabs
+    await page.evaluate(() => { location.hash = '#science'; });
+    await expectTrack(page, 'science');
+});
+
 test('arrow keys, Home and End switch tracks', async ({ page }) => {
     await page.goto('learn.html');
     await expectTrack(page, 'gpu');
