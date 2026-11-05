@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Visitor levels (#89, #90): a Level menu on the catalog and the learning path — Beginner (middle school),
+  Intermediate (high school), Advanced (college, the existing pages and the default). It is remembered and
+  shareable as `?level=`. Understand pages exist per level (`content/understand/<id>.<level>.md`) and fall
+  back to the next level up with a note. Eight examples have all three (#91): N-body, matrix multiplication,
+  parallel sorting, the Game of Life, falling sand, boids, the wave equation and the WASM Mandelbrot. Each
+  level's pages are linted for their own outline and reading level (Flesch–Kincaid grade, share of long words, terms to avoid, no math at Beginner).
+
 ## [0.7.0] - 2026-11-02
 
 ### Added

@@ -6,13 +6,14 @@
 import { TRACKS, EXAMPLES } from './path.js';
 import { formatRoute } from './routes.js';
 import { renderFlagshipPointer } from './flagships.js';
+import { getLevel, mountLevelSelector, onLevelChange, searchWithLevel, DEFAULT_LEVEL } from './levels.js';
 
 const CATALOG = 'index.html';
 const VIEWS = [['explore', 'Explore'], ['understand', 'Understand'], ['measure', 'Measure']];
 
-// The three links of an example: [{ tab, label, href }]
-export function exampleLinks(id) {
-    return VIEWS.map(([tab, label]) => ({ tab, label, href: `${CATALOG}${formatRoute(id, tab)}` }));
+// The three links of an example at a visitor level: [{ tab, label, href }]
+export function exampleLinks(id, level = DEFAULT_LEVEL) {
+    return VIEWS.map(([tab, label]) => ({ tab, label, href: `${CATALOG}${searchWithLevel('', level)}${formatRoute(id, tab)}` }));
 }
 
 // The track a hash names ("#science" -> 'science'); anything else selects the first track
@@ -46,9 +47,11 @@ function renderStep(step, index) {
         const name = el('span', 'step-example-name');
         name.append(el('span', 'num', String(info.num)), document.createTextNode(info.title));
         const links = el('span', 'step-example-links');
-        for (const link of exampleLinks(id)) {
+        for (const link of exampleLinks(id, getLevel())) {
             const a = el('a', null, link.label);
             a.href = link.href;
+            a.dataset.example = id;
+            a.dataset.tab = link.tab;
             a.setAttribute('aria-label', `${info.title}: ${link.label}`);
             links.append(a);
         }
@@ -127,7 +130,17 @@ export function renderLearningPath(root, tracks = TRACKS) {
 
 if (typeof document !== 'undefined') {
     const root = document.getElementById('learning-path');
-    if (root) renderLearningPath(root);
+    const picker = document.getElementById('level-picker');
+    if (picker) mountLevelSelector(picker);
+    if (root) {
+        renderLearningPath(root);
+        // A new level only changes where the example links go
+        onLevelChange((level) => {
+            for (const a of root.querySelectorAll('a[data-example]')) {
+                a.href = exampleLinks(a.dataset.example, level).find(l => l.tab === a.dataset.tab).href;
+            }
+        });
+    }
     const pointer = document.getElementById('flagship-pointer');
     if (pointer) renderFlagshipPointer(pointer);
 }

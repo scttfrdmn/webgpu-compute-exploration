@@ -6,7 +6,8 @@
 // own Pause/Stop button, so its UI stays in sync); nothing restarts on its own when you come back.
 
 import { parseRoute, formatRoute, TABS } from './routes.js';
-import { UNDERSTAND, MEASURE, understandPath, SOURCE_BASE } from './registry.js';
+import { UNDERSTAND, MEASURE, understandSource, SOURCE_BASE } from './registry.js';
+import { getLevel, onLevelChange, fallbackChain, levelText } from './levels.js';
 import { pauseExample } from '../example-control.js';
 
 const LABELS = { explore: 'Explore', understand: 'Understand', measure: 'Measure' };
@@ -16,6 +17,14 @@ export function setupTabs() {
     for (const section of document.querySelectorAll('section.example[id]')) {
         sections.set(section.id, buildTabs(section));
     }
+    // A new level re-renders the Understand pages already shown; the others load it when they open
+    onLevelChange(() => {
+        for (const [id, entry] of sections) {
+            if (!entry.loaded.has('understand')) continue;
+            entry.panels.understand.replaceChildren();
+            loadUnderstand(id, entry.panels.understand);
+        }
+    });
     window.addEventListener('hashchange', () => applyRoute(location.hash, { scroll: true }));
     window.addEventListener('popstate', () => applyRoute(location.hash, { scroll: false }));
     applyRoute(location.hash, { scroll: true });
@@ -120,7 +129,9 @@ export function pauseExplore(panel) {
 }
 
 async function loadUnderstand(id, panel) {
-    if (!UNDERSTAND.has(id)) {
+    const level = getLevel();
+    const source = understandSource(id, fallbackChain(level));
+    if (!source) {
         panel.append(soonNote('An explanation of this example is being written.'));
         return;
     }
@@ -128,14 +139,20 @@ async function loadUnderstand(id, panel) {
     try {
         const [{ renderMarkdown }, response] = await Promise.all([
             import('./markdown.js'),
-            fetch(understandPath(id)),
+            fetch(source.path),
         ]);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         // idPrefix keeps heading ids unique across the 25 Understand pages on one page
         const html = renderMarkdown(await response.text(), { resolveLink, idPrefix: `${id}-` });
+        if (getLevel() !== level) return;   // the level changed while loading; its own load replaces this one
         panel.replaceChildren();
+        if (source.level !== level) {
+            panel.append(statusLine(`This explanation is not written for ${levelText(level)} yet; here is the `
+                + `${levelText(source.level)} one.`, 'hint level-fallback-note'));
+        }
         const article = document.createElement('article');
         article.className = 'understand';
+        article.dataset.level = source.level;
         article.innerHTML = html;   // renderMarkdown escapes all text and allowlists URLs
         panel.append(article);
     } catch (error) {
