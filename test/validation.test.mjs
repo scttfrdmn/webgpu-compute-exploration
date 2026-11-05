@@ -266,13 +266,13 @@ test('summary tool: correctness, tolerances, timing and interpretation tables ov
         const matmul = (checks, claims, timing) => recordFor('matrix-multiplication', 'cpu-naive-tiled', { settings: { maxN: 1024 }, checks, claims, timing });
         const chromeRecords = [
             matmul([check('tiled error / √n·u', 0.8, { max: 4 }), check('naive error / √n·u', 0.7, { max: 4 })],
-                [{ claim: 'tiled: n³', predicted: '3', measured: '2.98', agrees: true }, { claim: 'GPU beats CPU', predicted: 'yes', measured: '?', agrees: null }]),
+                [{ key: 'tiled-n3', claim: 'tiled: n³', predicted: '3', measured: '2.98', agrees: true }, { claim: 'GPU beats CPU', predicted: 'yes', measured: '?', agrees: null }]),
             recordFor('nbody', 'scaling', { settings: { preset: 'plummer' }, claims: [{ claim: 'BH crossover', predicted: 'yes', measured: 'no', agrees: false }] }),
             recordFor('parallel-sort', 'scaling', { settings: { dataType: 'u32', maxN: 1048576 }, checks: [check('radix keys ≠ CPU', 3, { max: 0, tolerance: '0' })], status: 'budget' }),
         ];
         const safariRecords = [
             matmul([check('tiled error / √n·u', 5.5, { max: 4 }), check('naive error / √n·u', 0.7, { max: 4 })],
-                [{ claim: 'tiled: n³', predicted: '3', measured: '2.5', agrees: false }], 'wall-clock'),
+                [{ key: 'tiled-n3', claim: 'tiled: n³ (wall clock)', predicted: '3', measured: '2.5', agrees: false }], 'wall-clock'),
         ];
         const env = (id, overrides) => sampleEnvironment({ id, ...overrides });
         const older = buildValidationBundle({ plan: VALIDATION_PLAN, environment: env('apple-silicon-chrome'), records: [chromeRecords[1]], generatedAt: '2026-10-30T09:00:00.000Z' });
@@ -302,7 +302,9 @@ test('summary tool: correctness, tolerances, timing and interpretation tables ov
         // timing availability
         assert.match(md, /\*\*Timing availability\*\*[\s\S]*\| matrix-multiplication \| cpu-naive-tiled \(maxN=1024\) \| timestamp-query \| wall-clock \|/);
         // interpretation: agrees / disagrees / undetermined
+        // one row per claim key (#86), though Safari words the claim differently
         assert.match(md, /\| tiled: n³ \| agrees \| disagrees \|/);
+        assert.doesNotMatch(md, /wall clock\) \|/);
         assert.match(md, /\| GPU beats CPU \| undetermined \| — \|/);
         assert.match(md, /\| BH crossover \| disagrees \| — \|/);
         // flagship order: matrix multiplication, N-body, sorting

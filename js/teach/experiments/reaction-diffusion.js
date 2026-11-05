@@ -26,6 +26,7 @@ const mcups = (v) => (v / 1e6).toFixed(0);
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size vs time per step',
     question: 'How does the time per Gray-Scott step grow with the number of cells, and when does the GPU stop being limited by launch overhead?',
     settings: [
@@ -87,6 +88,7 @@ const presetOptions = ['coral', 'mitosis', 'maze', 'chaos'].map(k => ({ value: k
 
 const accuracy = {
     id: 'precision',
+    levels: ['intermediate', 'advanced'],
     title: 'Single precision vs float64',
     question: 'How far does the GPU\'s f32 solution drift from a float64 solution of the same equations, and does the pattern type matter?',
     settings: [{ key: 'preset', label: 'Preset', options: presetOptions, default: 'coral' }],

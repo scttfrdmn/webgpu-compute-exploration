@@ -1,6 +1,7 @@
 // Visitor levels (#89): Beginner (middle school), Intermediate (high school) and Advanced (college, the
 // original content and the default). The level picks which Understand page is shown (js/teach/tabs.js), and
-// later which controls, experiments and learning path. It is stored in localStorage and in the URL
+// which Explore controls and "What to look for" prompts are shown (#92), and later which experiments and
+// learning path. It is stored in localStorage and in the URL
 // (?level=beginner), so a teacher can share a link fixed at one level; the URL wins over storage.
 //
 // The functions above the line are pure (tested in Node); the ones below it touch the browser only when
@@ -43,7 +44,22 @@ export function fallbackChain(level) {
     return LEVELS.slice(i);
 }
 
-export const levelText = (level) => `${LEVEL_INFO[level].label} (${LEVEL_INFO[level].audience})`;
+// Explore controls (#92): a control's wrapper in index.html carries data-level="intermediate" or
+// data-level="advanced", the lowest level that shows it; controls without the attribute show at every
+// level. True if a control marked `controlLevel` is shown at `level` (an unknown mark shows everywhere,
+// an unknown level counts as the default).
+export function visibleAt(controlLevel, level) {
+    const need = LEVELS.indexOf(parseLevel(controlLevel) ?? LEVELS[0]);
+    return LEVELS.indexOf(parseLevel(level) ?? DEFAULT_LEVEL) >= need;
+}
+
+// "What to look for" prompts carry data-levels="beginner intermediate", the exact levels that show them
+export function shownFor(levelList, level) {
+    const at = parseLevel(level) ?? DEFAULT_LEVEL;
+    return String(levelList ?? '').split(/\s+/).some(v => parseLevel(v) === at);
+}
+
+export const levelText =(level) => `${LEVEL_INFO[level].label} (${LEVEL_INFO[level].audience})`;
 
 // ---- browser ------------------------------------------------------------------------------------------
 let current = null;
@@ -98,4 +114,16 @@ export function mountLevelSelector(container) {
     label.append(select);
     container.append(label);
     return select;
+}
+
+// Shows or hides the level-marked Explore controls and prompts of every example. It only toggles
+// `hidden`, so hidden controls keep their values and listeners. The Understand and Measure panels are
+// skipped: tabs.js marks the rendered Understand article with data-level for its own use.
+export function applyExploreLevel(level = getLevel(), root = document) {
+    for (const el of root.querySelectorAll('section.example [data-level], section.example [data-levels]')) {
+        if (el.closest('.tab-panel-understand, .tab-panel-measure')) continue;
+        el.hidden = el.hasAttribute('data-levels')
+            ? !shownFor(el.getAttribute('data-levels'), level)
+            : !visibleAt(el.getAttribute('data-level'), level);
+    }
 }

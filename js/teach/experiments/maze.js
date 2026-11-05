@@ -81,6 +81,7 @@ const sizeColumns = [{ key: 'cells', label: 'cells' }, ...resultColumns,
     { key: 'generateMs', label: 'CPU generation ms', format: ms }];
 const size = {
     id: 'size',
+    levels: ['intermediate', 'advanced'],
     title: 'Maze size vs BFS levels and time',
     question: 'A level-synchronous BFS needs one dispatch per level: how many levels do mazes of each size and generator need, and what does that cost?',
     settings: [
@@ -111,6 +112,7 @@ const size = {
 const braidColumns = [{ key: 'braid', label: 'walls removed', format: percent }, ...resultColumns];
 const braid = {
     id: 'braid',
+    levels: ['intermediate', 'advanced'],
     title: 'Loops vs BFS levels (511 × 383)',
     question: 'Removing a few walls creates shortcuts: how fast does the shortest path, and with it the number of sequential BFS levels, shrink?',
     settings: [generatorSetting],
@@ -135,6 +137,7 @@ const batchColumns = [{ key: 'batch', label: 'levels per submit' }, { key: 'subm
     { key: 'overshoot', label: 'dispatches past the goal' }, ...resultColumns];
 const batch = {
     id: 'batch',
+    levels: ['intermediate', 'advanced'],
     title: 'Levels per submit vs wall time',
     question: 'The CPU must read back whether the goal was reached: how much does checking after every level cost compared with batching hundreds of levels per submit?',
     settings: [

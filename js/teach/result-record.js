@@ -77,6 +77,7 @@ export function interpretationOf(experiment, rows, settings) {
     }
     if (!claims.length) return {};
     return { interpretation: claims.map(c => ({
+        key: typeof c.key === 'string' && c.key ? c.key : null,
         claim: String(c.claim || 'claim'),
         predicted: String(c.predicted ?? '—') || '—',
         measured: String(c.measured ?? '—') || '—',

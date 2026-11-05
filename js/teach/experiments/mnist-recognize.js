@@ -20,6 +20,7 @@ const ms = (v) => v.toFixed(3);
 
 const testAccuracy = {
     id: 'test-accuracy',
+    levels: ['intermediate', 'advanced'],
     title: 'Test accuracy of the cached weights',
     question: 'Does the GPU reproduce the trainer\'s 98.00% on the 2,000 test images, and how precisely does a test set of a given size measure accuracy?',
     budgetMs: 20000,
@@ -70,6 +71,7 @@ const testAccuracy = {
 
 const latency = {
     id: 'latency',
+    levels: ['intermediate', 'advanced'],
     title: 'Inference latency vs batch size',
     question: 'How long does one classification take from submit to answer, and how much cheaper per image does batching make it?',
     budgetMs: 20000,

@@ -45,6 +45,7 @@ const sci = (v) => v.toExponential(1);
 
 const deadline = {
     id: 'deadline',
+    levels: ['intermediate', 'advanced'],
     title: 'IR length vs time per block and the real-time deadline',
     question: 'How does the cost of one block grow with the impulse response length, and how far is it from the deadline the audio hardware sets?',
     settings: [
@@ -85,6 +86,7 @@ const deadline = {
 
 const accuracy = {
     id: 'accuracy',
+    levels: ['intermediate', 'advanced'],
     title: 'Partitioned FFT convolution vs direct convolution',
     question: 'How close is the f32 partitioned FFT convolution to an exact float64 direct convolution, for both block sizes and every IR length?',
     budgetMs: 20000,

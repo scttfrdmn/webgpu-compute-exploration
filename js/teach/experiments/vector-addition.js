@@ -34,6 +34,7 @@ const gbps = (bytes, t) => (t > 0 ? bytes / t / 1e6 : null);   // bytes per ms â
 
 const bandwidth = {
     id: 'bandwidth',
+    levels: ['intermediate', 'advanced'],
     title: 'Size vs bandwidth and overhead',
     question: 'How large must a vector be before the GPU runs at memory bandwidth, and how much of a one-shot call is transfer and launch overhead?',
     budgetMs: 20000,

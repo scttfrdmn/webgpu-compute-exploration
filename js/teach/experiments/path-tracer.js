@@ -31,6 +31,7 @@ const sceneSetting = {
 
 const sppNoise = {
     id: 'spp-noise',
+    levels: ['intermediate', 'advanced'],
     title: 'Samples per pixel vs noise',
     question: 'Does the Monte Carlo error really fall as 1/√N with the number of samples per pixel, and does next-event estimation lower the constant?',
     settings: [
@@ -90,6 +91,7 @@ const sppNoise = {
 // ---- 2. Path length vs cost -------------------------------------------------------------------------
 const bounceCost = {
     id: 'bounces',
+    levels: ['intermediate', 'advanced'],
     title: 'Bounces vs cost and energy',
     question: 'How much light do the longer paths carry, and what do they cost in rays and GPU time?',
     settings: [sceneSetting],

@@ -11,6 +11,8 @@
 // muted text color (never the series color alone), slightly offset per series so bars at the same x stay
 // apart; the axis covers the ranges, the legend says what the bars are, and the tooltip lists the range.
 // Series without those keys render exactly as before.
+// spec.spreadText = { legend, aria } replaces that legend entry and the aria-label sentence (the Measure tab's
+// lower visitor levels word them without statistics terms).
 
 import { rangeOf, hasRange, loKey, hiKey, SPREAD_LABEL } from './stats.js';
 
@@ -155,7 +157,7 @@ export function renderLineChart(holder, spec) {
     const yScale = makeScale({ ...ys, log: spec.logY }, [H - m.b, m.t]);
 
     const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img',
-        'aria-label': `${caption.textContent}. ${ranged ? `Points are medians; vertical bars show the ${SPREAD_LABEL} over repeats. ` : ''}`
+        'aria-label': `${caption.textContent}. ${ranged ? (spec.spreadText?.aria ?? `Points are medians; vertical bars show the ${SPREAD_LABEL} over repeats. `) : ''}`
             + 'Values are listed in the table below.' }, holder);
 
     // Gridlines and ticks (recessive, solid)
@@ -224,7 +226,7 @@ export function renderLineChart(holder, spec) {
             const key = document.createElement('span');
             key.className = 'chart-range-key';
             key.setAttribute('aria-hidden', 'true');
-            item.append(key, `median, bar = ${SPREAD_LABEL}`);
+            item.append(key, spec.spreadText?.legend ?? `median, bar = ${SPREAD_LABEL}`);
             legend.append(item);
         }
         holder.append(legend);

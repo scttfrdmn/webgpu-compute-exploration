@@ -35,6 +35,7 @@ const rate = (cells, t) => (t > 0 ? cells / t / 1e6 : null);   // cell updates p
 
 const throughput = {
     id: 'throughput',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size vs cell updates per second',
     question: 'How many cell updates per second does the stencil reach as the grid grows, and when does the GPU stop being idle?',
     budgetMs: 20000,

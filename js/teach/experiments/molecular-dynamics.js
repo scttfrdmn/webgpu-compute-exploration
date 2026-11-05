@@ -24,6 +24,7 @@ const sci = (v) => v.toExponential(2);
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Atoms vs time per step',
     question: 'How does the cost of one all-pairs force step grow with N, and how many pair interactions per second does your GPU sustain?',
     budgetMs: 20000,
@@ -77,6 +78,7 @@ export const boxFor = (n) => Math.cbrt(n / DENSITY);
 
 const energyDrift = {
     id: 'energy-drift',
+    levels: ['intermediate', 'advanced'],
     title: 'Time step vs energy error',
     question: 'How does the energy error of semi-implicit Euler scale with the time step, and what does the example\'s thermostat do to the energy?',
     settings: [

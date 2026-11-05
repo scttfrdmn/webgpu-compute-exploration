@@ -50,6 +50,7 @@ const ms = (v) => v.toFixed(3);
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size and steps per submit vs time per step',
     question: 'How does the cost of a Margolus step grow with the grid, and how much does batching steps into one submit save?',
     settings: [

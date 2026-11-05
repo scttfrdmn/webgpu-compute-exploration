@@ -23,6 +23,7 @@ import { matmulRowsF64, matmulBlockedF32 } from '../../refs/basic.js';
 import { mulberry32 } from '../../refs/random.js';
 import { summarize, withSpread, fitPowerLaw, slopeAgrees } from '../stats.js';
 import { check } from '../result-record.js';
+import { doublingFactor, timesText, countText } from '../measure-levels.js';
 
 // Powers of two plus 384, 768 and 1,536: enough sizes per fit for a useful interval, and sizes whose row stride
 // is not a power of two (power-of-two strides can map rows onto the same cache sets)
@@ -94,6 +95,9 @@ const gbs = (v) => (v < 10 ? v.toPrecision(2) : v.toFixed(0));
 const gf = (v) =>(v < 10 ? v.toFixed(2) : v.toFixed(1));
 const PATHS = ['cpu', 'naive', 'tiled'];
 const LABEL = { cpu: 'CPU (blocked JS)', naive: 'naive GPU', tiled: 'tiled GPU' };
+// Names in the plain-language claims (the Beginner and Intermediate levels, see js/teach/measure-levels.js)
+const PLAIN = { cpu: 'CPU, one core', naive: 'Simple GPU version', tiled: 'Tiled GPU version' };
+const plainMs = (v) => (v >= 10 ? countText(v) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
 const PHASE_KEYS = ['Compile', 'Upload', 'Dispatch', 'Readback'];
 
 // The kernel time of one GPU sample: timestamps when the device has them, else submit → done wall time
@@ -153,13 +157,24 @@ function slopeClaim(rows, path, timing) {
     const tooWide = fit.ci95 && (fit.ci95[1] - fit.ci95[0]) / 2 > MAX_CI_HALF_WIDTH;
     if (tooWide) notes.push(`The 95% interval is wider than ±${MAX_CI_HALF_WIDTH}, too wide to tell n³ from n², so the claim stays undecided.`);
     if (!fit.ci95) notes.push(`At least 3 sizes are needed for an uncertainty; with fewer, this claim stays undecided${gpu ? ` (run to n = ${MAX_SIZE.toLocaleString('en-US')})` : ''}.`);
+    const agrees = tooWide ? null : slopeAgrees(fit, 3, SLOPE_TOLERANCE);
+    // Plain words: the fitted slope as "twice as wide took f times as long" (f = 2^slope)
+    const f = fit.slope === null ? null : timesText(doublingFactor(fit.slope));
+    const sizes = used.length ? ` (grids ${countText(used[0])} to ${countText(used.at(-1))} wide)` : '';
     return {
         key: `${path}-n3`,
         claim: `${LABEL[path]}: time grows like n³`,
         predicted: `log-log slope 3 (2n³ flops; ±${SLOPE_TOLERANCE} for cache effects)`,
         measured,
-        agrees: tooWide ? null : slopeAgrees(fit, 3, SLOPE_TOLERANCE),
+        agrees,
         note: notes.join(' '),
+        plain: {
+            claim: `${PLAIN[path]}: a grid twice as wide`,
+            predicted: 'About 8 times as long: each box has twice as many numbers, and there are 4 times as many boxes',
+            measured: f === null ? 'Too few grid sizes took long enough to time'
+                : agrees === null ? `About ${f} times as long${sizes}, but the times were too uneven to be sure`
+                    : `${f} times as long${sizes}`,
+        },
     };
 }
 
@@ -325,6 +340,14 @@ const threeWay = {
             predicted: `tiled faster (speedup > 1): ${TILED_T}× fewer global loads (arithmetic intensity ${TILED_T / 4} vs 0.25 flop/byte); typically 2–10× on real GPUs`,
             measured: big ? `${rangeText(big, 'speedup', v => `${v.toFixed(2)}×`)} at n = ${big.n}` : 'no size with both kernels',
             agrees: !big || big.speedupLo == null ? null : big.speedupLo > 1 ? true : big.speedupHi < 1 ? false : null,
+            plain: {
+                claim: 'Tiled vs simple GPU version',
+                predicted: 'Tiled is faster: it fetches each number from far memory 16 times less often',
+                measured: !big?.speedup ? 'No grid size has both times yet'
+                    : big.speedupLo > 1 ? `Tiled was ${timesText(big.speedup)} times as fast, for grids ${countText(big.n)} wide`
+                        : big.speedupHi < 1 ? `Tiled was slower: the simple version was ${timesText(1 / big.speedup)} times as fast, for grids ${countText(big.n)} wide`
+                            : `Too close to call for grids ${countText(big.n)} wide: the run times overlap`,
+            },
             note: 'The range is conservative (naive q1 / tiled q3 … naive q3 / tiled q1); undecided when it contains 1. The tiled kernel '
                 + 'also reads A and B along rows (coalesced) where the naive one reads A across rows, so part of the gain is access '
                 + 'pattern, not only reuse. On a software GPU workgroup memory is ordinary memory and barriers are expensive, so tiling can lose.',
@@ -343,7 +366,7 @@ const threeWay = {
 
         // GPU vs CPU
         const common = largest(rows, 'cpuMs', 'naiveMs', 'tiledMs');
-        let measured = 'no size with both CPU and GPU times', agrees = null, note = '';
+        let measured = 'no size with both CPU and GPU times', agrees = null, note = '', plainMeasured = 'No grid size has both a CPU and a GPU time yet';
         if (common) {
             const best = common.tiledMs <= common.naiveMs ? 'tiled' : 'naive';
             const gpuLo = common[`${best}MsLo`], gpuHi = common[`${best}MsHi`];
@@ -354,6 +377,9 @@ const threeWay = {
             measured = `${from ? `GPU faster from n = ${from} on` : `CPU faster at n = ${common.n}`}; at n = ${common.n}: ${LABEL[best]} `
                 + `${rangeText(common, `${best}Ms`, ms)} ms vs CPU ${rangeText(common, 'cpuMs', ms)} ms`;
             agrees = gpuHi < common.cpuMsLo ? true : gpuLo > common.cpuMsHi ? false : null;
+            const gpuMs = common[`${best}Ms`];
+            plainMeasured = `${from ? `The GPU was faster from grids ${countText(from)} wide on` : `The CPU was faster at ${countText(common.n)} wide`}. `
+                + `At ${countText(common.n)} wide the GPU took ${plainMs(gpuMs)} ms and the CPU ${plainMs(common.cpuMs)} ms`;
             const total = ['Upload', 'Dispatch', 'Readback'].reduce((s, p) => s + (common[`${best}${p}`] ?? 0), 0);
             note = `Kernel time only; with upload and readback the ${LABEL[best]} takes ${ms(total)} ms (wall). `
                 + 'Where the crossover falls depends on the GPU, the CPU and the browser; undecided when the spreads overlap.';
@@ -363,6 +389,11 @@ const threeWay = {
             claim: 'The GPU beats one CPU core from some n on',
             predicted: `yes: GPU time is ≈ a fixed launch cost until the GPU is full, CPU time grows like n³ from the start (CPU measured up to n = ${CPU_MAX_N})`,
             measured, agrees, note,
+            plain: {
+                claim: 'GPU vs one CPU core',
+                predicted: 'The GPU wins once the grids are big enough to keep its many workers busy',
+                measured: plainMeasured,
+            },
         });
         return claims;
     },

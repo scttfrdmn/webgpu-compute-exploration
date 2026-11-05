@@ -168,11 +168,15 @@ export function renderSummary({ matrix, bundles }) {
 
     const claimRows = [];
     for (const x of experiments) {
-        const claims = [];
-        for (const env of present) for (const c of find(env, experimentKey(x))?.interpretation ?? []) if (!claims.includes(c.claim)) claims.push(c.claim);
-        for (const claim of claims) {
+        // One row per claim: grouped by its stable key (#86) when the records have one, else by its text
+        const id = (c) => c.key ?? c.claim;
+        const claims = new Map();   // id -> claim text (the first environment's wording)
+        for (const env of present) {
+            for (const c of find(env, experimentKey(x))?.interpretation ?? []) if (!claims.has(id(c))) claims.set(id(c), c.claim);
+        }
+        for (const [claimId, claim] of claims) {
             claimRows.push([x.experiment.exampleId, experimentName(x), claim, ...present.map(env => {
-                const c = find(env, experimentKey(x))?.interpretation?.find(k => k.claim === claim);
+                const c = find(env, experimentKey(x))?.interpretation?.find(k => id(k) === claimId);
                 return c ? agreesText(c.agrees) : '—';
             })]);
         }

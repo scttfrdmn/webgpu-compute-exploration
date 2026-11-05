@@ -18,6 +18,7 @@ export const SUBSTEPS = 6;   // per frame, as in the example
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Particles vs time per substep',
     question: 'How does the cost of the brute-force SPH passes grow with N, and which of the three passes dominates?',
     budgetMs: 20000,
@@ -78,6 +79,7 @@ export function densityError(particles, n, h, mass) {
 
 const stiffness = {
     id: 'stiffness',
+    levels: ['intermediate', 'advanced'],
     title: 'Gas constant vs compression and stability',
     question: 'How stiff must the equation of state be to keep the fluid nearly incompressible, and where does the fixed time step stop being stable?',
     settings: [{ key: 'n', label: 'Particles', options: STIFFNESS_COUNTS.map(n => ({ value: n, label: n.toLocaleString('en-US') })), default: 1000 }],
