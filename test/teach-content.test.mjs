@@ -128,7 +128,7 @@ test('interpret() plain texts on the committed validation bundles are strings', 
                     checked++;
                 }
                 for (const c of interpretationOf(e, r.rows, r.settings).interpretation ?? []) {
-                    assert.deepEqual(Object.keys(c).sort(), ['agrees', 'claim', 'measured', 'note', 'predicted'], `${where}: record claim fields (no plain)`);
+                    assert.deepEqual(Object.keys(c).sort(), ['agrees', 'claim', 'key', 'measured', 'note', 'predicted'], `${where}: record claim fields (no plain)`);
                 }
             }
         }
