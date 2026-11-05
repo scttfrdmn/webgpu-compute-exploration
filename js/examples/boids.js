@@ -305,7 +305,7 @@ fn fragmentMain(@location(0) color: vec3<f32>) -> @location(0) vec4<f32> {
 `;
 
 class BoidsSimulation {
-    constructor(device, canvas, numBoids) {
+    constructor(device, canvas, numBoids, maxSpeed = 4.0) {
         this.device = device;
         this.canvas = canvas;
         this.numBoids = numBoids;
@@ -319,7 +319,7 @@ class BoidsSimulation {
         this.separationWeight = 1.5;
         this.alignmentWeight = 1.0;
         this.cohesionWeight = 1.0;
-        this.maxSpeed = 4.0;
+        this.maxSpeed = maxSpeed;
         this.maxForce = 0.1;
 
         this.behaviorMode = 0; // 0: normal, 1: predator, 2: scatter, 3: vortex
@@ -607,7 +607,10 @@ export async function initBoids(gpuDevice) {
     const output = document.getElementById('output-boids');
 
     let numBoids = 2000;
-    let simulation = new BoidsSimulation(device, canvas, numBoids);
+    // The Speed slider (value / 10 = top speed) is the source of truth, also across Reset and count changes (#97)
+    const speedSlider = document.getElementById('boids-speed');
+    const sliderSpeed = () => parseInt(speedSlider.value) / 10;
+    let simulation = new BoidsSimulation(device, canvas, numBoids, sliderSpeed());
     simulation.render();
 
     document.getElementById('btn-boids-start').addEventListener('click', () => {
@@ -623,7 +626,7 @@ export async function initBoids(gpuDevice) {
     document.getElementById('btn-boids-reset').addEventListener('click', () => {
         const wasRunning = simulation.running;
         simulation.destroy();
-        simulation = new BoidsSimulation(device, canvas, numBoids);
+        simulation = new BoidsSimulation(device, canvas, numBoids, sliderSpeed());
         if (wasRunning) simulation.start(); else simulation.render();
         updateOutput();
     });
@@ -634,7 +637,7 @@ export async function initBoids(gpuDevice) {
         numBoids = parseInt(e.target.value);
         const wasRunning = simulation.running;
         simulation.destroy();
-        simulation = new BoidsSimulation(device, canvas, numBoids);
+        simulation = new BoidsSimulation(device, canvas, numBoids, sliderSpeed());
         if (wasRunning) simulation.start(); else simulation.render();
         updateOutput();
     });
@@ -642,7 +645,6 @@ export async function initBoids(gpuDevice) {
         countValue.textContent = parseInt(e.target.value).toLocaleString();
     });
 
-    const speedSlider = document.getElementById('boids-speed');
     const speedValue = document.getElementById('boids-speed-value');
     speedSlider.addEventListener('input', (e) => {
         simulation.maxSpeed = parseInt(e.target.value) / 10;
