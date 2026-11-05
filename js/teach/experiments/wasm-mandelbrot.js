@@ -97,6 +97,7 @@ const gpuVsCpu = {
 
 const deepZoom = {
     id: 'deep-zoom',
+    levels: ['intermediate', 'advanced'],
     title: 'Zoom vs agreement with float64',
     question: 'At what zoom does the shader\'s single precision stop resolving neighbouring pixels?',
     budgetMs: 20000,

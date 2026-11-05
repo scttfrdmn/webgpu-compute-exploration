@@ -39,6 +39,7 @@ const mpix = (count, t) => (t > 0 ? count / t / 1e3 : null);   // per ms → mil
 
 const sigmaCost = {
     id: 'sigma-cost',
+    levels: ['intermediate', 'advanced'],
     title: 'Blur radius vs cost',
     question: 'How does the cost of the direct 2D blur grow with σ, and is the f32 result still accurate at large kernels?',
     settings: [{ key: 'side', label: 'Image', options: SIGMA_SIDES.map(s => ({ value: s, label: `${s} × ${s}` })), default: 512 }],
@@ -85,6 +86,7 @@ const sigmaCost = {
 
 const sizeScaling = {
     id: 'size-scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Image size vs throughput (σ = 4)',
     question: 'At what image size does the shipped 25 × 25 blur keep your GPU busy, measured in pixels per second?',
     budgetMs: 20000,

@@ -8,13 +8,14 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 import { UNDERSTAND, MEASURE, understandPath } from '../js/teach/registry.js';
 import { lintMarkdown, headings } from '../js/teach/markdown.js';
 import { MAX_BUDGET_MS } from '../js/teach/measure.js';
 import { parseRoute } from '../js/teach/routes.js';
+import { LEVELS } from '../js/teach/levels.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pageIds = new Set([...readFileSync(join(root, 'index.html'), 'utf8')
@@ -84,6 +85,11 @@ for (const id of MEASURE) {
                 assert.equal(typeof chart.xLabel, 'string'); assert.equal(typeof chart.yLabel, 'string');
             }
             if (e.interpret !== undefined) assert.equal(typeof e.interpret, 'function', `${where}: interpret must be a function`);
+            if (e.levels !== undefined) {
+                assert.ok(Array.isArray(e.levels) && e.levels.length > 0, `${where}: levels must be a non-empty array`);
+                for (const l of e.levels) assert.ok(LEVELS.includes(l), `${where}: unknown level "${l}"`);
+                assert.equal(new Set(e.levels).size, e.levels.length, `${where}: duplicate levels`);
+            }
             if (e.scope !== undefined) {
                 for (const k of Object.keys(e.scope)) assert.ok(['shows', 'doesNotShow'].includes(k), `${where}: scope.${k}`);
                 for (const list of Object.values(e.scope)) assert.ok(Array.isArray(list) && list.every(x => typeof x === 'string' && x.length), `${where}: scope lists of strings`);
@@ -96,3 +102,37 @@ for (const id of MEASURE) {
         t.diagnostic(`${experiments.length} experiments: ${experiments.map(e => e.id).join(', ')}`);
     });
 }
+
+// Plain-language claims (#93): on the rows of every committed validation bundle, a claim's `plain` (when present)
+// has string claim / predicted / measured fields (note optional), and the result record never carries it
+test('interpret() plain texts on the committed validation bundles are strings', async (t) => {
+    const { interpretationOf } = await import('../js/teach/result-record.js');
+    const dir = join(root, 'data/validation');
+    let checked = 0;
+    for (const env of readdirSync(dir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)) {
+        for (const file of readdirSync(join(dir, env)).filter(f => f.endsWith('.json'))) {
+            const bundle = JSON.parse(readFileSync(join(dir, env, file), 'utf8'));
+            for (const r of bundle.records ?? []) {
+                if (!MEASURE.has(r.experiment.exampleId)) continue;
+                const { default: experiments } = await import(pathToFileURL(join(root, 'js/teach/experiments', `${r.experiment.exampleId}.js`)).href);
+                const e = experiments.find(x => x.id === r.experiment.id);
+                if (!e?.interpret) continue;
+                const where = `${env}/${file} ${r.experiment.exampleId}/${e.id}`;
+                for (const c of e.interpret(r.rows, r.settings)) {
+                    if (c.plain === undefined) continue;
+                    for (const k of ['claim', 'predicted', 'measured']) {
+                        assert.equal(typeof c.plain[k], 'string', `${where} ${c.key}: plain.${k}`);
+                        assert.ok(c.plain[k].trim(), `${where} ${c.key}: plain.${k} is empty`);
+                    }
+                    if (c.plain.note !== undefined) assert.equal(typeof c.plain.note, 'string', `${where} ${c.key}: plain.note`);
+                    checked++;
+                }
+                for (const c of interpretationOf(e, r.rows, r.settings).interpretation ?? []) {
+                    assert.deepEqual(Object.keys(c).sort(), ['agrees', 'claim', 'measured', 'note', 'predicted'], `${where}: record claim fields (no plain)`);
+                }
+            }
+        }
+    }
+    t.diagnostic(`${checked} plain texts checked`);
+    assert.ok(checked > 0);
+});

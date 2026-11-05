@@ -23,6 +23,7 @@ import { encodeF32Key, decodeF32Key } from '../../refs/sort.js';
 import { PhaseClock } from '../../phase-clock.js';
 import { summarize, withSpread, fitPowerLaw, slopeAgrees } from '../stats.js';
 import { check } from '../result-record.js';
+import { doublingFactor, timesText, countText } from '../measure-levels.js';
 
 export const COUNTS = [16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304];
 export const MAX_N = 4194304;
@@ -216,6 +217,21 @@ function slopeNote(agrees, fit, lo, hi) {
         : `Steeper than predicted (above ${hi.toFixed(2)}): something grows faster than the work at these N, e.g. the keys no longer fitting in a cache.`;
 }
 
+// Names and reasons in the plain-language claims (the Beginner and Intermediate levels, js/teach/measure-levels.js)
+const PLAIN_NAME = { bitonic: 'Bitonic sort', shared: 'Bitonic sort with shared memory', radix: 'Radix sort', cpu: 'The browser\'s sort' };
+const PLAIN_WHY = {
+    bitonic: 'its plan gets a few more steps each time the list doubles',
+    shared: 'its plan gets a few more steps each time the list doubles',
+    radix: 'it does the same 8 rounds for any amount of numbers',
+    cpu: 'it does a little more work per number on a longer list',
+};
+// "about 2.2 times" / "about 2.2 to 2.3 times" for a predicted slope (range); twice the keys take 2^slope as long
+function plainPredicted(k, pLo, pHi) {
+    const a = timesText(doublingFactor(pLo)), b = timesText(doublingFactor(pHi));
+    const factor = a === b ? (a === '2.0' ? 'twice as long' : `about ${a} times as long`) : `about ${a} to ${b} times as long`;
+    return `Twice the numbers take ${factor}: ${PLAIN_WHY[k]}`;
+}
+
 function slopeClaims(rows, res) {
     const claims = [];
     const one = (id, claim, k, lo, hi, form, extra = '') => {
@@ -229,6 +245,11 @@ function slopeClaims(rows, res) {
                 measured: ns.length >= 2 ? `${fmtFit(fit)} from ${timingOf(clock)} medians at ${ns.length} sizes (${rangeText(ns)})`
                     : `${ns.length} size(s) with a ${timingOf(clock)} median ≥ ${FIT_MIN_MS} ms`,
                 agrees: null,
+                plain: {
+                    claim: `${PLAIN_NAME[k]}: twice the numbers`,
+                    predicted: plainPredicted(k, lo(COUNTS), hi(COUNTS)),
+                    measured: 'Too few sizes took long enough to time well',
+                },
                 note: `Undetermined: needs at least ${MIN_FIT_SIZES} sizes with a median of at least ${FIT_MIN_MS} ms (and ${RESOLUTION_FACTOR}× the timer resolution), ${ns.length} here; run to a larger N. ${window}${inconsistentNote(clock)}`,
             });
             return;
@@ -243,6 +264,13 @@ function slopeClaims(rows, res) {
             predicted: `${form}: slope ${pLo === pHi ? pLo.toFixed(2) : `${pLo.toFixed(2)} … ${pHi.toFixed(2)}`} over ${rangeText(ns)}${extra} (± ${SLOPE_TOLERANCE})`,
             measured: `${fmtFit(fit)} from ${timingOf(clock)} medians at ${ns.length} sizes`,
             agrees,
+            plain: {
+                claim: `${PLAIN_NAME[k]}: twice the numbers`,
+                predicted: plainPredicted(k, pLo, pHi),
+                measured: agrees === null
+                    ? `About ${timesText(doublingFactor(fit.slope))} times as long, but the times were too uneven to be sure`
+                    : `${timesText(doublingFactor(fit.slope))} times as long, from ${countText(ns[0])} to ${countText(ns.at(-1))} numbers`,
+            },
             note: `${slopeNote(agrees, fit, pLo, pHi)} ${window}${inconsistentNote(clock)}`,
         });
     };
@@ -307,8 +335,23 @@ function crossoverClaims(rows, res) {
         }[c.kind]();
         const skipped = c.skipped.length && c.kind !== 'below-resolution'
             ? `; not compared (a time below ${RESOLUTION_FACTOR}× the timer resolution): N = ${fmtNs(c.skipped)}` : '';
+        const name = PLAIN_NAME[k];
+        const plainMeasured = {
+            'no-data': () => null,
+            'below-resolution': () => 'Every sort was too quick to time well with this browser\'s clock',
+            none: () => `The browser's sort was faster at every size tried, up to ${countText(c.at.n)} numbers`,
+            below: () => `${name} was faster at every size that could be timed, from ${countText(c.at.n)} numbers on`,
+            unresolved: () => `No clear winner at ${countText(c.at.n)} numbers: the times overlap`,
+            reversed: () => `${name} was faster at some sizes, but not at the largest`,
+            between: () => `${name} was faster from between ${countText(c.below.n)} and ${countText(c.above.n)} numbers on`,
+        }[c.kind]();
         return {
             key: `crossover-${k}`,
+            plain: plainMeasured ? {
+                claim: `${name} vs the browser's sort`,
+                predicted: 'It depends on your GPU: the browser\'s sort may even win at every size',
+                measured: plainMeasured,
+            } : undefined,
             claim: `Crossover: ${NAME[a]} (${c.clock.gpu ? 'GPU timestamps' : 'wall'}) becomes faster than the CPU sort`,
             predicted: 'device-dependent, no universal N; "none in range" is a valid outcome',
             measured: measured + skipped,
@@ -346,8 +389,14 @@ function rankingClaim(rows, res) {
         if (hi(slow) + tick < lo(fast)) contradicted = true;      // decided, the other way round
         else decided = false;                                     // spreads overlap
     }
+    const plainMs = (v) => (v >= 10 ? countText(v) : v.toFixed(1));
     return {
         key: 'ranking',
+        plain: {
+            claim: `Fastest to slowest, for ${countText(row.n)} numbers`,
+            predicted: 'Radix sort, then bitonic sort with shared memory, then bitonic sort',
+            measured: order.map((a, i) => `${i ? PLAIN_NAME[KEY[a]].toLowerCase() : PLAIN_NAME[KEY[a]]} ${plainMs(row[keyOf(a)])} ms`).join(', then '),
+        },
         claim: `${claim} (N = ${fmtN(row.n)}, ${gpu ? 'GPU timestamps' : 'wall clock'})`,
         predicted,
         measured: `${order.map(a => `${NAME[a]} ${withIqr(row, keyOf(a))}`).join(' < ')}`,

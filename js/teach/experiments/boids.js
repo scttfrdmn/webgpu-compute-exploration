@@ -51,6 +51,7 @@ const ms = (v) => v.toFixed(3);
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Boids vs time per step',
     question: 'How does the all-pairs neighbour search scale with N, and how many distance tests per second does your GPU run?',
     budgetMs: 20000,
