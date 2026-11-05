@@ -101,6 +101,7 @@
         <h3><span class="num">1</span>Vector Addition</h3>
         <p>Adds two vectors of one million numbers in parallel on the GPU, one invocation per element.</p>
         <button id="btn-vector-add">Run Vector Addition</button>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Run and read the report: it says how long one million additions took and whether the GPU's answers passed the check.</p>
         <div id="output-vector-add" class="output"></div>
     </section>
 
@@ -108,12 +109,14 @@
         <h3><span class="num">2</span>Matrix Multiplication</h3>
         <p>Multiplies two 512×512 matrices with 2D workgroups, a fundamental operation in ML and graphics.</p>
         <button id="btn-matrix-mul">Run Matrix Multiplication</button>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Run and compare the times in the report. The wall time counts the whole trip to the GPU and back; the GPU time, if your browser can measure it, counts only the math, and it is often much smaller.</p>
         <div id="output-matrix-mul" class="output"></div>
     </section>
 
     <section class="example" id="gaussian-blur">
         <h3><span class="num">3</span>Image Processing: Gaussian Blur</h3>
         <p>Applies a 25×25 Gaussian blur (σ = 4) to a sharp-edged test image with a compute shader.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Run and compare the two pictures: the hard edges of the checkerboard turn soft, and the thinnest rings and lines fade into a gray blur.</p>
         <div class="stage">
             <div class="image-pair">
                 <figure>
@@ -157,6 +160,7 @@
             <button class="seed-btn" data-seed="diehard">Diehard</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> click a cell to toggle it.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Green cells are alive and dark ones are dead. Load the Glider and press Start: five cells crawl across the grid on a slant, and when they leave one edge they come back on the other side.</p>
         <canvas id="canvas-gol" class="interactive" width="800" height="600"></canvas>
         <div id="output-gol" class="output"></div>
     </section>
@@ -176,6 +180,7 @@
             <span id="md-temp-value">30</span>
         </div>
         <p class="hint"><strong>Camera:</strong> drag to rotate · wheel to zoom · right-drag to pan</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Each ball is an atom: blue ones are slow and red ones are fast. Move the Temperature slider and watch the atoms speed up and turn red, or slow down and turn blue.</p>
         <canvas id="canvas-md" width="1000" height="700"></canvas>
         <div id="output-md" class="output"></div>
     </section>
@@ -191,11 +196,12 @@
             <label for="sph-gravity">Gravity</label>
             <input type="range" id="sph-gravity" min="0" max="100" value="50">
             <span id="sph-gravity-value">50</span>
-            <label for="sph-viscosity">Viscosity</label>
+            <span class="control" data-level="intermediate"><label for="sph-viscosity">Viscosity</label>
             <input type="range" id="sph-viscosity" min="1" max="100" value="30">
-            <span id="sph-viscosity-value">30</span>
+            <span id="sph-viscosity-value">30</span></span>
         </div>
         <p class="hint"><strong>Add Water</strong> drops a block of 100 particles from the top (up to 4,000 in total).</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start: the block of water collapses, splashes across the box and sloshes until it settles. Slow water is blue and fast water turns cyan.</p>
         <canvas id="canvas-sph" width="1000" height="700" style="background: #0a0a1a;"></canvas>
         <div id="output-sph" class="output"></div>
     </section>
@@ -211,14 +217,15 @@
                 <option value="menger">Menger Sponge</option>
                 <option value="mandelbox">Mandelbox</option>
             </select>
-            <label for="fractal-power">Power</label>
+            <span class="control" data-level="intermediate"><label for="fractal-power">Power</label>
             <input type="range" id="fractal-power" min="2" max="12" value="8">
-            <span id="fractal-power-value">8</span>
-            <label for="fractal-quality">Quality</label>
+            <span id="fractal-power-value">8</span></span>
+            <span class="control" data-level="advanced"><label for="fractal-quality">Quality</label>
             <input type="range" id="fractal-quality" min="32" max="256" value="128" step="32">
-            <span id="fractal-quality-value">128</span>
+            <span id="fractal-quality-value">128</span></span>
         </div>
         <p class="hint"><strong>Camera:</strong> auto-rotates · drag to rotate · wheel to zoom. Renders only while on screen.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Look closely at the surface while it turns: the same bumps and folds appear again at smaller and smaller sizes. Pick another fractal to see a different shape built the same way.</p>
         <canvas id="canvas-fractal" width="1000" height="700"></canvas>
         <div id="output-fractal" class="output"></div>
     </section>
@@ -245,6 +252,7 @@
             <button class="boids-behavior" data-behavior="vortex">Vortex</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> hold the left mouse button to attract boids, the right button to repel them.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> At first every boid flies its own way; within a few seconds they gather into flocks that turn together, with no leader. Green boids are slow, yellow ones fast, and the one red boid hunts the others after Add Predator.</p>
         <canvas id="canvas-boids" class="interactive" width="1000" height="700" style="background: #0a0a1a;"></canvas>
         <div id="output-boids" class="output"></div>
     </section>
@@ -259,9 +267,9 @@
             <label for="dla-rate">Walk steps / frame</label>
             <input type="range" id="dla-rate" min="1" max="50" value="10">
             <span id="dla-rate-value">10</span>
-            <label for="dla-stickiness">Stickiness</label>
+            <span class="control" data-level="intermediate"><label for="dla-stickiness">Stickiness</label>
             <input type="range" id="dla-stickiness" min="1" max="100" value="50">
-            <span id="dla-stickiness-value">50%</span>
+            <span id="dla-stickiness-value">50%</span></span>
         </div>
         <div class="seed-buttons">
             <span class="label">Seeds</span>
@@ -271,6 +279,7 @@
             <button class="dla-seed" data-seed="multiple">Multiple Seeds</button>
         </div>
         <p class="hint"><strong>Camera:</strong> drag to rotate · wheel to zoom</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start and watch branches grow out from the seed, gold near the center and blue farther out. The tips grow fastest, because wandering particles bump into them before they can reach the gaps.</p>
         <canvas id="canvas-dla" class="square" width="1000" height="1000"></canvas>
         <div id="output-dla" class="output"></div>
     </section>
@@ -282,21 +291,21 @@
             <button id="btn-rd-start" class="primary">▶ Start</button>
             <button id="btn-rd-pause">⏸ Pause</button>
             <button id="btn-rd-reset">Reset</button>
-            <label for="rd-feed">Feed</label>
+            <span class="control" data-level="intermediate"><label for="rd-feed">Feed</label>
             <input type="range" id="rd-feed" min="0.010" max="0.100" step="0.0001" value="0.0545">
-            <span id="rd-feed-value">0.0545</span>
-            <label for="rd-kill">Kill</label>
+            <span id="rd-feed-value">0.0545</span></span>
+            <span class="control" data-level="intermediate"><label for="rd-kill">Kill</label>
             <input type="range" id="rd-kill" min="0.040" max="0.075" step="0.0001" value="0.062">
-            <span id="rd-kill-value">0.0620</span>
+            <span id="rd-kill-value">0.0620</span></span>
             <label for="rd-speed">Steps / frame</label>
             <input type="range" id="rd-speed" min="1" max="32" value="12">
             <span id="rd-speed-value">12</span>
-            <label for="rd-palette">Colors</label>
+            <span class="control" data-level="intermediate"><label for="rd-palette">Colors</label>
             <select id="rd-palette">
                 <option value="0">Ocean</option>
                 <option value="1">Magma</option>
                 <option value="2">Mono</option>
-            </select>
+            </select></span>
         </div>
         <div class="seed-buttons">
             <span class="label">Presets</span>
@@ -308,6 +317,7 @@
             <button class="rd-preset" data-preset="cells">Cells</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> hold the left mouse button and drag to paint chemical V. A preset or Reset reseeds the grid.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start and watch patterns grow out of the small square patches until they fill the grid. Bright areas hold a lot of the second chemical; each preset gives a different pattern from the same two rules.</p>
         <canvas id="canvas-rd" class="interactive" width="1024" height="768"></canvas>
         <div id="output-rd" class="output"></div>
     </section>
@@ -329,7 +339,7 @@
             <input type="range" id="wave-steps" min="1" max="16" value="4">
             <span id="wave-steps-value">4</span>
             <button id="btn-wave-rain">Rain: off</button>
-            <button id="btn-wave-absorb">Absorbing edges: off</button>
+            <button id="btn-wave-absorb" data-level="intermediate">Absorbing edges: off</button>
         </div>
         <div class="seed-buttons">
             <span class="label">Presets</span>
@@ -338,6 +348,8 @@
             <button class="wave-preset" data-preset="ellipse">Ellipse</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> click to drop a ripple, hold to keep dropping them · shift-drag to draw walls. Reset clears the water and keeps the walls; a preset replaces both.</p>
+        <p class="look-for" data-levels="beginner" hidden><strong>What to look for:</strong> Click the water and watch the ring spread and bounce off the edges. Where two crests meet, the water rises higher; where a crest meets a trough, it goes flat.</p>
+        <p class="look-for" data-levels="intermediate" hidden><strong>What to look for:</strong> Try Double slit: the waves coming through the two gaps overlap into a fan of strong and calm bands, the same interference pattern light makes. Turn on Absorbing edges and the reflections from the border fade away.</p>
         <canvas id="canvas-wave" class="interactive" width="1024" height="768"></canvas>
         <div id="output-wave" class="output"></div>
     </section>
@@ -369,6 +381,7 @@
             <button class="sand-material" data-material="0">Eraser</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> hold the left mouse button to paint the selected material, the right button to erase; painting also works while paused. Try fire on the oil, or acid on stone.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start: sand falls and piles into a heap with sloped sides, while water runs out flat. Paint fire on the oil in the basin and watch it burn from the top down.</p>
         <canvas id="canvas-sand" class="interactive" width="960" height="720" style="image-rendering: pixelated;"></canvas>
         <div id="output-sand" class="output"></div>
     </section>
@@ -379,11 +392,11 @@
         <div class="controls">
             <button id="btn-noise-animate" class="primary">▶ Animate</button>
             <button id="btn-noise-reset-view">Reset view</button>
-            <label for="noise-type">Noise</label>
+            <span class="control" data-level="intermediate"><label for="noise-type">Noise</label>
             <select id="noise-type">
                 <option value="0">Perlin</option>
                 <option value="1">Simplex</option>
-            </select>
+            </select></span>
             <label for="noise-color">Colors</label>
             <select id="noise-color">
                 <option value="0">Terrain</option>
@@ -391,22 +404,22 @@
                 <option value="2">Marble</option>
                 <option value="3">Grayscale</option>
             </select>
-            <label for="noise-ridged">Ridged</label>
-            <input type="checkbox" id="noise-ridged">
+            <span class="control" data-level="intermediate"><label for="noise-ridged">Ridged</label>
+            <input type="checkbox" id="noise-ridged"></span>
         </div>
-        <div class="controls">
+        <div class="controls" data-level="intermediate">
             <label for="noise-frequency">Frequency</label>
             <input type="range" id="noise-frequency" min="0.5" max="10" step="0.1" value="2.5">
             <span id="noise-frequency-value">2.5</span>
             <label for="noise-octaves">Octaves</label>
             <input type="range" id="noise-octaves" min="1" max="8" step="1" value="7">
             <span id="noise-octaves-value">7</span>
-            <label for="noise-lacunarity">Lacunarity</label>
+            <span class="control" data-level="advanced"><label for="noise-lacunarity">Lacunarity</label>
             <input type="range" id="noise-lacunarity" min="1.5" max="3" step="0.05" value="2">
-            <span id="noise-lacunarity-value">2.00</span>
-            <label for="noise-gain">Persistence</label>
+            <span id="noise-lacunarity-value">2.00</span></span>
+            <span class="control" data-level="advanced"><label for="noise-gain">Persistence</label>
             <input type="range" id="noise-gain" min="0.2" max="0.8" step="0.01" value="0.5">
-            <span id="noise-gain-value">0.50</span>
+            <span id="noise-gain-value">0.50</span></span>
             <label for="noise-warp">Warp</label>
             <input type="range" id="noise-warp" min="0" max="4" step="0.1" value="0.4">
             <span id="noise-warp-value">0.4</span>
@@ -420,6 +433,7 @@
             <button class="noise-preset" data-preset="gray">Warped</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> drag to pan · wheel to zoom. Animate moves through the third (time) dimension of the noise.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> The picture looks random but is smooth: points close together get similar values, so it reads as land, clouds or marble. Zoom in and you find smaller bumps sitting on the big ones.</p>
         <canvas id="canvas-noise" class="interactive" width="1024" height="768"></canvas>
         <div id="output-noise" class="output"></div>
     </section>
@@ -445,18 +459,18 @@
                 <option value="1">Waveform</option>
                 <option value="2">Spectrogram</option>
             </select>
-            <label for="fft-size">FFT size</label>
+            <span class="control" data-level="advanced"><label for="fft-size">FFT size</label>
             <select id="fft-size">
                 <option value="1024">1024</option>
                 <option value="2048" selected>2048</option>
                 <option value="4096">4096</option>
-            </select>
-            <label for="fft-smoothing">Smoothing</label>
+            </select></span>
+            <span class="control" data-level="intermediate"><label for="fft-smoothing">Smoothing</label>
             <input type="range" id="fft-smoothing" min="0" max="0.95" step="0.05" value="0.6">
-            <span id="fft-smoothing-value">0.60</span>
-            <label for="fft-range">dB range</label>
+            <span id="fft-smoothing-value">0.60</span></span>
+            <span class="control" data-level="advanced"><label for="fft-range">dB range</label>
             <input type="range" id="fft-range" min="40" max="140" step="5" value="90">
-            <span id="fft-range-value">90 dB</span>
+            <span id="fft-range-value">90 dB</span></span>
         </div>
         <div class="seed-buttons">
             <span class="label">Presets</span>
@@ -466,6 +480,7 @@
             <button class="fft-preset" data-preset="calm">Smooth</button>
         </div>
         <p class="hint"><strong>Audio:</strong> the synth demo needs no permissions and plays quietly (Mute silences the speakers, not the analysis). The microphone is requested only when you press Microphone and is never played back. Files are decoded locally and loop. The disc in the corner flashes on detected beats.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Synth demo. The bars stand for pitches, low on the left and high on the right: three tall bars stay put (the notes of a chord) while one tone slides across, and the disc in the corner flashes on every drum beat.</p>
         <canvas id="canvas-fft" width="1024" height="512"></canvas>
         <div id="output-fft" class="output"></div>
     </section>
@@ -480,19 +495,19 @@
                 <option value="bitonic-shared">Bitonic (workgroup memory)</option>
                 <option value="radix">Radix (4-bit LSD)</option>
             </select>
-            <label for="sort-type">Keys</label>
+            <span class="control" data-level="intermediate"><label for="sort-type">Keys</label>
             <select id="sort-type">
                 <option value="u32">u32</option>
                 <option value="f32">f32</option>
-            </select>
-            <label for="sort-n">N</label>
+            </select></span>
+            <span class="control" data-level="intermediate"><label for="sort-n">N</label>
             <select id="sort-n">
                 <option value="65536">65,536 (2¹⁶)</option>
                 <option value="262144">262,144 (2¹⁸)</option>
                 <option value="1000000">1,000,000</option>
                 <option value="1048576" selected>1,048,576 (2²⁰)</option>
                 <option value="4194304">4,194,304 (2²²)</option>
-            </select>
+            </select></span>
             <button id="btn-sort-bench" class="primary">Run benchmark</button>
         </div>
         <div class="controls">
@@ -519,6 +534,8 @@
             <span id="sort-speed-value">8</span>
         </div>
         <p class="hint"><strong>Reading the chart:</strong> background blue/purple marks blocks of size k that sort up/down in the next stage; the strip below pairs each orange bar with the cyan bar j places to its right. Gray bars are padding up to a power of two.</p>
+        <p class="look-for" data-levels="beginner" hidden><strong>What to look for:</strong> Press Play and watch the colors: small groups of bars get sorted first, then joined into bigger groups, until the whole row runs from short dark-blue bars on the left to tall yellow ones on the right.</p>
+        <p class="look-for" data-levels="intermediate" hidden><strong>What to look for:</strong> Watch the strip under the bars: in every stage each orange bar is compared with the cyan bar a fixed distance to its right, whatever the data. Try Reversed: bitonic sort still takes the same number of stages.</p>
         <canvas id="canvas-sort" width="2048" height="768"></canvas>
         <div id="output-sort" class="output"></div>
     </section>
@@ -532,32 +549,33 @@
             <button id="btn-kmeans-step">Step</button>
             <button id="btn-kmeans-reset">Reset</button>
             <button id="btn-kmeans-regenerate">Regenerate data</button>
-            <label for="kmeans-init">Init</label>
+            <span class="control" data-level="intermediate"><label for="kmeans-init">Init</label>
             <select id="kmeans-init">
                 <option value="kmeans++">k-means++</option>
                 <option value="random">Random</option>
-            </select>
-            <label for="kmeans-voronoi">Voronoi</label>
-            <input type="checkbox" id="kmeans-voronoi" checked>
+            </select></span>
+            <span class="control" data-level="advanced"><label for="kmeans-voronoi">Voronoi</label>
+            <input type="checkbox" id="kmeans-voronoi" checked></span>
         </div>
         <div class="controls">
             <label for="kmeans-k">K</label>
             <input type="range" id="kmeans-k" min="2" max="16" step="1" value="5">
             <span id="kmeans-k-value">5</span>
-            <label for="kmeans-n">Points</label>
+            <span class="control" data-level="intermediate"><label for="kmeans-n">Points</label>
             <input type="range" id="kmeans-n" min="10000" max="500000" step="10000" value="100000">
-            <span id="kmeans-n-value">100k</span>
+            <span id="kmeans-n-value">100k</span></span>
             <label for="kmeans-blobs">True clusters</label>
             <input type="range" id="kmeans-blobs" min="1" max="16" step="1" value="5">
             <span id="kmeans-blobs-value">5</span>
-            <label for="kmeans-noise">Noise</label>
+            <span class="control" data-level="intermediate"><label for="kmeans-noise">Noise</label>
             <input type="range" id="kmeans-noise" min="0" max="50" step="1" value="5">
-            <span id="kmeans-noise-value">5%</span>
-            <label for="kmeans-speed">Iterations / s</label>
+            <span id="kmeans-noise-value">5%</span></span>
+            <span class="control" data-level="intermediate"><label for="kmeans-speed">Iterations / s</label>
             <input type="range" id="kmeans-speed" min="1" max="60" step="1" value="5">
-            <span id="kmeans-speed-value">5</span>
+            <span id="kmeans-speed-value">5</span></span>
         </div>
         <p class="hint"><strong>Controls:</strong> Start iterates until no point changes cluster, Step runs one iteration, Reset picks new initial centroids for the same points, Regenerate draws a new point cloud. Changing K re-initializes; changing the data sliders regenerates.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start and watch the ringed markers (the centroids) move toward the middle of each group of points, leaving trails, until they stop. Each point takes the color of its nearest centroid.</p>
         <canvas id="canvas-kmeans" width="1024" height="768"></canvas>
         <div id="output-kmeans" class="output"></div>
     </section>
@@ -573,7 +591,7 @@
             <input type="range" id="voronoi-count" min="2" max="1024" step="1" value="64">
             <span id="voronoi-count-value">64</span>
         </div>
-        <div class="controls">
+        <div class="controls" data-level="intermediate">
             <label for="voronoi-metric">Metric</label>
             <select id="voronoi-metric">
                 <option value="0">Euclidean</option>
@@ -586,9 +604,9 @@
                 <option value="1">Distance field</option>
                 <option value="2">Combined</option>
             </select>
-            <label for="voronoi-jfa1">JFA+1</label>
-            <input type="checkbox" id="voronoi-jfa1">
-            <button id="btn-voronoi-check">Exact check</button>
+            <span class="control" data-level="advanced"><label for="voronoi-jfa1">JFA+1</label>
+            <input type="checkbox" id="voronoi-jfa1"></span>
+            <button id="btn-voronoi-check" data-level="advanced">Exact check</button>
         </div>
         <div class="seed-buttons">
             <span class="label">Layouts</span>
@@ -598,6 +616,7 @@
             <button class="voronoi-layout" data-layout="clusters">Clusters</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> click to add a seed · drag a seed to move it · right-click or shift-click to remove the nearest seed. Animate lets the seeds drift and recomputes the diagram every frame; Exact check counts the pixels where JFA differs from brute force.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Each colored cell is the area closest to one seed. Drag a seed and watch the borders move with it: every border lies exactly halfway between two neighboring seeds.</p>
         <canvas id="canvas-voronoi" class="interactive" width="1024" height="768"></canvas>
         <div id="output-voronoi" class="output"></div>
     </section>
@@ -615,12 +634,12 @@
         </div>
         <div class="controls">
             <button id="btn-maze-generate">Generate</button>
-            <label for="maze-algorithm">Algorithm</label>
+            <span class="control" data-level="intermediate"><label for="maze-algorithm">Algorithm</label>
             <select id="maze-algorithm">
                 <option value="dfs">Recursive backtracker</option>
                 <option value="kruskal">Kruskal's</option>
                 <option value="prim">Prim's</option>
-            </select>
+            </select></span>
             <label for="maze-size">Size</label>
             <select id="maze-size">
                 <option value="small">63 × 47</option>
@@ -628,11 +647,12 @@
                 <option value="large">511 × 383</option>
                 <option value="huge">1023 × 767</option>
             </select>
-            <label for="maze-braid">Loops</label>
+            <span class="control" data-level="intermediate"><label for="maze-braid">Loops</label>
             <input type="range" id="maze-braid" min="0" max="30" step="1" value="0">
-            <span id="maze-braid-value">0%</span>
+            <span id="maze-braid-value">0%</span></span>
         </div>
         <p class="hint"><strong>Interaction:</strong> click to move the start (green), shift-click or right-click to move the goal (red). Loops removes a share of the walls so there are several routes and BFS has to pick the shortest; Generate builds a new maze with the selected algorithm and size.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Solve: the flood spreads from the green start into every corridor at once, colored by how far it has come. When it reaches the red goal, the shortest path is drawn in yellow.</p>
         <canvas id="canvas-maze" class="interactive" width="1022" height="766"></canvas>
         <div id="output-maze" class="output"></div>
     </section>
@@ -646,37 +666,37 @@
             <button id="btn-cloth-start" class="primary">▶ Start</button>
             <button id="btn-cloth-pause">⏸ Pause</button>
             <button id="btn-cloth-reset">Reset</button>
-            <label for="cloth-grid">Grid</label>
+            <span class="control" data-level="intermediate"><label for="cloth-grid">Grid</label>
             <select id="cloth-grid">
                 <option value="32">32 × 32</option>
                 <option value="48">48 × 48</option>
                 <option value="64" selected>64 × 64</option>
                 <option value="96">96 × 96</option>
                 <option value="128">128 × 128</option>
-            </select>
-            <label for="cloth-iterations">Iterations</label>
+            </select></span>
+            <span class="control" data-level="advanced"><label for="cloth-iterations">Iterations</label>
             <input type="range" id="cloth-iterations" min="1" max="30" step="1" value="8">
-            <span id="cloth-iterations-value">8</span>
-            <label for="cloth-stiffness">Stiffness</label>
+            <span id="cloth-iterations-value">8</span></span>
+            <span class="control" data-level="intermediate"><label for="cloth-stiffness">Stiffness</label>
             <input type="range" id="cloth-stiffness" min="0.05" max="1" step="0.05" value="1">
-            <span id="cloth-stiffness-value">1.00</span>
+            <span id="cloth-stiffness-value">1.00</span></span>
         </div>
         <div class="controls">
             <label for="cloth-wind">Wind</label>
             <input type="range" id="cloth-wind" min="0" max="20" step="0.5" value="0">
             <span id="cloth-wind-value">0.0 m/s</span>
-            <label for="cloth-gravity">Gravity</label>
+            <span class="control" data-level="intermediate"><label for="cloth-gravity">Gravity</label>
             <input type="range" id="cloth-gravity" min="0" max="20" step="0.1" value="9.8">
-            <span id="cloth-gravity-value">9.8 m/s²</span>
+            <span id="cloth-gravity-value">9.8 m/s²</span></span>
             <label for="cloth-tear">Tearing</label>
             <input type="checkbox" id="cloth-tear">
-            <label for="cloth-tear-threshold">Tear at</label>
+            <span class="control" data-level="intermediate"><label for="cloth-tear-threshold">Tear at</label>
             <input type="range" id="cloth-tear-threshold" min="1.1" max="4" step="0.05" value="1.8">
-            <span id="cloth-tear-threshold-value">1.80×</span>
-            <label for="cloth-wireframe">Wireframe</label>
-            <input type="checkbox" id="cloth-wireframe">
-            <label for="cloth-particles">Particles</label>
-            <input type="checkbox" id="cloth-particles">
+            <span id="cloth-tear-threshold-value">1.80×</span></span>
+            <span class="control" data-level="advanced"><label for="cloth-wireframe">Wireframe</label>
+            <input type="checkbox" id="cloth-wireframe"></span>
+            <span class="control" data-level="advanced"><label for="cloth-particles">Particles</label>
+            <input type="checkbox" id="cloth-particles"></span>
         </div>
         <div class="seed-buttons">
             <span class="label">Presets</span>
@@ -687,6 +707,7 @@
             <button class="cloth-preset" data-preset="flag">Flag</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom · shift-drag to grab the cloth and pull it. Turn on Tearing and pull hard to rip it; links break when stretched past the threshold. Presets and the grid size reset the cloth; Wind is set by each preset and can be changed.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start: the cloth falls and folds as it hangs from two corners. Shift-drag to pull it, raise the Wind to make it flap, or turn on Tearing and pull hard to rip it.</p>
         <canvas id="canvas-cloth" class="interactive" width="1024" height="768"></canvas>
         <div id="output-cloth" class="output"></div>
     </section>
@@ -697,35 +718,35 @@
         <div class="controls">
             <button id="btn-pt-start" class="primary">▶ Start</button>
             <button id="btn-pt-reset">Reset accumulation</button>
-            <label for="pt-resolution">Resolution</label>
+            <span class="control" data-level="advanced"><label for="pt-resolution">Resolution</label>
             <select id="pt-resolution">
                 <option value="0">100% (800 × 600)</option>
                 <option value="1">75% (600 × 450)</option>
                 <option value="2">50% (400 × 300)</option>
-            </select>
-            <label for="pt-target">Target spp</label>
+            </select></span>
+            <span class="control" data-level="intermediate"><label for="pt-target">Target spp</label>
             <input type="range" id="pt-target" min="0" max="6" step="1" value="4">
-            <span id="pt-target-value">1024</span>
-            <label for="pt-bounces">Max bounces</label>
+            <span id="pt-target-value">1024</span></span>
+            <span class="control" data-level="intermediate"><label for="pt-bounces">Max bounces</label>
             <input type="range" id="pt-bounces" min="1" max="8" step="1" value="5">
-            <span id="pt-bounces-value">5</span>
+            <span id="pt-bounces-value">5</span></span>
         </div>
         <div class="controls">
-            <label for="pt-nee">Light sampling</label>
-            <input type="checkbox" id="pt-nee" checked>
+            <span class="control" data-level="advanced"><label for="pt-nee">Light sampling</label>
+            <input type="checkbox" id="pt-nee" checked></span>
             <label for="pt-exposure">Exposure</label>
             <input type="range" id="pt-exposure" min="-3" max="3" step="0.1" value="0">
             <span id="pt-exposure-value">0.0 EV</span>
-            <label for="pt-tonemap">Tone map</label>
+            <span class="control" data-level="advanced"><label for="pt-tonemap">Tone map</label>
             <select id="pt-tonemap">
                 <option value="0">ACES</option>
                 <option value="1">Reinhard</option>
-            </select>
-            <label for="pt-clamp">Firefly clamp</label>
+            </select></span>
+            <span class="control" data-level="advanced"><label for="pt-clamp">Firefly clamp</label>
             <input type="range" id="pt-clamp" min="0" max="100" step="1" value="0">
-            <span id="pt-clamp-value">off</span>
+            <span id="pt-clamp-value">off</span></span>
         </div>
-        <div class="controls">
+        <div class="controls" data-level="intermediate">
             <label for="pt-fov">Field of view</label>
             <input type="range" id="pt-fov" min="15" max="90" step="1" value="40">
             <span id="pt-fov-value">40°</span>
@@ -746,6 +767,7 @@
             <button class="pt-scene" data-scene="materials">Materials</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom · click to focus on the point under the cursor (with depth of field on). Every camera or setting change restarts the accumulation; exposure and tone mapping do not. Caustics take many samples: the bright speckles are light focused through glass, and the firefly clamp hides them at the cost of a slightly darker image.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start: the picture begins grainy and turns smooth as more light paths are added. Look for soft shadows, and for red and green light bouncing off the side walls onto the white ones.</p>
         <canvas id="canvas-pt" class="interactive" width="800" height="600"></canvas>
         <div id="output-pt" class="output"></div>
     </section>
@@ -757,29 +779,30 @@
             <button id="btn-mnist-train-start" class="primary">▶ Start</button>
             <button id="btn-mnist-train-pause">⏸ Pause</button>
             <button id="btn-mnist-train-reset">Reset</button>
-            <button id="btn-mnist-export">Export weights</button>
-            <button id="btn-mnist-use">Use in Recognize</button>
+            <button id="btn-mnist-export" data-level="advanced">Export weights</button>
+            <button id="btn-mnist-use" data-level="intermediate">Use in Recognize</button>
         </div>
         <div class="controls">
-            <label for="mnist-lr">Learning rate</label>
+            <span class="control" data-level="intermediate"><label for="mnist-lr">Learning rate</label>
             <input type="range" id="mnist-lr" min="0" max="7" step="1" value="5">
-            <span id="mnist-lr-value">0.04</span>
-            <label for="mnist-batch">Batch</label>
+            <span id="mnist-lr-value">0.04</span></span>
+            <span class="control" data-level="advanced"><label for="mnist-batch">Batch</label>
             <select id="mnist-batch">
                 <option value="32">32</option>
                 <option value="64" selected>64</option>
                 <option value="128">128</option>
-            </select>
+            </select></span>
             <label for="mnist-epochs">Epochs</label>
             <input type="range" id="mnist-epochs" min="1" max="30" step="1" value="15">
             <span id="mnist-epochs-value">15</span>
-            <label for="mnist-speed">Batches / frame</label>
+            <span class="control" data-level="intermediate"><label for="mnist-speed">Batches / frame</label>
             <input type="range" id="mnist-speed" min="1" max="16" step="1" value="4">
-            <span id="mnist-speed-value">4</span>
-            <label for="mnist-augment">Random shifts</label>
-            <input type="checkbox" id="mnist-augment" checked>
+            <span id="mnist-speed-value">4</span></span>
+            <span class="control" data-level="advanced"><label for="mnist-augment">Random shifts</label>
+            <input type="checkbox" id="mnist-augment" checked></span>
         </div>
         <p class="hint"><strong>Controls:</strong> Start loads the data (1.6 MB) on first use and trains; Pause keeps the weights, Reset re-initializes them with the next seed. The default settings and first seed repeat the CPU run that produced the cached weights of example 22. Learning rate, batch size and shifts apply from the next mini-batch. Export weights downloads a .bin in the same format as <code>data/mnist/weights.bin</code>; Use in Recognize hands the current weights to example 22. Hover the charts for values. MNIST data: CC BY-SA 3.0, see <code>data/mnist/LICENSE.md</code>.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start and watch the loss chart fall and the accuracy chart rise as the network sees more digits. After each epoch it is tested on digits it has never seen.</p>
         <canvas id="canvas-mnist-train" width="960" height="320"></canvas>
         <p class="hint">First-layer filters (8 × 5×5, blue positive, orange negative, each scaled to its largest weight), drawn from the GPU weights buffer every frame:</p>
         <canvas id="canvas-mnist-filters" width="460" height="61"></canvas>
@@ -792,9 +815,10 @@
         <div class="controls">
             <button id="btn-mnist-clear" class="primary">Clear</button>
             <button id="btn-mnist-random">Random test digit</button>
-            <button id="btn-mnist-cached">Use cached weights</button>
+            <button id="btn-mnist-cached" data-level="intermediate">Use cached weights</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> draw with the mouse, a pen or a finger in the black square; the prediction updates while you draw and when you lift. Random test digit shows one of the 2,000 test images with its true label. MNIST data and the cached weights: CC BY-SA 3.0, see <code>data/mnist/LICENSE.md</code>.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Draw a digit in the black square and watch the bars: the highlighted one is the network's guess, and its length shows how sure it is. Try a sloppy 4 or 9 and see it hesitate.</p>
         <div style="display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start;">
             <canvas id="canvas-mnist-draw" class="interactive" width="280" height="280"></canvas>
             <div id="mnist-bars" style="flex: 1 1 260px;"></div>
@@ -825,24 +849,24 @@
                 <option value="bh" selected>Barnes-Hut</option>
                 <option value="brute">Brute force (≤ 32,768)</option>
             </select>
-            <label for="nbody-color">Color</label>
+            <span class="control" data-level="advanced"><label for="nbody-color">Color</label>
             <select id="nbody-color">
                 <option value="speed" selected>By speed</option>
                 <option value="origin">By origin</option>
-            </select>
-            <label for="nbody-trails">Trails</label>
-            <input type="checkbox" id="nbody-trails">
+            </select></span>
+            <span class="control" data-level="advanced"><label for="nbody-trails">Trails</label>
+            <input type="checkbox" id="nbody-trails"></span>
         </div>
         <div class="controls">
             <label for="nbody-theta">θ</label>
             <input type="range" id="nbody-theta" min="0.3" max="1" step="0.05" value="0.5">
             <span id="nbody-theta-value">0.50</span>
-            <label for="nbody-softening">Softening</label>
+            <span class="control" data-level="intermediate"><label for="nbody-softening">Softening</label>
             <input type="range" id="nbody-softening" min="0.005" max="0.2" step="0.005" value="0.05">
-            <span id="nbody-softening-value">0.050</span>
-            <label for="nbody-dt">Time step</label>
+            <span id="nbody-softening-value">0.050</span></span>
+            <span class="control" data-level="intermediate"><label for="nbody-dt">Time step</label>
             <input type="range" id="nbody-dt" min="0.001" max="0.02" step="0.001" value="0.01">
-            <span id="nbody-dt-value">0.010</span>
+            <span id="nbody-dt-value">0.010</span></span>
             <label for="nbody-speed">Speed</label>
             <input type="range" id="nbody-speed" min="1" max="4" step="1" value="2">
             <span id="nbody-speed-value">2×</span>
@@ -855,6 +879,8 @@
             <button class="nbody-preset" data-preset="collapse">Cold collapse</button>
         </div>
         <p class="hint"><strong>Interaction:</strong> drag to orbit · right-drag to pan · wheel to zoom. θ is the Barnes-Hut opening angle (smaller is more accurate and slower), softening ε smooths close encounters, Speed is leapfrog steps per frame. Changing θ, ε or the mode restarts the energy baseline; presets and the body count reset the simulation. Brute force is limited to 32,768 bodies.</p>
+        <p class="look-for" data-levels="beginner" hidden><strong>What to look for:</strong> Pick Galaxy collision and press Start: the two galaxies pull on each other, fling out streams of stars and swirl together. Blue stars are slow, white and gold ones faster, and orange-red ones the fastest.</p>
+        <p class="look-for" data-levels="intermediate" hidden><strong>What to look for:</strong> Watch the energy drift in the readout below the picture: it should stay small. Raise θ and each step gets faster but the drift grows; a bigger time step makes it grow too.</p>
         <canvas id="canvas-nbody" class="interactive" width="1024" height="768"></canvas>
         <div id="output-nbody" class="output"></div>
     </section>
@@ -870,33 +896,33 @@
             <button id="btn-reverb-file">Audio file…</button>
             <input type="file" id="reverb-file" accept="audio/*" hidden>
             <button id="btn-reverb-bypass">Bypass: off</button>
-            <button id="btn-reverb-ab">A/B: GPU</button>
+            <button id="btn-reverb-ab" data-level="advanced">A/B: GPU</button>
         </div>
         <div class="controls">
             <label for="reverb-decay">Decay (RT60)</label>
             <input type="range" id="reverb-decay" min="0.2" max="5" step="0.1" value="2.2">
             <span id="reverb-decay-value">2.2 s</span>
-            <label for="reverb-predelay">Pre-delay</label>
+            <span class="control" data-level="intermediate"><label for="reverb-predelay">Pre-delay</label>
             <input type="range" id="reverb-predelay" min="0" max="100" step="1" value="22">
-            <span id="reverb-predelay-value">22 ms</span>
+            <span id="reverb-predelay-value">22 ms</span></span>
             <label for="reverb-mix">Mix</label>
             <input type="range" id="reverb-mix" min="0" max="100" step="1" value="35">
             <span id="reverb-mix-value">35% wet</span>
             <label for="reverb-gain">Output</label>
             <input type="range" id="reverb-gain" min="0" max="0.5" step="0.01" value="0.3">
             <span id="reverb-gain-value">-10.5 dB</span>
-            <label for="reverb-block">Block</label>
+            <span class="control" data-level="advanced"><label for="reverb-block">Block</label>
             <select id="reverb-block">
                 <option value="1024" selected>1024</option>
                 <option value="2048">2048</option>
-            </select>
-            <label for="reverb-depth">GPU slack</label>
+            </select></span>
+            <span class="control" data-level="advanced"><label for="reverb-depth">GPU slack</label>
             <select id="reverb-depth">
                 <option value="1">1 block</option>
                 <option value="2" selected>2 blocks</option>
                 <option value="3">3 blocks</option>
                 <option value="5">5 blocks</option>
-            </select>
+            </select></span>
         </div>
         <div class="seed-buttons">
             <span class="label">Space</span>
@@ -909,6 +935,7 @@
             <input type="file" id="reverb-ir-file" accept="audio/*,.wav" hidden>
         </div>
         <p class="hint"><strong>Audio:</strong> nothing plays until you press Start or a source; the output is capped at 0.5 with a limiter and soft clip. Use headphones with the microphone (speakers feed back into a reverb). Latency is one block for the partition plus the GPU slack; the dry signal and the ConvolverNode are delayed by the same amount, so A/B compares like with like. <strong>Canvas:</strong> top left the IR waveform (left channel above, right below), bottom left its spectrogram (50 Hz-16 kHz, 0 to -90 dB) with the Schroeder energy decay (white), the -60 dB line and the measured RT60 (green); top right the latest input block (blue) and GPU wet block (orange); bottom right peak meters for input L/R, wet L/R and the final output (-60 to 0 dBFS).</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Start and listen: each sound keeps ringing after it stops, like in a big room. Pick Cathedral for a long tail or Small room for a short one, and press Bypass to hear the dry sound.</p>
         <canvas id="canvas-reverb" width="1024" height="512"></canvas>
         <div id="output-reverb" class="output"></div>
     </section>
@@ -919,6 +946,7 @@
     <section class="example" id="wasm-mandelbrot">
         <h3><span class="num">25</span>WASM Integration: Mandelbrot Set</h3>
         <p>Rust compiled to WebAssembly configures the view and colors the result; a WebGPU compute shader does the iteration.</p>
+        <p class="look-for" data-levels="beginner intermediate" hidden><strong>What to look for:</strong> Press Run: the black shape is the Mandelbrot set. Look at its fuzzy edge, where the colors run from red through yellow, green and blue to purple the closer a point is to the set.</p>
         <div class="stage">
             <canvas id="canvas-mandelbrot" width="800" height="600"></canvas>
             <div class="run-overlay"><button id="btn-wasm-mandelbrot" class="primary">▶ Run WASM + WebGPU</button></div>

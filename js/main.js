@@ -27,7 +27,7 @@ import { initConvolutionReverb } from './examples/convolution-reverb.js';
 import { runWASMMandelbrot } from './examples/wasm-mandelbrot.js';
 import { buildDeviceReport } from './device-report.js';
 import { setupTabs } from './teach/tabs.js';
-import { mountLevelSelector } from './teach/levels.js';
+import { mountLevelSelector, applyExploreLevel, onLevelChange } from './teach/levels.js';
 import { renderFlagships } from './teach/flagships.js';
 import { pauseExample, NO_AUTO_RESUME } from './example-control.js';
 import { setGPUDevice, setExampleInstance, markDeviceLost, isDeviceLost, experimentResults } from './teach/app-state.js';
@@ -65,6 +65,10 @@ async function init() {
     const levelPicker = document.getElementById('level-picker');
     if (levelPicker) mountLevelSelector(levelPicker);
     setupTabs();
+    // Explore controls and "What to look for" prompts marked for a level (#92); hiding only toggles
+    // `hidden`, so values, listeners, device-loss disabling and the pause buttons are unaffected
+    applyExploreLevel();
+    onLevelChange((level) => applyExploreLevel(level));
 
     try {
         const isSupported = await checkWebGPUSupport();
