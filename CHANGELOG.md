@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-05
+
+### Added
+- Visitor levels (#89, #90): a Level menu on the catalog and the learning path — Beginner (middle school),
+  Intermediate (high school), Advanced (college, the existing pages and the default). It is remembered and
+  shareable as `?level=`. Understand pages exist per level (`content/understand/<id>.<level>.md`) and fall
+  back to the next level up with a note. Eight examples have all three (#91): N-body, matrix multiplication,
+  parallel sorting, the Game of Life, falling sand, boids, the wave equation and the WASM Mandelbrot. Each
+  level's pages are linted for their own outline and reading level (Flesch–Kincaid grade, share of long words, terms to avoid, no math at Beginner).
+- Explore by level (#92): controls show from their level up (Beginner keeps Start/Pause/Reset, presets and
+  a few main controls; Advanced is unchanged), and every example has a short "what to look for" prompt at
+  Beginner and Intermediate.
+- Measure by level (#93): experiments declare their levels; Beginner and Intermediate see plain-language
+  predictions and results (written for the three reference investigations), a one-line check summary at
+  Beginner and the numbers behind a disclosure. Result records are unchanged.
+- Learning path by level (#94): a five-step "First look" for Beginner and a seven-step "Core ideas" track for
+  Intermediate; Advanced keeps the two tracks.
+- Browser tests for the levels (#95).
+
+### Changed
+- Result records keep each claim's stable key (optional, schema v1 compatible), and the validation summary
+  groups claims by it (#86).
+
+### Fixed
+- Boids: the Speed slider now sets the top speed from the start and across Reset and count changes (#97).
+
 ## [0.7.0] - 2026-11-02
 
 ### Added
@@ -311,7 +337,8 @@ All notable changes to this project are documented here. The format follows
   load; boids no longer auto-starts; ray marching renders only while visible;
   repeated Start clicks no longer stack extra render loops.
 
-[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/scttfrdmn/webgpu-compute-exploration/compare/v0.4.0...v0.5.0

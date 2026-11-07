@@ -63,6 +63,7 @@ const sci = (v) => v.toExponential(2);
 // ---- 1. Accuracy vs FFT size ------------------------------------------------------------------------
 const accuracy = {
     id: 'accuracy',
+    levels: ['intermediate', 'advanced'],
     title: 'FFT size vs accuracy',
     question: 'How large is the single-precision FFT error, how does it grow with N, and how much of it comes from the window rather than the butterflies?',
     settings: [signalSetting],
@@ -123,6 +124,7 @@ function timeCpu(fn) {
 
 const cost = {
     id: 'cost',
+    levels: ['intermediate', 'advanced'],
     title: 'FFT size vs time: GPU, CPU FFT, CPU DFT',
     question: 'Is one audio-sized FFT faster on the GPU than on the CPU, and where does the time go?',
     budgetMs: 20000,

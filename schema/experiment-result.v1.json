@@ -359,6 +359,13 @@
         ],
         "additionalProperties": false,
         "properties": {
+          "key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional: the claim's stable identifier from interpret(), the same across versions of its wording"
+          },
           "claim": {
             "type": "string",
             "minLength": 1

@@ -28,6 +28,7 @@ const presetSetting = {
 
 const iterationsStretch = {
     id: 'iterations-stretch',
+    levels: ['intermediate', 'advanced'],
     title: 'Solver iterations vs stretch',
     question: 'How close to inextensible does the cloth get as the Gauss-Seidel solver runs more iterations per substep, and what does each iteration cost?',
     settings: [
@@ -80,6 +81,7 @@ export const SCALING_SETTLE = 16;        // two untimed command buffers before t
 
 const gridScaling = {
     id: 'grid-scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size vs time per substep',
     question: 'How does the cost of a substep grow with the number of particles, and when does the GPU stop being limited by dispatch overhead?',
     settings: [

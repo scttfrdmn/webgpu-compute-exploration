@@ -90,6 +90,7 @@ export const stepsFor = (side) => Math.max(64, Math.min(1024, Math.round(2 ** 26
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size vs time per step',
     question: 'How does the time per leapfrog step grow with the grid, and how much of a small step is launch overhead?',
     settings: [

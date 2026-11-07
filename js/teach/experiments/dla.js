@@ -27,6 +27,7 @@ const f2 = (v) => v.toFixed(2);
 
 const stickiness = {
     id: 'stickiness',
+    levels: ['intermediate', 'advanced'],
     title: 'Stickiness vs structure',
     question: 'How do the sticking probability and the growth time change the shape of the aggregate: its size, density and fractal dimension?',
     settings: [
@@ -76,6 +77,7 @@ export const SCALING_WARMUP = 50;
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Walkers vs time per step',
     question: 'How many walkers does it take to keep the GPU busy, and what does one walk step cost per walker?',
     settings: [

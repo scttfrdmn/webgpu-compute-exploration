@@ -36,6 +36,7 @@ function cpuAgreement(weights, test, probs, count) {
 
 const learningRate = {
     id: 'learning-rate',
+    levels: ['intermediate', 'advanced'],
     title: 'Learning rate vs test accuracy',
     question: `Which learning rate learns fastest in a short run of ${LR_BATCHES} mini-batches, and what happens when it is too small or too large?`,
     budgetMs: 20000,
@@ -75,6 +76,7 @@ const learningRate = {
 
 const batchSpeed = {
     id: 'batch-speed',
+    levels: ['intermediate', 'advanced'],
     title: 'Batch size vs time per mini-batch',
     question: 'How does the cost of one SGD step grow with the batch size, and how many images per second does that give?',
     budgetMs: 20000,

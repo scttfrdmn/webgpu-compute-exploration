@@ -58,6 +58,15 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   `measure.js` + `chart.js` run `js/teach/experiments/<id>.js` and chart the results, `registry.js` lists which
   examples have content, `app-state.js` shares the device and instances with `main.js`, `stats.js` summarizes
   repeats (median, IQR, CV), `result-record.js` builds and validates schema v1 records (Download / Compare).
+- Visitor levels: `js/teach/levels.js` (Beginner / Intermediate / Advanced, `?level=` + localStorage, the
+  header menu), `UNDERSTAND_LEVELS` in `registry.js`, `content/understand/<id>.<level>.md` (Advanced is the plain
+  `<id>.md`; a missing level falls back upward). `test/teach-levels.test.mjs` holds each level's outline
+  (`LEVEL_SECTIONS`) and checks `LEVEL_RULES` from `js/teach/readability.js`. Lower levels may simplify, never
+  say something false: check every number and claim against the code or a measurement.
+  Explore controls carry `data-level` (lowest level that shows them; never on Start/Pause/Reset, primary buttons,
+  presets, canvas or output) and each example has `.look-for` prompts (`test/explore-levels.test.mjs`). Measure
+  experiments may declare `levels` and claims a `plain` text (`js/teach/measure-levels.js`; never copied into
+  records). Learning-path tracks per level are `TRACKS_BY_LEVEL` in `path.js`.
 - `js/teach/flagships.js` — data for the landing page's three reference investigations; each card cites `interpret()`
   claims by their stable `key`, and `test/flagships.test.mjs` fails if a card's wording drifts from the claims.
 - `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`

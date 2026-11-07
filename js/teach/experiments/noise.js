@@ -21,6 +21,7 @@ const ms = (v) => v.toFixed(3);
 
 const cost = {
     id: 'cost',
+    levels: ['intermediate', 'advanced'],
     title: 'Octaves and resolution vs time',
     question: 'Does the cost of a noise field grow linearly with the number of octaves, and is simplex noise cheaper than Perlin?',
     settings: [
@@ -100,6 +101,7 @@ const f3 = (v) => v.toFixed(3);
 
 const statistics = {
     id: 'statistics',
+    levels: ['intermediate', 'advanced'],
     title: 'Field statistics vs the float64 reference',
     question: 'Does the GPU field match a float64 evaluation of the same noise, and how does adding octaves change its spread?',
     settings: [{ key: 'noiseType', label: 'Noise', options: [{ value: 0, label: 'Perlin' }, { value: 1, label: 'Simplex' }], default: 0 }],

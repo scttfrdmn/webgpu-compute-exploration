@@ -328,7 +328,12 @@ test('interpretationOf: normalizes claims, survives a throwing interpret, omitte
     assert.deepEqual(interpretationOf({}, [], {}), {});
     assert.deepEqual(interpretationOf({ interpret: () => [] }, [], {}), {});
     const out = interpretationOf({ interpret: () => [{ claim: 'c', predicted: 'p', measured: 'm', agrees: 'yes' }] }, [], {});
-    assert.deepEqual(out.interpretation, [{ claim: 'c', predicted: 'p', measured: 'm', agrees: null, note: null }]);
+    assert.deepEqual(out.interpretation, [{ key: null, claim: 'c', predicted: 'p', measured: 'm', agrees: null, note: null }]);
+    // the stable key is kept (#86); a non-string or empty key is dropped; extra fields (e.g. plain) never leak
+    const keyed = interpretationOf({ interpret: () => [{ key: 'k1', claim: 'c', predicted: 'p', measured: 'm', agrees: true, plain: { claim: 'x' } },
+        { key: '', claim: 'd', predicted: 'p', measured: 'm', agrees: false }] }, [], {});
+    assert.deepEqual(keyed.interpretation.map(c => c.key), ['k1', null]);
+    assert.ok(keyed.interpretation.every(c => !('plain' in c)));
     const thrown = interpretationOf({ interpret: () => { throw new Error('boom'); } }, [], {});
     assert.equal(thrown.interpretation[0].agrees, null);
     assert.match(thrown.interpretation[0].note, /boom/);

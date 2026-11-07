@@ -64,6 +64,7 @@ const ms = (v) => v.toFixed(2);
 // ---- 1. Seeds × metric × (JFA, JFA+1) → error rate ---------------------------------------------------
 const errorRate = {
     id: 'error-rate',
+    levels: ['intermediate', 'advanced'],
     title: 'JFA vs JFA+1: error rate against brute force',
     question: 'On what fraction of pixels does jump flooding pick a seed that is not the nearest, and how much does the extra step-1 pass of JFA+1 fix?',
     settings: [
@@ -121,6 +122,7 @@ const errorRate = {
 // ---- 2. Resolution → time -------------------------------------------------------------------------
 const resolution = {
     id: 'resolution',
+    levels: ['intermediate', 'advanced'],
     title: 'Grid size vs time',
     question: 'JFA does log₂N full-grid passes: how does its time grow with the number of pixels, and what does each pixel-pass cost?',
     settings: [{ key: 'plusOne', label: 'Variant', options: [{ value: false, label: 'JFA' }, { value: true, label: 'JFA+1' }], default: false }],

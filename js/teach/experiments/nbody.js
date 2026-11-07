@@ -15,6 +15,7 @@ import { generateBodies, measureForces, measureEnergyDrift } from '../../example
 import { directForcesAt, relErrors } from '../../refs/nbody.js';
 import { summarize, withSpread, fitPowerLaw, slopeAgrees } from '../stats.js';
 import { check } from '../result-record.js';
+import { doublingFactor, timesText, countText } from '../measure-levels.js';
 
 export const BH_MAX_N = 65536;
 export const BRUTE_MAX_N = 16384;
@@ -221,6 +222,11 @@ export function interpretThetaError(rows, { n, preset } = {}) {
             + `accepted ${THETA_ORDER} ± ${THETA_ORDER_TOLERANCE} for the θ³ term at large θ`,
         measured: slopeText(err),
         agrees: errAgrees,
+        plain: {
+            claim: 'A bigger θ: how far off the pulls are',
+            predicted: 'Doubling θ makes the error about 4 times bigger',
+            measured: err.slope === null ? 'Not enough θ values yet' : `Doubling θ made the error ${timesText(doublingFactor(err.slope))} times bigger`,
+        },
         note: errAgrees === null ? tooFew(err, 'θ values')
             : errAgrees ? 'The measured exponent is consistent with θ².'
                 : err.slope < THETA_ORDER ? 'Flatter than θ²: something other than the multipole truncation sets the error '
@@ -233,6 +239,7 @@ export function interpretThetaError(rows, { n, preset } = {}) {
             + 'flatter at these N, where the near field and the ~log N levels add a θ-independent part (CI, Plummer 4,096: −1.47)',
         measured: slopeText(work),
         agrees: workAgrees,
+        plain: plainWork(rows, n),
         note: workAgrees === null ? (work.ci95 ? 'The interval straddles a bound of the predicted range.' : tooFew(work, 'θ values'))
             : workAgrees && n ? `At θ = ${rows.at(-1).theta} each body does ${rows.at(-1).interactions.toFixed(0)} interactions, `
                 + `${pct(rows.at(-1).interactions / (n - 1))} of brute force's ${count(n - 1)}.` : null,
@@ -247,10 +254,28 @@ export function interpretThetaError(rows, { n, preset } = {}) {
         measured: ratios.length ? `ratio ${f2(Math.min(...ratios))} … ${f2(Math.max(...ratios))} over ${ratios.length} θ value${ratios.length === 1 ? '' : 's'}`
             : medians ? 'no rows yet' : `no replica values for ${preset}, N = ${n}`,
         agrees: ratios.length ? within : null,
+        plain: ratios.length ? {
+            claim: 'Your GPU vs a careful copy of its program on the CPU',
+            predicted: 'The same errors at every θ',
+            measured: within ? `The same, to within ${Math.max(1, Math.round(100 * Math.max(...ratios.map(v => Math.abs(v - 1)))))}%`
+                : `Different: off by up to ${timesText(Math.max(...ratios.map(v => Math.max(v, 1 / v))))} times`,
+        } : undefined,
         note: !ratios.length ? null : within ? 'Your GPU runs the same approximation as the reference; the trends above are the algorithm\'s, not the device\'s.'
             : 'The shader on this device does not reproduce the reference; treat the slopes above with suspicion and see the verification list.',
     });
     return claims;
+}
+
+// Plain words for the work claim: the pulls per star at the smallest and largest θ of the rows
+function plainWork(rows, n) {
+    const r = rows.filter(x => x.interactions > 0);
+    if (r.length < 2) return undefined;
+    const all = n ? ` (with no shortcut: ${countText(n - 1)})` : '';
+    return {
+        claim: 'A bigger θ: how much work each star does',
+        predicted: 'Less work: more far-away boxes count as one big star',
+        measured: `${countText(r[0].interactions)} pulls per star at θ = ${r[0].theta}, ${countText(r.at(-1).interactions)} at θ = ${r.at(-1).theta}${all}`,
+    };
 }
 
 // ---- 2. Scaling: Barnes-Hut vs brute force ----------------------------------------------------------
@@ -300,6 +325,7 @@ export const NLOGN_EFFECTIVE = nlognSlope(scalingCounts(SCALING_DEFAULT_MAX));  
 
 const scaling = {
     id: 'scaling',
+    levels: ['intermediate', 'advanced'],
     title: 'Scaling: Barnes-Hut vs brute force',
     question: 'At what N does the O(N log N) tree, rebuilt every step, beat the O(N²) tiled direct sum on your GPU?',
     settings: [presetSetting, {
@@ -484,6 +510,13 @@ function floorClaimText(f, basis) {
 }
 const at = (n) => `N = ${count(n)}`;
 
+// Plain words for a time-vs-N fit: twice the stars took 2^slope times as long
+function plainSlope(fit, agrees) {
+    if (fit.slope === null) return 'Too few sizes took long enough to time; try a larger Largest N';
+    const f = timesText(doublingFactor(fit.slope));
+    return agrees === null ? `About ${f} times as long, but the times were too uneven to be sure` : `${f} times as long`;
+}
+
 export function interpretScaling(rows, { maxN } = {}) {
     const limits = scalingLimits(maxN);
     const brute = timeBasis(rows, 'brute'), bh = timeBasis(rows, 'bh');
@@ -502,6 +535,11 @@ export function interpretScaling(rows, { maxN } = {}) {
             + `the fixed cost), fitted above ${FLOOR_FACTOR}× the fixed floor`,
         measured: bruteText.measured,
         agrees: bruteAgrees,
+        plain: {
+            claim: 'Brute force: twice the stars',
+            predicted: 'About 4 times as long: twice the stars, each pulled by twice as many others',
+            measured: plainSlope(bruteF.fit, bruteAgrees),
+        },
         note: [...bruteText.notes, bruteAgrees === null || bruteAgrees ? null
             : bruteF.fit.slope < BRUTE_ORDER ? 'Below 2 even above the floor: at the smallest fitted N the GPU is not yet full '
                 + '(too few bodies for its cores), or the floor estimate is off; a larger Largest N decides.'
@@ -517,6 +555,11 @@ export function interpretScaling(rows, { maxN } = {}) {
             + `log N push it up), fitted above ${FLOOR_FACTOR}× the fixed floor`,
         measured: bhText.measured,
         agrees: bhAgrees,
+        plain: {
+            claim: 'Barnes-Hut: twice the stars',
+            predicted: `A bit more than twice as long (2.0 to ${timesText(doublingFactor(bhUpper))} times): far stars are pulled in as groups`,
+            measured: plainSlope(bhF.fit, bhAgrees),
+        },
         note: [...bhText.notes, bhAgrees === null || bhAgrees ? null
             : bhF.fit.slope < BH_LOWER ? 'Below 1 even above the floor: a fixed or slowly growing cost is still a large part of '
                 + 'the time at the fitted sizes; a larger Largest N decides.'
@@ -534,6 +577,12 @@ export function interpretScaling(rows, { maxN } = {}) {
             + `${f2((workNs.length >= 2 ? nlognSlope(workNs) : NLOGN_EFFECTIVE) - 1)} here; CI: 0.37)`,
         measured: slopeText(work),
         agrees: workAgrees,
+        plain: workNs.length >= 2 ? {
+            claim: 'Barnes-Hut: pulls per star as stars are added',
+            predicted: 'They grow, but far more slowly than the number of stars',
+            measured: `${countText(rows.find(r => r.interactions > 0).interactions)} at ${countText(workNs[0])} stars, `
+                + `${countText(rows.filter(r => r.interactions > 0).at(-1).interactions)} at ${countText(workNs.at(-1))} stars`,
+        } : undefined,
         note: workAgrees === null ? (work.ci95 ? 'The interval straddles a bound of the predicted range.' : tooFew(work, 'N values'))
             : 'Deterministic counts (one distribution, one seed): the interval reflects curvature, not noise.',
     });
@@ -562,11 +611,19 @@ export function interpretScaling(rows, { maxN } = {}) {
         note += agrees === false ? ' The fitted slopes do not cross at all, which contradicts O(N log N) vs O(N²): look at the spreads.'
             : ' The prediction is not tested inside the sweep; the extrapolation assumes both slopes hold beyond it.';
     }
+    const plainCross = !x.points ? null : x.state === 'bracketed' ? `Barnes-Hut was faster from between ${countText(x.lo)} and ${countText(x.hi)} stars on`
+        : x.state === 'below' ? `Barnes-Hut was faster at every size, from ${countText(x.firstN)} stars`
+            : `Brute force was faster at every size tried, up to ${countText(x.lastN)} stars`;
     claims.push({
         key: 'bh-crossover',
         claim: 'Crossover N (Barnes-Hut faster from here)',
         predicted: 'exists: O(N²) overtakes O(N log N) at some N (CI, software GPU, wall ms: between 8,192 and 16,384)',
         measured, agrees, note,
+        plain: plainCross ? {
+            claim: 'Barnes-Hut beats brute force once there are enough stars',
+            predicted: 'Yes, at some number of stars that depends on your GPU',
+            measured: plainCross,
+        } : undefined,
     });
 
     const shares = rows.filter(r => r.treeShare > 0);
@@ -579,6 +636,11 @@ export function interpretScaling(rows, { maxN } = {}) {
         measured: shares.length >= 2 ? `${pct(shares[0].treeShare)} at ${at(shares[0].n)} → ${pct(shares.at(-1).treeShare)} at `
             + `${at(shares.at(-1).n)}; slope ${slopeText(shareFit)}` : 'needs GPU times (timestamp-query)',
         agrees: shareAgrees,
+        plain: shares.length >= 2 ? {
+            claim: 'Barnes-Hut: the part of the time spent building the tree',
+            predicted: 'It shrinks as stars are added',
+            measured: `${pct(shares[0].treeShare)} at ${countText(shares[0].n)} stars, ${pct(shares.at(-1).treeShare)} at ${countText(shares.at(-1).n)} stars`,
+        } : undefined,
         note: !shares.length ? 'This browser or GPU does not offer timestamp-query, so the split cannot be measured.'
             : shareAgrees === null ? (shareFit.ci95 ? 'The share does not change clearly with N.' : tooFew(shareFit, 'N values'))
                 : shareAgrees ? null : 'The share grows with N: the tree build scales worse than the traversal on this device.',
@@ -618,6 +680,7 @@ export const DRIFT_BOUNDS = { brute: 1e-3, bh: 1e-2 };
 
 const energyDrift = {
     id: 'energy-drift',
+    levels: ['intermediate', 'advanced'],
     title: 'Time step vs energy error',
     question: 'How does the leapfrog energy error scale with the time step dt, and what does the Barnes-Hut approximation add to it?',
     settings: [
@@ -716,6 +779,12 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
             predicted: `${DRIFT_ORDER}: leapfrog is second order and symplectic, so the energy error stays in a band ∝ dt²`,
             measured: slopeText(fit),
             agrees,
+            plain: {
+                claim: 'Exact forces: energy error vs time step',
+                predicted: 'Half the time step gives about a quarter of the error',
+                measured: fit.slope === null ? 'Not enough time steps yet'
+                    : `Half the time step gave an error ${timesText(doublingFactor(fit.slope))} times smaller`,
+            },
             note: agrees === null ? tooFew(fit, 'time steps')
                 : agrees ? 'The measured order is consistent with second-order leapfrog.'
                     : fit.slope < DRIFT_ORDER ? 'Below 2: a floor flattens the small-dt end (the f32 energy sum near 1e-7), '
@@ -734,6 +803,12 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
         predicted: `0: dt-independent, set by the tree's force error (accepted ± ${FLOOR_SLOPE_TOLERANCE} for a residual dt² part)`,
         measured: slopeText(fit),
         agrees: flat,
+        plain: {
+            claim: 'Barnes-Hut forces: energy error vs time step',
+            predicted: 'A smaller time step does not help: the tree\'s own error sets a floor',
+            measured: fit.slope === null ? 'Not enough time steps yet'
+                : `Half the time step changed the error by a factor of ${doublingFactor(fit.slope).toFixed(2)}`,
+        },
         note: flat === null ? tooFew(fit, 'time steps')
             : flat ? 'A smaller dt does not help: the tree, not the integrator, limits the energy error.'
                 : fit.slope > 0 ? 'The error still falls with dt: on this run the leapfrog error is not negligible against the tree error.'
@@ -745,6 +820,11 @@ export function interpretEnergyDrift(rows, { mode } = {}) {
             + '(≈ 4e-3 per body), partly averaged out; far above the exact-force error (≤ 7.4e-5)',
         measured: floor === null ? 'no rows yet' : `${sci(floor)} (median over ${drifts.length} dt; ${sci(Math.min(...drifts))} … ${sci(Math.max(...drifts))})`,
         agrees: inRange,
+        plain: floor === null ? undefined : {
+            claim: 'Barnes-Hut forces: the size of that floor',
+            predicted: 'Between 0.0001 and 0.01 of the total energy',
+            measured: `About ${+floor.toPrecision(2)} of the total energy`,
+        },
         note: inRange === null ? null : 'An order-of-magnitude prediction, not a fit; one distribution, one seed (CI, Plummer 2,048: 6.4e-4 … 6.9e-4).',
     }];
 }

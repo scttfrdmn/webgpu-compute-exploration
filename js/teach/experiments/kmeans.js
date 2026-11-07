@@ -64,6 +64,7 @@ const costSeries = { y: ['gpuMs', 'wallMs', 'cpuMs'], yLabel: 'ms per Lloyd iter
 // ---- 1. Points vs time per iteration ----------------------------------------------------------------
 const pointsSweep = {
     id: 'points',
+    levels: ['intermediate', 'advanced'],
     title: 'Points vs time per iteration',
     question: 'How does the cost of one Lloyd iteration grow with the number of points, on the GPU and on the CPU?',
     settings: [{ key: 'k', label: 'Clusters K', options: [4, 8, 16].map(k => ({ value: k, label: String(k) })), default: 8 }],
@@ -84,6 +85,7 @@ const pointsSweep = {
 // ---- 2. Clusters vs time per iteration --------------------------------------------------------------
 const clustersSweep = {
     id: 'clusters',
+    levels: ['intermediate', 'advanced'],
     title: 'Clusters vs time per iteration',
     question: 'The assignment step costs N·K distances; does the GPU time per iteration grow linearly with K?',
     settings: [{ key: 'n', label: 'Points', options: [100000, 500000].map(n => ({ value: n, label: n.toLocaleString('en-US') })), default: 100000 }],
@@ -119,6 +121,7 @@ export function lloyd64Converge(points, n, k, cent, max = MAX_CONVERGE_ITERATION
 
 const convergence = {
     id: 'convergence',
+    levels: ['intermediate', 'advanced'],
     title: 'Converged inertia: GPU (f32) vs CPU (float64)',
     question: 'Starting from the same centroids, does the single-precision GPU run reach the same clustering and the same objective as a float64 run?',
     settings: [{ key: 'init', label: 'Initial centroids', options: [{ value: 'kmeans++', label: 'k-means++' }, { value: 'random', label: 'Random (Forgy)' }], default: 'kmeans++' }],

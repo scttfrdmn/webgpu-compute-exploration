@@ -16,6 +16,7 @@
 //                                                // key: a stable id for the claim (js/teach/flagships.js cites it)
 //     scope?: { shows: [string], doesNotShow: [string] },   // shown on the card before running
 //                                                // optional checks recorded with the result (see "Verification")
+//     levels?: ['beginner', 'intermediate', 'advanced'],   // visitor levels it is listed at (default: all)
 //     async *run(ctx, settings) { ... yield row ... }   // one row per sweep step
 //   }
 //
@@ -58,6 +59,9 @@
 // from js/teach/stats.js), and whether they agree (slopeAgrees; null when the data cannot decide). It is about
 // meaning, not correctness — verify() is for pass/fail against references. scope.shows / scope.doesNotShow say
 // what a visitor may and may not conclude (e.g. "not a ranking of GPUs: one device, one browser, one run").
+// A claim may also carry plain: { claim, predicted, measured, note? }, the same result in plain words for the
+// Beginner and Intermediate levels (no statistics terms; computed from the same rows). See js/teach/measure-levels.js
+// for what each level shows; records never contain `plain`.
 //
 // Verification. verify(rows, settings) checks the rows (possibly a partial run) against independent
 // references and CI-derived bounds; return 'not-checked' for a check whose rows are missing. Without
@@ -75,6 +79,11 @@ import { pauseExplore } from './tabs.js';
 import { summarize, hasRange, SPREAD_LABEL } from './stats.js';
 import { buildResultRecord, validateResultRecord, compareRecords, ratioTable, resultFileName, SCHEMA_PATH } from './result-record.js';
 import { sourceInfo } from '../source-info.js';
+import { getLevel, onLevelChange } from './levels.js';
+import {
+    experimentsForLevel, noExperimentsNote, resultView, INTRO_SIMPLE, claimsForLevel, rawClaimsOf, verdictText, agreesKey,
+    checksSummary, simpleProtocolText, rangeHeader, chartSpreadText, chartsForLevel,
+} from './measure-levels.js';
 
 export const MAX_BUDGET_MS = 20000;
 export const MAX_WARMUP = 5;
@@ -82,6 +91,17 @@ export const MAX_REPEATS = 20;
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 let busy = false;                 // one experiment at a time, page-wide
 const runButtons = new Set();
+// Mounted Measure panels re-render on a level change; during a run that waits until the run has finished
+const levelRefreshers = new Set();
+let levelPending = false;
+let levelListening = false;
+function refreshLevel() {
+    if (busy) { levelPending = true; return; }
+    levelPending = false;
+    const level = getLevel();
+    for (const refresh of levelRefreshers) refresh(level);
+}
+const flushLevel = () => { if (levelPending) refreshLevel(); };
 
 export const STOP_MESSAGES = {
     cancelled: () => 'Cancelled',
@@ -208,13 +228,37 @@ export const INTRO = 'Each experiment runs on your GPU only when you press Run, 
     + 'Timings are medians over repeated runs after a discarded warm-up, with their spread. Results can be '
     + 'downloaded as JSON, compared with someone else\'s file, and are added to the device report.';
 
+// Every experiment gets a card; the ones not written for the current level are hidden (not removed, so a result
+// shown before a level change is still there after changing back)
 export async function mountMeasure(panel, exampleId) {
     const { default: experiments } = await import(experimentsModule(exampleId));
     const intro = document.createElement('p');
     intro.className = 'hint';
-    intro.textContent = INTRO;
-    panel.append(intro);
-    for (const experiment of experiments) panel.append(experimentCard(exampleId, experiment, panel));
+    const none = document.createElement('p');
+    none.className = 'hint measure-level-note';
+    none.hidden = true;
+    panel.append(intro, none);
+    const cards = experiments.map(experiment => {
+        const card = experimentCard(exampleId, experiment, panel);
+        panel.append(card.element);
+        return { experiment, card };
+    });
+    const apply = (level) => {
+        intro.textContent = resultView(level).simple ? INTRO_SIMPLE : INTRO;
+        const shown = new Set(experimentsForLevel(experiments, level));
+        for (const { experiment, card } of cards) {
+            card.element.hidden = !shown.has(experiment);
+            card.setLevel(level);
+        }
+        none.hidden = shown.size > 0;
+        none.textContent = shown.size ? '' : noExperimentsNote(experiments, level);
+    };
+    apply(getLevel());
+    levelRefreshers.add(apply);
+    if (!levelListening) {
+        levelListening = true;
+        onLevelChange(refreshLevel);
+    }
 }
 
 let schemaPromise = null;
@@ -243,7 +287,9 @@ function experimentCard(exampleId, experiment, panel) {
     question.className = 'experiment-question';
     question.textContent = experiment.question;
     card.append(title, question);
-    if (experiment.scope) card.append(scopeNote(experiment.scope));
+    const scope = experiment.scope ? scopeNote(experiment.scope) : null;
+    if (scope) card.append(scope);
+    let level = getLevel();
 
     const controls = document.createElement('div');
     controls.className = 'controls';
@@ -314,6 +360,8 @@ function experimentCard(exampleId, experiment, panel) {
     runButtons.add(run);
     let rows = [];
     let record = null;
+    let settingsUsed = null;
+    let drawn = false;
     let controller = null;
     const setIdle = () => {
         busy = false;
@@ -336,13 +384,14 @@ function experimentCard(exampleId, experiment, panel) {
         const settings = Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()]));
         rows = [];
         record = null;
+        settingsUsed = settings;
         recordBar.hidden = true;
         protocol.hidden = true;
         checks.hidden = true;
         compare.replaceChildren();
         status.textContent = 'Running…';
         status.className = 'experiment-status';
-        const redraw = () => drawResults(experiment, rows, charts, table);
+        const redraw = () => { drawn = true; drawResults(experiment, rows, charts, table, level); };
         let failure = null;
         const ctx = makeContext(gpuDevice, { budgetMs: experiment.budgetMs, signal: controller.signal });
         try {
@@ -365,16 +414,15 @@ function experimentCard(exampleId, experiment, panel) {
             setIdle();
         }
         redraw();
-        if (!rows.length) return;
+        if (!rows.length) { flushLevel(); return; }
         record = buildResultRecord({
             exampleId, experiment, settings, rows, outcome: outcomeOf(failure), measured: ctx.measured,
             gpuDevice, source: await sourceInfo(), userAgent: navigator.userAgent, budgetMs: ctx.budgetMs,
         });
         recordExperimentResult(record);
-        showProtocol(protocol, record);
-        showChecks(checks, record.verification);
-        showInterpretation(interpretation, record.interpretation);
+        showRecord();
         recordBar.hidden = false;
+        flushLevel();
     });
     cancel.addEventListener('click', () => controller?.abort());
     copy.addEventListener('click', async () => {
@@ -409,11 +457,33 @@ function experimentCard(exampleId, experiment, panel) {
         if (!file || !record) return;
         await showComparison(compare, record, file);
     });
-    return card;
+
+    // The parts of a finished result that depend on the level (the record itself does not)
+    function showRecord() {
+        showProtocol(protocol, record, level);
+        showChecks(checks, record.verification, level);
+        const raw = level === 'advanced' ? [] : rawClaimsOf(experiment, rows, settingsUsed);
+        showInterpretation(interpretation, claimsForLevel(record.interpretation, raw, level), level);
+    }
+    const showScope = () => { if (scope) scope.hidden = !resultView(level).scope; };
+    showScope();
+    const setLevel = (next) => {
+        if (next === level) return;
+        level = next;
+        showScope();
+        if (drawn) drawResults(experiment, rows, charts, table, level);
+        if (record) showRecord();
+    };
+    return { element: card, setLevel };
 }
 
-function showProtocol(el, record) {
+function showProtocol(el, record, level) {
     const p = record.protocol;
+    if (resultView(level).simple) {
+        el.textContent = simpleProtocolText(p);
+        el.hidden = false;
+        return;
+    }
     const timing = p.timing === 'timestamp-query'
         ? 'GPU times from timestamp queries plus wall-clock times'
         : 'wall-clock times only (this device has no timestamp-query)';
@@ -446,11 +516,10 @@ function scopeNote(scope) {
     return box;
 }
 
-const AGREES_TEXT = (a) => (a === true ? 'agrees' : a === false ? 'disagrees' : 'undetermined');
-
 // Measured vs predicted: each claim with the theory's expectation, the measurement with its uncertainty,
-// and whether they agree — in words, never color alone
-function showInterpretation(el, claims) {
+// and whether they agree — in words, never color alone. `claims` come from claimsForLevel (at Advanced the
+// record's claims as they are).
+function showInterpretation(el, claims, level) {
     el.replaceChildren();
     if (!claims?.length) { el.hidden = true; return; }
     const heading = document.createElement('h5');
@@ -462,8 +531,8 @@ function showInterpretation(el, claims) {
     notes.className = 'hint';
     for (const c of claims) {
         const tr = body.insertRow();
-        cellsRow(tr, [c.claim, c.predicted, c.measured, AGREES_TEXT(c.agrees)]);
-        tr.lastChild.className = `verdict verdict-${AGREES_TEXT(c.agrees)}`;
+        cellsRow(tr, [c.claim, c.predicted, c.measured, verdictText(c.agrees, level)]);
+        tr.lastChild.className = `verdict verdict-${agreesKey(c.agrees)}`;
         if (c.note) {
             const li = document.createElement('li');
             li.textContent = `${c.claim}: ${c.note}`;
@@ -475,8 +544,16 @@ function showInterpretation(el, claims) {
     el.hidden = false;
 }
 
-function showChecks(list, verification) {
+function showChecks(list, verification, level) {
     list.replaceChildren();
+    if (resultView(level).checks === 'summary') {
+        const li = document.createElement('li');
+        li.className = 'check-summary';
+        li.textContent = checksSummary(verification);
+        list.append(li);
+        list.hidden = false;
+        return;
+    }
     for (const c of verification) {
         const li = document.createElement('li');
         const s = document.createElement('span');
@@ -573,15 +650,26 @@ async function showComparison(holder, mine, file) {
     holder.append(controls, values, note);
 }
 
-function drawResults(experiment, rows, charts, table) {
+function drawResults(experiment, rows, charts, table, level) {
     charts.replaceChildren();
-    for (const chart of experiment.charts ?? []) {
+    const spreadText = chartSpreadText(level);
+    for (const chart of chartsForLevel(experiment.charts, rows, level)) {
         const holder = document.createElement('figure');
         holder.className = 'chart';
         charts.append(holder);
-        renderLineChart(holder, { ...chart, rows, columns: experiment.columns });
+        renderLineChart(holder, { ...chart, rows, columns: experiment.columns, ...(spreadText ? { spreadText } : {}) });
     }
-    table.replaceChildren(resultsTable(experiment.columns, rows));
+    const t = resultsTable(experiment.columns, rows, level);
+    if (resultView(level).table === 'disclosure') {
+        const details = document.createElement('details');
+        details.className = 'experiment-numbers';
+        const summary = document.createElement('summary');
+        summary.textContent = 'Show the numbers';
+        details.append(summary, t);
+        table.replaceChildren(details);
+    } else {
+        table.replaceChildren(t);
+    }
 }
 
 export function formatCell(column, value) {
@@ -601,12 +689,12 @@ export function formatRowCell(column, row) {
     return formatWithRange((v) => formatCell(column, v), row, column.key);
 }
 
-function resultsTable(columns, rows) {
+function resultsTable(columns, rows, level) {
     const t = document.createElement('table');
     const head = t.createTHead().insertRow();
     for (const c of columns) {
         const th = document.createElement('th');
-        th.textContent = hasRange(rows, c.key) ? `${c.label} (q1–q3)` : c.label;
+        th.textContent = hasRange(rows, c.key) ? rangeHeader(c.label, level) : c.label;
         head.append(th);
     }
     const body = t.createTBody();

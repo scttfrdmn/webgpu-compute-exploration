@@ -41,6 +41,14 @@ header.hero p { margin: 0 0 18px; max-width: 760px; color: var(--muted); font-si
 }
 .hero-links a:hover { border-color: var(--accent); color: var(--accent); }
 .hero-links button { border-radius: 999px; }
+/* Visitor level (js/teach/levels.js): Beginner / Intermediate / Advanced */
+.level-select {
+    display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 14px;
+    border: 1px solid var(--border); border-radius: 999px; font-size: 0.92rem; color: var(--muted);
+}
+.level-select select { border-radius: 999px; padding: 4px 10px; font-size: 0.9rem; }
+.level-select:focus-within { border-color: var(--accent); }
+.level-fallback-note { margin: 0 0 12px; }
 
 /* Opt-in device report: built on request, copied to the clipboard, never sent automatically */
 .device-report { margin-top: 12px; max-width: 760px; }
@@ -98,6 +106,13 @@ nav.toc a:hover { color: var(--text); background: var(--surface-2); }
 .example > p { margin: 0 0 12px; color: var(--muted); }
 .hint { color: var(--muted); font-size: 0.9rem; margin: 10px 0; }
 .hint strong { color: var(--text); font-weight: 600; }
+/* Visitor levels in Explore (#92): a control wrapper adds no box, so a .controls row lays out exactly as
+   without it; level-hidden wrappers, rows and prompts must beat their own display rules */
+.controls span.control { display: contents; min-width: 0; font-size: inherit; }
+[data-level][hidden], [data-levels][hidden] { display: none !important; }
+.example p.look-for { border-left: 3px solid #c98500; background: var(--surface-2); color: var(--text);
+    font-size: 0.92rem; padding: 8px 12px; margin: 10px 0; border-radius: 0 8px 8px 0; }
+.example p.look-for strong { color: #e0a63a; font-weight: 600; }
 
 /* Controls */
 button {
@@ -271,6 +286,9 @@ footer {
 .experiment-table th, .experiment-table td { border: 1px solid var(--border); padding: 4px 8px; text-align: right;
     font-variant-numeric: tabular-nums; }
 .experiment-table th { color: var(--muted); font-weight: 500; }
+.experiment-numbers summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin: 6px 0; }
+.experiment-numbers summary:hover { color: var(--text); }
+.experiment-checks .check-summary { color: var(--text); }
 .understand .code-block { position: relative; }
 .understand .code-lang { position: absolute; top: 6px; right: 10px; font-size: 0.75rem; color: var(--muted); }
 .understand .table-wrap { overflow-x: auto; }
@@ -343,3 +361,4 @@ footer {
 .flagship-pointer h2 { margin: 0 0 6px; font-size: 1.1rem; }
 .flagship-pointer-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
 .flagship-pointer-item .flagship-links { margin: 4px 0 0; }
+.learn-start { margin: 28px 0 0; max-width: 900px; }

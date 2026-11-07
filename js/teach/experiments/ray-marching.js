@@ -37,6 +37,7 @@ const pct = (v) => `${(100 * v).toFixed(1)}%`;
 
 const steps = {
     id: 'max-steps',
+    levels: ['intermediate', 'advanced'],
     title: 'Step budget vs cost and convergence',
     question: 'How many sphere-tracing steps does a pixel need before its ray converges, and what does a larger step budget cost per frame?',
     settings: [
