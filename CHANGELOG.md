@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Validation matrix beyond Apple silicon (#102): Windows with NVIDIA, AMD or Intel GPUs (Chrome), Windows
+  Firefox and Linux Vulkan (Chrome); validate.html suggests the environment from the browser, OS and adapter
+  vendor, and bundles record the adapter's features and key limits. The README summary adds a features and
+  limits table and a per-device performance table (not a ranking; GPU timestamps that exceed the wall time
+  are not used).
+
 ## [0.8.0] - 2026-11-05
 
 ### Added

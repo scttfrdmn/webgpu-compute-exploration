@@ -124,10 +124,20 @@ export function detectBrowser(userAgent = '', hints = null) {
 const major = (version) => Number.parseInt(String(version ?? ''), 10);
 
 // The matrix environment (data/validation/matrix.json) a detected browser/OS belongs to, or null
-export function matchEnvironment(matrix, detected) {
+// The matrix environment for a browser, OS and adapter vendor (adapter.info.vendor, lower case). Environments that
+// name vendors only match an adapter that reports one of them; an adapter that reports no vendor matches only
+// environments without a vendor list, so the person running it picks from the menu instead of a wrong guess.
+export function matchEnvironment(matrix, detected, adapterVendor = '') {
+    const vendor = String(adapterVendor ?? '').trim().toLowerCase();
     return matrix?.environments?.find(env => env.browser === detected.browser.name && env.os === detected.os.name
-        && (!env.minBrowserMajor || major(detected.browser.version) >= env.minBrowserMajor)) ?? null;
+        && (!env.minBrowserMajor || major(detected.browser.version) >= env.minBrowserMajor)
+        && (!env.vendors || env.vendors.includes(vendor))) ?? null;
 }
+
+// Adapter features and limits worth comparing across devices (feature availability, not performance)
+export const REPORTED_FEATURES = ['timestamp-query', 'shader-f16', 'subgroups', 'float32-filterable', 'bgra8unorm-storage'];
+export const REPORTED_LIMITS = ['maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize',
+    'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupsPerDimension'];
 
 const text = (v) => (v === undefined || v === null ? '' : String(v));
 const ADAPTER_FIELDS = ['vendor', 'architecture', 'device', 'description'];
@@ -157,6 +167,9 @@ export function validationEnvironment({ gpuDevice = null, detected, entered = {}
             adapter: safe(() => gpuDevice.adapter.features.has('timestamp-query'), false) === true,
             device: gpuDevice?.timestamps === true,
         },
+        features: REPORTED_FEATURES.filter(f => safe(() => gpuDevice.adapter.features.has(f), false) === true),
+        limits: Object.fromEntries(REPORTED_LIMITS.map(k => [k, safe(() => gpuDevice.adapter.limits[k], null)])
+            .filter(([, v]) => Number.isFinite(v))),
         userAgent: text(userAgent),
         source: {
             version: source?.version || 'unknown',

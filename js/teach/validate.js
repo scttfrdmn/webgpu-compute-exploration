@@ -13,7 +13,7 @@ import { sourceInfo, LOCAL_COMMIT } from '../source-info.js';
 import {
     planFor, experimentOf, entryBudgetMs, planDuration, settingsText, detectBrowser, matchEnvironment,
     validationEnvironment, missingFields, buildValidationBundle, validateValidationBundle, bundleFileName, bundlePath,
-    verificationVerdict, interpretationCounts, VERDICT_TEXT, agreesText, MATRIX_PATH, BUNDLE_SCHEMA_PATH,
+    verificationVerdict, interpretationCounts, VERDICT_TEXT, agreesText, MATRIX_PATH, BUNDLE_SCHEMA_PATH, REPORTED_FEATURES,
 } from './validation.js';
 import matrixMultiplication from './experiments/matrix-multiplication.js';
 import nbody from './experiments/nbody.js';
@@ -101,6 +101,8 @@ function detectedText(detected, gpuDevice, source) {
         `Adapter: ${adapter}${info.isFallbackAdapter ? ' · FALLBACK (software) adapter' : ''}`,
         `timestamp-query: ${tsAdapter ? (gpuDevice.timestamps ? 'available (GPU times recorded)' : 'offered but not enabled')
             : 'not available — GPU times fall back to wall-clock'}`,
+        `Other features: ${REPORTED_FEATURES.filter(f => f !== 'timestamp-query' && gpuDevice.adapter.features.has(f)).join(', ') || 'none of '
+            + REPORTED_FEATURES.filter(f => f !== 'timestamp-query').join(', ')}`,
         `Site: ${source.version} @ ${source.commit === LOCAL_COMMIT ? 'local (no version.json: run `node tools/local-version.mjs` before serving, so the bundle names its commit)' : source.commit.slice(0, 12)}`,
     ];
 }
@@ -232,7 +234,7 @@ async function init() {
         return p;
     }));
     detectedBox.hidden = false;
-    const suggested = matchEnvironment(matrix, detected);
+    const suggested = matchEnvironment(matrix, detected, info.vendor);
     envSelect.value = suggested?.id ?? 'unlisted';
     $('validation-browser-version').value = detected.browser.version ?? '';
     $('validation-os-version').value = detected.os.version ?? '';

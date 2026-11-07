@@ -14,7 +14,7 @@ import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     validateValidationBundle, bundleFileName, verificationVerdict, agreesText, settingsText, missingFields,
-    VERDICT_TEXT, FLAGSHIPS, MATRIX_PATH, BUNDLE_SCHEMA_PATH,
+    VERDICT_TEXT, FLAGSHIPS, MATRIX_PATH, BUNDLE_SCHEMA_PATH, REPORTED_FEATURES, REPORTED_LIMITS,
 } from '../js/teach/validation.js';
 import { SCHEMA_PATH } from '../js/teach/result-record.js';
 
@@ -109,6 +109,31 @@ function correctnessCell(record) {
 }
 
 // Markdown for the README block (without the markers)
+// The performance figures of the summary: the last row with a value (the run's largest size), with the clock used
+const lastWith = (rows, ...keys) => [...rows].reverse().find(r => keys.some(k => typeof r[k] === 'number' && r[k] > 0));
+const timed = (rows, gpuKey, wallKey, sizeKey, sizeLabel) => {
+    const r = lastWith(rows, gpuKey, wallKey);
+    if (!r) return '—';
+    const gpu = typeof r[gpuKey] === 'number' && r[gpuKey] > 0 ? r[gpuKey] : null;
+    const wall = typeof r[wallKey] === 'number' && r[wallKey] > 0 ? r[wallKey] : null;
+    // A pass cannot take longer than its own submit → done: such timestamps are not used (as in the sort experiment)
+    const inconsistent = gpu !== null && wall !== null && gpu > 1.05 * wall;
+    const [v, clock] = gpu !== null && !inconsistent ? [gpu, 'GPU'] : [wall, inconsistent ? 'wall; GPU timestamps exceed it' : 'wall'];
+    return `${formatNumber(v)} ms (${clock}) at ${sizeLabel} = ${r[sizeKey].toLocaleString('en-US')}`;
+};
+export const PERFORMANCE = [
+    { label: 'matmul: tiled GPU GFLOPS', exampleId: 'matrix-multiplication', experimentId: 'cpu-naive-tiled',
+        cell: (rows) => { const r = lastWith(rows, 'tiledGflops'); return r ? `${formatNumber(r.tiledGflops)} at n = ${r.n}` : '—'; } },
+    { label: 'matmul: naive GPU GFLOPS', exampleId: 'matrix-multiplication', experimentId: 'cpu-naive-tiled',
+        cell: (rows) => { const r = lastWith(rows, 'naiveGflops'); return r ? `${formatNumber(r.naiveGflops)} at n = ${r.n}` : '—'; } },
+    { label: 'N-body: Barnes-Hut force evaluation', exampleId: 'nbody', experimentId: 'scaling',
+        cell: (rows) => timed(rows, 'bhGpu', 'bhWall', 'n', 'N') },
+    { label: 'N-body: brute-force force evaluation', exampleId: 'nbody', experimentId: 'scaling',
+        cell: (rows) => timed(rows, 'bruteGpu', 'bruteWall', 'n', 'N') },
+    { label: 'sort u32: radix', exampleId: 'parallel-sort', experimentId: 'scaling', settings: { dataType: 'u32' },
+        cell: (rows) => timed(rows, 'radixGpu', 'radixWall', 'n', 'N') },
+];
+
 export function renderSummary({ matrix, bundles }) {
     const { latest, counts } = latestByEnvironment(bundles);
     const envs = matrix.environments;
@@ -165,6 +190,31 @@ export function renderSummary({ matrix, bundles }) {
     out.push('', '**Timing availability** — how GPU times were measured (timestamp-query, or wall-clock submit → done).', '',
         table(['Flagship', 'Experiment', ...envHeads], experiments.map(x => [x.experiment.exampleId, experimentName(x),
             ...present.map(env => find(env, experimentKey(x))?.protocol.timing ?? '—')])));
+
+    // Feature availability and limits, per environment (bundles before #102 did not record them)
+    const bundleEnv = (env) => latest.get(env.id).bundle.environment;
+    const featureRows = [
+        ...REPORTED_FEATURES.map(f => [`feature ${f}`, ...present.map(env => {
+            const e = bundleEnv(env);
+            return Array.isArray(e.features) ? (e.features.includes(f) ? 'yes' : 'no') : 'not recorded';
+        })]),
+        ...REPORTED_LIMITS.map(k => [`limit ${k}`, ...present.map(env => {
+            const v = bundleEnv(env).limits?.[k];
+            return typeof v === 'number' ? v.toLocaleString('en-US') : 'not recorded';
+        })]),
+    ];
+    out.push('', '**Features and limits** — what each adapter offers (availability, not speed).', '',
+        table(['Feature or limit', ...envHeads], featureRows));
+
+    // Performance, kept apart from correctness: one figure per flagship at each run's largest size
+    const perfRows = PERFORMANCE.map(p => [p.label, ...present.map(env => {
+        const r = recordsOf(env).find(rec => rec.experiment.exampleId === p.exampleId && rec.experiment.id === p.experimentId
+            && Object.entries(p.settings ?? {}).every(([k, v]) => rec.settings[k] === v));
+        return r ? p.cell(r.rows) : '—';
+    })]);
+    out.push('', '**Performance** — per device, at each run\'s largest size. Not a ranking: devices, browsers, clocks and '
+        + 'timer resolution differ, and the correctness and interpretation tables matter more.', '',
+        table(['Measurement', ...envHeads], perfRows));
 
     const claimRows = [];
     for (const x of experiments) {
