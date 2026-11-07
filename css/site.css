@@ -245,6 +245,9 @@ footer {
 .callout-numerics { border-left-color: var(--accent-2); }
 .callout-try { border-left-color: #c98500; }
 .callout-warning { border-left-color: var(--error); }
+/* Words a facilitator reads out to the learner (content/facilitate/) */
+.callout-say { border-left-color: #b48ead; }
+.callout-say .callout-label { color: #d3b5cf; }
 
 /* Series colors: dataviz reference palette, dark steps, fixed order, validated on #161b22 */
 .measure-root, .tab-panel-measure {
@@ -346,6 +349,17 @@ footer {
 .verdict-agrees { color: var(--accent-2); }
 .verdict-disagrees { color: var(--error); }
 .verdict-undetermined { color: var(--muted); }
+
+/* ---- Facilitator guides (facilitate.html, js/teach/facilitate.js) ---- */
+.facilitate .session-list { list-style: none; padding: 0; margin: 18px 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.facilitate .session-list a { display: block; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px; color: var(--text); text-decoration: none; }
+.facilitate .session-list a:hover { border-color: var(--accent); }
+.facilitate .session-list a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
+.facilitate .session-level { display: block; color: var(--muted); font-size: 0.85rem; }
+.facilitate .facilitate-guide { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 24px 18px; }
 
 /* ---- Reference investigations (index.html cards, learn.html pointer; js/teach/flagships.js) ---- */
 .flagships > .hint { max-width: 760px; }

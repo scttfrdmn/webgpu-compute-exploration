@@ -4,8 +4,9 @@
 // language → <pre><code class="language-x"> plus a label), lists (-, *, +, 1. / 1); nesting by
 // indentation; tight lists drop the <p>), GitHub tables (with an alignment row), blockquotes, horizontal
 // rules, display math ($$ … $$ on its own lines, possibly multi-line), and callouts: a blockquote whose
-// first line starts with **GPU:**, **Numerics:**, **Try this:**, **Note:** or **Warning:** renders as
-// <aside class="callout callout-gpu|numerics|try|note|warning"> with the label in a <strong>.
+// first line starts with **GPU:**, **Numerics:**, **Try this:**, **Note:**, **Warning:** or **Say:** renders as
+// <aside class="callout callout-gpu|numerics|try|note|warning|say"> with the label in a <strong> (**Say:** marks the
+// words a facilitator reads out to a learner, content/facilitate/).
 //
 // Inline: `code`, **bold** / __bold__, *em* / _em_ (underscores inside words stay literal: snake_case),
 // [links](href "title"), ![images](src), inline math $…$, backslash escapes, hard line breaks (two
@@ -26,7 +27,7 @@
 
 import { texToMathML, texErrors } from './tex-mathml.js';
 
-const CALLOUTS = { 'GPU': 'gpu', 'Numerics': 'numerics', 'Try this': 'try', 'Note': 'note', 'Warning': 'warning' };
+const CALLOUTS = { 'GPU': 'gpu', 'Numerics': 'numerics', 'Try this': 'try', 'Note': 'note', 'Warning': 'warning', 'Say': 'say' };
 
 export function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
