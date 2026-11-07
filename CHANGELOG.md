@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
 - First visit (#108): the catalog asks a new visitor once whether to learn (Beginner or Intermediate, opening
   the learning path) or use the technical view (Advanced). Not shown on deep links or with ?level=.
 
+### Changed
+- README (#109): opens with what the project is and where to start (reference investigations, learning paths
+  per level, validation results), then the visitor levels; the 25-example catalog is a compact table.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added
