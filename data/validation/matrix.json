@@ -4,30 +4,105 @@
   "plan": 2,
   "bundlePath": "data/validation/<environment>/<date>-<commit>.json",
   "record": [
-    { "field": "browser.version", "how": "From the user agent (Chrome: full version from client hints); check it against the browser's About page" },
-    { "field": "os.version", "how": "Chrome: from client hints. Safari freezes the macOS version in the user agent: enter it from About This Mac" },
-    { "field": "hardware", "how": "Enter the Mac model and chip from About This Mac, e.g. \"MacBook Air 13-inch, M2\"" },
-    { "field": "timestampQuery.adapter", "how": "Detected: whether the adapter offers timestamp-query (GPU times) or only wall-clock times are available" },
-    { "field": "timestampQuery.device", "how": "Detected: whether the device was created with timestamp-query" }
+    {
+      "field": "browser.version",
+      "how": "From the user agent (Chrome: full version from client hints); check it against the browser's About page"
+    },
+    {
+      "field": "os.version",
+      "how": "Chrome: from client hints. Safari freezes the macOS version in the user agent: enter it from About This Mac"
+    },
+    {
+      "field": "hardware",
+      "how": "Mac: the model and chip from About This Mac, e.g. \"MacBook Air 13-inch, M2\". Windows and Linux: the machine and GPU, e.g. \"Desktop, RTX 4070\" or \"ThinkPad X1, Iris Xe\""
+    },
+    {
+      "field": "timestampQuery.adapter",
+      "how": "Detected: whether the adapter offers timestamp-query (GPU times) or only wall-clock times are available"
+    },
+    {
+      "field": "timestampQuery.device",
+      "how": "Detected: whether the device was created with timestamp-query"
+    }
   ],
   "environments": [
     {
       "id": "apple-silicon-chrome",
-      "label": "Apple silicon Mac · Chrome",
+      "label": "Apple silicon Mac \u00b7 Chrome",
       "hardware": "Mac with an Apple M-series chip",
       "os": "macos",
       "browser": "chrome",
       "minBrowserMajor": 113,
-      "notes": "Current stable Chrome. Timestamps are quantized to about 100 µs unless chrome://flags/#enable-webgpu-developer-features is on; record which in the notes field."
+      "notes": "Current stable Chrome. Timestamps are quantized to about 100 \u00b5s unless chrome://flags/#enable-webgpu-developer-features is on; record which in the notes field.",
+      "vendors": [
+        "apple"
+      ]
     },
     {
       "id": "apple-silicon-safari26",
-      "label": "Apple silicon Mac · Safari (26 or later)",
+      "label": "Apple silicon Mac \u00b7 Safari (26 or later)",
       "hardware": "Mac with an Apple M-series chip",
       "os": "macos",
       "browser": "safari",
       "minBrowserMajor": 26,
-      "notes": "Safari 26 or later with WebGPU on by default. timestamp-query may be missing: then every GPU time is wall-clock, which the bundle records."
+      "notes": "Safari 26 or later with WebGPU on by default. timestamp-query may be missing: then every GPU time is wall-clock, which the bundle records.",
+      "vendors": [
+        "apple"
+      ]
+    },
+    {
+      "id": "windows-nvidia-chrome",
+      "label": "Windows PC, NVIDIA GPU \u00b7 Chrome",
+      "hardware": "PC with an NVIDIA GPU",
+      "os": "windows",
+      "browser": "chrome",
+      "minBrowserMajor": 113,
+      "vendors": [
+        "nvidia"
+      ],
+      "notes": "Windows 10 or 11 with a recent NVIDIA driver. Laptop with two GPUs: say in the notes which one the browser used (adapter description)."
+    },
+    {
+      "id": "windows-amd-chrome",
+      "label": "Windows PC, AMD GPU \u00b7 Chrome",
+      "hardware": "PC with an AMD GPU",
+      "os": "windows",
+      "browser": "chrome",
+      "minBrowserMajor": 113,
+      "vendors": [
+        "amd"
+      ],
+      "notes": "Windows 10 or 11 with a recent AMD driver; integrated Radeon or a discrete card (say which in the notes)."
+    },
+    {
+      "id": "windows-intel-chrome",
+      "label": "Windows PC, Intel GPU \u00b7 Chrome",
+      "hardware": "PC with an Intel GPU",
+      "os": "windows",
+      "browser": "chrome",
+      "minBrowserMajor": 113,
+      "vendors": [
+        "intel"
+      ],
+      "notes": "Windows 10 or 11, Intel integrated (Iris Xe, Arc graphics) or a discrete Arc card."
+    },
+    {
+      "id": "windows-firefox",
+      "label": "Windows PC \u00b7 Firefox",
+      "hardware": "PC (any GPU)",
+      "os": "windows",
+      "browser": "firefox",
+      "minBrowserMajor": 141,
+      "notes": "Firefox 141 or later (WebGPU on by default on Windows). Note the GPU in the hardware field; timestamp-query may be missing."
+    },
+    {
+      "id": "linux-vulkan-chrome",
+      "label": "Linux, Vulkan \u00b7 Chrome",
+      "hardware": "PC with a Vulkan-capable GPU",
+      "os": "linux",
+      "browser": "chrome",
+      "minBrowserMajor": 113,
+      "notes": "Chrome on Linux with a Vulkan driver (Mesa or NVIDIA). If WebGPU is not on by default, say in the notes which flags were set (chrome://flags/#enable-unsafe-webgpu and #enable-vulkan)."
     }
   ]
 }

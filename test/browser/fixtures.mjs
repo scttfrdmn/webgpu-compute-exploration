@@ -67,3 +67,102 @@ export function controllableDeviceLoss() {
         return device;
     };
 }
+
+// Counts live GPU objects per device (#106): wraps GPUDevice.prototype.createBuffer / createTexture /
+// createQuerySet and the objects' destroy(), so live = created − destroyed. Test-only: injected with
+// page.addInitScript, never shipped with the site. An object dropped without destroy() stays live here even
+// after it is garbage-collected — on purpose: destroy() is what frees GPU memory promptly, GC may take
+// arbitrarily long. Each live object keeps its kind, label, size and the site code that created it, so a
+// failing test can say what leaked. Read with page.evaluate(() => window.__gpuResources.snapshot()).
+export function trackGpuResources() {
+    if (typeof GPUDevice === 'undefined' || window.__gpuResources) return;
+    const KINDS = { createBuffer: 'buffer', createTexture: 'texture', createQuerySet: 'querySet' };
+    const devices = [];                 // [{ created: { kind: n }, destroyed: { kind: n } }]
+    const deviceIndex = new WeakMap();  // GPUDevice -> index in devices
+    const info = new WeakMap();         // GPU object -> { device, kind, seq, label, size, site }
+    const live = new Map();             // seq -> info, for objects not destroyed yet
+    let seq = 0;
+    const zero = () => ({ buffer: 0, texture: 0, querySet: 0 });
+    const counts = (device) => {
+        if (!deviceIndex.has(device)) {
+            deviceIndex.set(device, devices.length);
+            devices.push({ created: zero(), destroyed: zero() });
+        }
+        return devices[deviceIndex.get(device)];
+    };
+    // The innermost stack frame in the site's js/: the code that created the object
+    const site = () => ((new Error().stack || '').split('\n').find(l => /\/js\//.test(l)) ?? '?')
+        .trim().replace(/^at /, '').replace(/https?:\/\/[^/]+\//, '');
+    for (const [method, kind] of Object.entries(KINDS)) {
+        const create = GPUDevice.prototype[method];
+        GPUDevice.prototype[method] = function (descriptor) {
+            const object = create.call(this, descriptor);
+            counts(this).created[kind]++;
+            const size = kind === 'buffer' ? descriptor?.size : kind === 'querySet' ? descriptor?.count
+                : [descriptor?.size].flat().map(v => (typeof v === 'object' ? Object.values(v).join('×') : v)).join('×');
+            const entry = { device: deviceIndex.get(this), kind, seq: ++seq, label: descriptor?.label ?? '', size, site: site() };
+            info.set(object, entry);
+            live.set(entry.seq, entry);
+            return object;
+        };
+    }
+    for (const Class of [GPUBuffer, GPUTexture, GPUQuerySet]) {
+        const destroy = Class.prototype.destroy;
+        Class.prototype.destroy = function () {
+            const entry = info.get(this);
+            if (entry && live.delete(entry.seq)) devices[entry.device].destroyed[entry.kind]++;   // a second destroy() does not count
+            return destroy.call(this);
+        };
+    }
+    window.__gpuResources = {
+        // Per device: created, destroyed and live (created − destroyed) by kind; seq = objects created so far
+        snapshot: () => ({
+            seq,
+            devices: devices.map(({ created, destroyed }) => ({
+                created: { ...created },
+                destroyed: { ...destroyed },
+                live: Object.fromEntries(Object.keys(created).map(k => [k, created[k] - destroyed[k]])),
+            })),
+        }),
+        // Objects created after `since` (a snapshot's seq) and not destroyed yet
+        liveSince: (since = 0) => [...live.values()].filter(e => e.seq > since),
+    };
+}
+
+// The live-object snapshot of trackGpuResources, summed over devices: { seq, buffer, texture, querySet, devices }
+export async function gpuResources(page) {
+    const s = await page.evaluate(() => window.__gpuResources?.snapshot() ?? null);
+    if (!s) throw new Error('trackGpuResources was not injected (page.addInitScript(trackGpuResources) before goto)');
+    const total = { buffer: 0, texture: 0, querySet: 0 };
+    for (const d of s.devices) for (const k of Object.keys(total)) total[k] += d.live[k];
+    return { seq: s.seq, ...total, devices: s.devices.length };
+}
+
+// A page clock the test can jump forward (#105): performance.now() gets an offset, and
+// window.__stopAfterSteps(statusElement, k) adds an hour to it as soon as that Measure status reports k finished
+// steps. The run's next step boundary then sees its time budget spent and stops with reason 'budget', after
+// exactly k steps, however fast or slow the GPU is.
+export function controllableClock() {
+    const now = performance.now.bind(performance);
+    let offset = 0;
+    performance.now = () => now() + offset;
+    window.__stopAfterSteps = (status, steps) => {
+        const observer = new MutationObserver(() => {
+            const m = /^Running… (\d+) step/.exec(status.textContent);
+            if (m && Number(m[1]) >= steps) { offset += 3600_000; observer.disconnect(); }
+        });
+        observer.observe(status, { childList: true, characterData: true, subtree: true });
+    };
+}
+
+// A wrong CPU reference: Uint32Array sort() swaps the first and last keys of its result, so every GPU sort that
+// is compared with it (parallel-sort's verify()) fails its check
+export function corruptUint32Sort() {
+    const sort = Uint32Array.prototype.sort;
+    Uint32Array.prototype.sort = function (...args) {
+        const out = sort.apply(this, args);
+        const last = this.length - 1;
+        if (last > 0 && this[0] !== this[last]) [this[0], this[last]] = [this[last], this[0]];
+        return out;
+    };
+}

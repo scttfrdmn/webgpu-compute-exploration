@@ -8,8 +8,11 @@
 //     computed by interpret() from the same rows). A claim without `plain` is left out at Beginner and shown
 //     as written at Intermediate.
 //   - the verdict "undetermined" reads "not decided yet";
-//   - Beginner sees one summary line for the verification checks instead of the list, no scope notes, only the
-//     first chart that has data, and the data table behind a "Show the numbers" disclosure;
+//   - Beginner sees one summary line for the verification checks (followed by every failed check) instead of the
+//     list, no scope notes, only the first chart that has data, and the data table behind a "Show the numbers"
+//     disclosure; Intermediate sees the same line above the full list;
+//   - how the run ended, what the checks say and what the claims say are separate lines, in that order
+//     (runSummary below);
 //   - timing notes, table headers and chart legends say "middle value" and "middle half of the runs" instead of
 //     median and interquartile range.
 // Result records (js/teach/result-record.js) are the same at every level: interpretationOf copies only the known
@@ -101,21 +104,121 @@ export function claimsForLevel(recorded, raw, level) {
     return out;
 }
 
-// ---- Verification ---------------------------------------------------------------------------------------
-// One line for Beginner from the record's checks
-export function checksSummary(verification) {
+// ---- Run summary: completion, verification, interpretation (#105) ---------------------------------------
+// A run has three separate outcomes, and no line merges them:
+//   completion      done / stopped by the time budget after k steps / cancelled / device lost / error
+//   verification    each check pass / fail / not-checked (verify(): are the GPU's answers right?)
+//   interpretation  each claim agrees / disagrees / undetermined (interpret(): what do the numbers mean?)
+// runSummary returns them as ordered lines, completion first, so a run that did not complete says so before any
+// check is counted, and a claim's verdict never stands in for a check:
+//   { kind: 'completion', status, text }                    every level
+//   { kind: 'checks', status, text, failed: [checks] }      Beginner and Intermediate, when there is a record
+//   { kind: 'claims', status, text }                        Beginner and Intermediate, when claims are shown
+// Advanced keeps measure.js's original status text and shows every check in its list, so it gets the completion
+// line only. measure.js shows the completion line as the card's status (above everything else), the checks line
+// at the top of the check list (at Beginner followed by each failed check, never behind a disclosure), and the
+// claims line above the "Measured vs predicted" table.
+const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+const seconds = (ms) => (ms / 1000).toFixed(1);
+
+// The planned number of steps when it is known and consistent with the rows (else null)
+const plannedOf = (planned, steps) => (Number.isInteger(planned) && planned >= Math.max(steps, 1) ? planned : null);
+
+// "after 3 of 5 steps" / "after 3 steps" / "before the first step finished"
+function progressText(steps, planned) {
+    if (!steps) return 'before the first step finished';
+    const p = plannedOf(planned, steps);
+    return p ? `after ${steps} of ${plural(p, 'step')}` : `after ${plural(steps, 'step')}`;
+}
+
+// "N = 16,384 … 65,536" from covered: { label, first, last } (formatted values of the first column)
+function coverText(covered) {
+    if (!covered?.label || covered.first == null || covered.first === '') return null;
+    return covered.last == null || covered.last === covered.first
+        ? `${covered.label} = ${covered.first}` : `${covered.label} = ${covered.first} … ${covered.last}`;
+}
+
+const STOPPED_SIMPLE = {
+    budget: (budgetMs) => `Stopped early by the ${(budgetMs / 1000).toFixed(0)} s time limit`,
+    cancelled: () => 'Cancelled',
+    'device-lost': () => 'Stopped early because the browser lost the GPU',
+    error: () => 'Stopped early by an error',
+};
+
+// The completion line. Advanced: measure.js's original wording ("Done: 5 steps in 3.2 s." / "<stop message>
+// (3 steps completed)."). Beginner and Intermediate: how much of the run there is and what it covers.
+// run: { outcome: { status, message? }, steps, plannedSteps?, elapsedMs, budgetMs, covered? }
+export function completionText(run, level) {
+    const { outcome, steps = 0, plannedSteps = null, elapsedMs = 0, budgetMs = 20000, covered = null } = run ?? {};
+    const status = outcome?.status ?? 'done';
+    if (levelOf(level) === 'advanced') {
+        if (status === 'done') return `Done: ${steps} steps in ${seconds(elapsedMs)} s.`;
+        const message = outcome?.message ?? `Stopped: ${status}`;
+        return steps ? `${message} (${plural(steps, 'step')} completed).` : `${message}.`;
+    }
+    if (status === 'done') return `Finished: ${plural(steps, 'step')} in ${seconds(elapsedMs)} s.`;
+    const head = (STOPPED_SIMPLE[status] ?? (() => 'Stopped early'))(budgetMs);
+    const cover = coverText(covered);
+    const what = !steps ? 'there are no results' : cover ? `these results cover only ${cover}` : 'these results are only part of the run';
+    const detail = status === 'error' && outcome?.message ? ` ${String(outcome.message).replace(/\.?$/, '.')}` : '';
+    return `${head} ${progressText(steps, plannedSteps)}: ${what}.${detail}`;
+}
+
+// The record's checks counted: { n, pass, fail, unchecked, none } (none: the experiment has no checks at all)
+export function countChecks(verification) {
     const checks = verification ?? [];
-    const n = checks.length;
-    const count = (s) => checks.filter(c => c.status === s).length;
-    const pass = count('pass'), fail = count('fail'), unchecked = count('not-checked');
-    const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
-    if (!n || (n === 1 && checks[0].metric === 'none')) return 'This experiment has no automatic check of its answers.';
-    if (fail) return `${fail} of ${plural(n, 'check')} failed: some of the GPU's answers do not match a careful CPU `
-        + 'calculation. The Intermediate level lists every check.';
-    if (!pass) return 'None of the checks could be run on these results yet.';
-    if (unchecked) return `${pass} of ${plural(n, 'check')} passed, and ${unchecked} could not be run on these results.`;
-    return n === 1 ? 'The check passed: the GPU\'s answer matches a careful CPU calculation.'
-        : `All ${n} checks passed: the GPU's answers match a careful CPU calculation.`;
+    const none = !checks.length || (checks.length === 1 && checks[0].metric === 'none' && checks[0].status === 'not-checked');
+    const count = (s) => (none ? 0 : checks.filter(c => c.status === s).length);
+    return { n: none ? 0 : checks.length, pass: count('pass'), fail: count('fail'), unchecked: count('not-checked'), none };
+}
+
+// The checks line: { status: 'pass' | 'fail' | 'partial' | 'unchecked' | 'none', text }. "All … passed" only when
+// every one of at least one real check passed; a failure always comes first in the line.
+export function checksLine(verification, outcome) {
+    const { n, pass, fail, unchecked, none } = countChecks(verification);
+    if (none) return { status: 'none', text: 'This experiment has no automatic check of its answers.' };
+    if (fail) {
+        const head = n === 1 ? 'The check failed' : `${fail} of ${n} checks failed`;
+        const rest = [pass && `${pass} passed`, unchecked && `${unchecked} could not be checked`].filter(Boolean).join(' and ');
+        return { status: 'fail', text: `${head}${rest ? `, ${rest}` : ''}: some of the GPU's answers do not match a careful CPU calculation.` };
+    }
+    if (!pass) {
+        return { status: 'unchecked', text: n === 1 ? 'The check could not be run on these results.'
+            : `None of the ${n} checks could be run on these results.` };
+    }
+    if (unchecked) return { status: 'partial', text: `${pass} of ${plural(n, 'check')} passed, ${unchecked} could not be checked.` };
+    const sofar = (outcome?.status ?? 'done') === 'done' ? '' : ' on the steps that finished';
+    return { status: 'pass', text: n === 1 ? `The check passed${sofar}: the GPU's answer matches a careful CPU calculation.`
+        : `All ${n} checks passed${sofar}: the GPU's answers match a careful CPU calculation.` };
+}
+
+// The check summary line alone
+export const checksSummary = (verification, outcome) => checksLine(verification, outcome).text;
+
+// The note above the claims: a verdict is about what the numbers mean, not whether they are right
+export function claimsLine(checkStatus) {
+    if (checkStatus === 'fail') {
+        return { status: 'after-fail', text: 'A check failed, so these numbers may be wrong, whatever the verdicts below say.' };
+    }
+    const checked = checkStatus === 'pass' || checkStatus === 'partial';
+    return { status: 'note', text: 'Each verdict below says if a result is close to what was predicted. It does not say '
+        + `if the GPU's answers are right${checked ? ': the checks do that' : ''}.` };
+}
+
+// The ordered summary of a run at a level (see above). run: { outcome, steps, plannedSteps?, elapsedMs, budgetMs,
+// covered?, checks (record.verification; null when the run made no record), claims (the claims shown) }
+export function runSummary(run, level) {
+    const l = levelOf(level);
+    const lines = [{ kind: 'completion', status: run?.outcome?.status ?? 'done', text: completionText(run, l) }];
+    if (l === 'advanced') return lines;
+    let checkStatus = 'none';
+    if (Array.isArray(run?.checks)) {
+        const c = checksLine(run.checks, run.outcome);
+        checkStatus = c.status;
+        lines.push({ kind: 'checks', status: c.status, text: c.text, failed: run.checks.filter(x => x.status === 'fail') });
+    }
+    if (run?.claims?.length) lines.push({ kind: 'claims', ...claimsLine(checkStatus) });
+    return lines;
 }
 
 // ---- Timing words -----------------------------------------------------------------------------------------

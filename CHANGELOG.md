@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Browser test for GPU resource growth (#106): repeated experiments and Explore cycles must not leave live
+  buffers, textures or query sets behind (none found).
+- Validation matrix beyond Apple silicon (#102): Windows with NVIDIA, AMD or Intel GPUs (Chrome), Windows
+  Firefox and Linux Vulkan (Chrome); validate.html suggests the environment from the browser, OS and adapter
+  vendor, and bundles record the adapter's features and key limits. The README summary adds a features and
+  limits table and a per-device performance table (not a ranking; GPU timestamps that exceed the wall time
+  are not used).
+- First visit (#108): the catalog asks a new visitor once whether to learn (Beginner or Intermediate, opening
+  the learning path) or use the technical view (Advanced). Not shown on deep links or with ?level=.
+- Learning-evaluation kit (#107): `facilitate.html` with session guides for running an investigation with one
+  learner — N-body at Beginner ("what changes when you let the computer take shortcuts, and how can you tell
+  whether they are worth it?") and Intermediate, matrix multiplication at Advanced — each with what to say, what
+  not to explain first, prompts, and an observation rubric; a learning-session feedback issue template. The
+  site collects nothing.
+- Contributing validation runs (#103): a validation-bundle issue template, linked from validate.html and the README.
+
+### Changed
+- Measure keeps how a run ended, its checks and its claims apart at every level (#105): the ending comes first
+  ("Stopped early by the 20 s time limit after 1 of 5 steps …"), Beginner counts pass / fail / not checked
+  honestly and always shows a failed check, and a note says verdicts are about predictions, not correctness.
+  Verdict colours are neutral (they were success/error colours).
+- CI fails fast and by name (#101): the cancelled run was a slow apt mirror, not a hung test; lavapipe packages
+  are cached, Chromium installs without apt, install steps are time-limited, GPU waits time out after 90 s.
+- README (#109): opens with what the project is and where to start (reference investigations, learning paths
+  per level, validation results), then the visitor levels; the 25-example catalog is a compact table.
+
 ## [0.8.0] - 2026-11-05
 
 ### Added

@@ -97,14 +97,24 @@ test('detectBrowser and matchEnvironment: Chrome (client hints), Safari 26 (froz
     const chrome = detectBrowser(CHROME_UA, CHROME_HINTS);
     assert.deepEqual(chrome, { browser: { name: 'chrome', version: '142.0.7444.60', source: 'client-hints' },
         os: { name: 'macos', version: '26.1.0', source: 'client-hints' }, architecture: 'arm' });
-    assert.equal(matchEnvironment(matrix, chrome).id, 'apple-silicon-chrome');
+    assert.equal(matchEnvironment(matrix, chrome, 'apple').id, 'apple-silicon-chrome');
+    assert.equal(matchEnvironment(matrix, chrome, ''), null, 'an Apple environment needs an adapter that says apple');
     assert.deepEqual(detectBrowser(CHROME_UA).browser, { name: 'chrome', version: '142.0.0.0', source: 'user-agent' });
 
     const safari = detectBrowser(SAFARI_UA, null);
     assert.deepEqual(safari, { browser: { name: 'safari', version: '26.1', source: 'user-agent' },
         os: { name: 'macos', version: null, source: 'unknown' }, architecture: null });
-    assert.equal(matchEnvironment(matrix, safari).id, 'apple-silicon-safari26');
-    assert.equal(matchEnvironment(matrix, detectBrowser(SAFARI_UA.replace('Version/26.1', 'Version/18.6'))), null, 'Safari 18 is not Safari 26');
+    assert.equal(matchEnvironment(matrix, safari, 'Apple').id, 'apple-silicon-safari26');
+    assert.equal(matchEnvironment(matrix, detectBrowser(SAFARI_UA.replace('Version/26.1', 'Version/18.6')), 'apple'), null, 'Safari 18 is not Safari 26');
+    // Windows: the adapter vendor picks the environment; Firefox and Linux environments take any vendor
+    const WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
+    const win = detectBrowser(WIN);
+    assert.equal(win.os.name, 'windows');
+    for (const vendor of ['nvidia', 'amd', 'intel']) assert.equal(matchEnvironment(matrix, win, vendor).id, `windows-${vendor}-chrome`);
+    assert.equal(matchEnvironment(matrix, win, 'qualcomm'), null, 'an unlisted vendor is not guessed');
+    assert.equal(matchEnvironment(matrix, detectBrowser('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:142.0) Gecko/20100101 Firefox/142.0'), '').id, 'windows-firefox');
+    assert.equal(matchEnvironment(matrix, detectBrowser('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'), ''), null, 'Firefox before 141');
+    assert.equal(matchEnvironment(matrix, detectBrowser('Mozilla/5.0 (X11; Linux x86_64) Chrome/142.0.0.0'), 'nvidia').id, 'linux-vulkan-chrome');
 
     assert.equal(detectBrowser('Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:147.0) Gecko/20100101 Firefox/147.0').browser.name, 'firefox');
     assert.equal(detectBrowser(`${CHROME_UA} Edg/142.0.0.0`).browser.name, 'edge');
@@ -120,6 +130,12 @@ test('validationEnvironment: entered values override detection; missingFields fo
     assert.equal(env.os.source, 'entered');
     assert.equal(env.browser.source, 'user-agent', 'unchanged detected version keeps its source');
     assert.deepEqual(env.timestampQuery, { adapter: false, device: false });
+    assert.deepEqual(env.features, [], 'no reported features on the fake adapter');
+    const rich = validationEnvironment({ detected, userAgent: SAFARI_UA, source: SOURCE, gpuDevice: { ...fakeGpu(), adapter: {
+        info: {}, features: new Set(['timestamp-query', 'shader-f16', 'texture-compression-bc']),
+        limits: { maxBufferSize: 2 ** 30, maxComputeWorkgroupStorageSize: 32768, maxBindGroups: 4 } } } });
+    assert.deepEqual(rich.features, ['timestamp-query', 'shader-f16'], 'only the reported features');
+    assert.deepEqual(rich.limits, { maxBufferSize: 2 ** 30, maxComputeWorkgroupStorageSize: 32768 }, 'only the reported limits');
     assert.equal(env.notes, null);
     assert.deepEqual(missingFields(env, matrix), []);
     const bare = validationEnvironment({ gpuDevice: fakeGpu(), detected, userAgent: SAFARI_UA, source: null });
@@ -128,7 +144,10 @@ test('validationEnvironment: entered values override detection; missingFields fo
     assert.deepEqual(missingFields(bare, matrix), ['os.version', 'hardware']);
     for (const r of matrix.record) assert.ok(r.field && r.how, 'each recorded field says how to get it');
     for (const e of matrix.environments) assert.ok(e.id && e.label && e.os && e.browser && e.minBrowserMajor);
-    assert.deepEqual(matrix.environments.map(e => e.id), ['apple-silicon-chrome', 'apple-silicon-safari26']);
+    assert.deepEqual(matrix.environments.map(e => e.id), ['apple-silicon-chrome', 'apple-silicon-safari26', 'windows-nvidia-chrome',
+        'windows-amd-chrome', 'windows-intel-chrome', 'windows-firefox', 'linux-vulkan-chrome']);
+    assert.equal(new Set(matrix.record.map(r => r.field)).size, matrix.record.length, 'each field once');
+    for (const e of matrix.environments) if (e.vendors) assert.ok(e.vendors.every(v => v === v.toLowerCase()), `${e.id}: lower-case vendors`);
     assert.equal(matrix.plan, VALIDATION_PLAN.version, 'matrix and plan versions in step');
 });
 
@@ -302,6 +321,10 @@ test('summary tool: correctness, tolerances, timing and interpretation tables ov
         // timing availability
         assert.match(md, /\*\*Timing availability\*\*[\s\S]*\| matrix-multiplication \| cpu-naive-tiled \(maxN=1024\) \| timestamp-query \| wall-clock \|/);
         // interpretation: agrees / disagrees / undetermined
+        // feature availability and performance are separate tables (#102); old bundles say 'not recorded'
+        assert.match(md, /\*\*Features and limits\*\*/);
+        assert.match(md, /\| feature shader-f16 \| (not recorded|yes|no) \|/);
+        assert.match(md, /\*\*Performance\*\* — per device[^\n]*Not a ranking/);
         // one row per claim key (#86), though Safari words the claim differently
         assert.match(md, /\| tiled: n³ \| agrees \| disagrees \|/);
         assert.doesNotMatch(md, /wall clock\) \|/);
@@ -380,4 +403,34 @@ test('validate.js imports cleanly; validate.html has every element it uses; Page
     assert.match(yml, /cp -r [^\n]*\bvalidate\.html\b[^\n]*\bdata\b[^\n]*\bschema\b[^\n]*_site\//);
     assert.equal(interpretationCounts({ interpretation: [{ agrees: true }, { agrees: null }, { agrees: false }, { agrees: null }] }).undetermined, 2);
     assert.equal(recordLabel({ experiment: { exampleId: 'nbody', id: 'scaling' }, settings: { preset: 'plummer' } }), 'nbody / scaling (preset=plummer)');
+});
+
+test('summary performance cells: the run\'s largest size, GPU time unless it exceeds the wall time (#102)', async () => {
+    const { PERFORMANCE } = await import('../tools/validation-summary.mjs');
+    const radix = PERFORMANCE.find(p => p.label === 'sort u32: radix');
+    assert.equal(radix.cell([{ n: 1024, radixGpu: 0.1, radixWall: 0.5 }, { n: 4096, radixGpu: 0.4, radixWall: 0.9 }]), '0.4 ms (GPU) at N = 4,096');
+    assert.equal(radix.cell([{ n: 4096, radixGpu: 15.4, radixWall: 8 }]), '8 ms (wall; GPU timestamps exceed it) at N = 4,096');
+    assert.equal(radix.cell([{ n: 4096, radixGpu: null, radixWall: 3 }]), '3 ms (wall) at N = 4,096');
+    assert.equal(radix.cell([]), '—');
+    const tiled = PERFORMANCE.find(p => p.label === 'matmul: tiled GPU GFLOPS');
+    assert.equal(tiled.cell([{ n: 1024, tiledGflops: 800 }, { n: 2048, tiledGflops: null }]), '800 at n = 1024');
+});
+
+// Contributor workflow (#103): validate.html points at the issue template, and the template asks for every
+// field matrix.json says to record, for the deployed site and not the smoke plan
+test('the validation-bundle issue template asks for the recorded fields; validate.html links to it', () => {
+    const tpl = readFileSync(join(root, '.github/ISSUE_TEMPLATE/validation-bundle.md'), 'utf8');
+    assert.match(tpl, /^---\nname: .+\nabout: .+\ntitle: .+\n---\n/);
+    const matrix = JSON.parse(readFileSync(join(root, 'data/validation/matrix.json'), 'utf8'));
+    assert.ok(matrix.record.length >= 5);
+    for (const { field } of matrix.record) assert.ok(tpl.includes(`\`${field}\``), `the template asks for ${field}`);
+    assert.ok(tpl.includes('`environment.id`') && tpl.includes(matrix.environments[0].id), 'the template asks for the matrix environment');
+    assert.match(tpl, /https:\/\/scttfrdmn\.github\.io\/webgpu-compute-exploration\/validate\.html/, 'points at the deployed page');
+    assert.match(tpl, /\?smoke=1/, 'warns against the smoke plan');
+    assert.match(tpl, /-smoke\.json/);
+    const html = readFileSync(join(root, 'validate.html'), 'utf8');
+    for (const label of ['Download validation bundle (JSON)', 'Run validation', 'Matrix environment']) {
+        assert.ok(tpl.includes(label) && html.includes(label), `the template names "${label}" as validate.html labels it`);
+    }
+    assert.match(html, /href="https:\/\/github\.com\/scttfrdmn\/webgpu-compute-exploration\/issues\/new\?template=validation-bundle\.md"/);
 });

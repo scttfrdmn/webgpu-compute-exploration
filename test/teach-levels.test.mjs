@@ -9,7 +9,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-    LEVELS, DEFAULT_LEVEL, parseLevel, resolveLevel, searchWithLevel, fallbackChain, levelText,
+    LEVELS, DEFAULT_LEVEL, parseLevel, resolveLevel, searchWithLevel, fallbackChain, levelText, shouldOfferLevelChoice,
 } from '../js/teach/levels.js';
 import { UNDERSTAND, UNDERSTAND_LEVELS, understandPath, understandSource, hasUnderstand } from '../js/teach/registry.js';
 import { LEVEL_RULES, plainText, readability, countSyllables, avoidedTerms } from '../js/teach/readability.js';
@@ -128,3 +128,12 @@ for (const level of ['beginner', 'intermediate']) {
         });
     }
 }
+
+test('first-visit choice (#108): only with no level in the URL or storage, and not on a deep link', () => {
+    assert.equal(shouldOfferLevelChoice(), true);
+    assert.equal(shouldOfferLevelChoice({ search: '?level=beginner' }), false);
+    assert.equal(shouldOfferLevelChoice({ stored: 'advanced' }), false, 'a stored level, also the default, means it was answered');
+    assert.equal(shouldOfferLevelChoice({ stored: 'junk' }), true);
+    assert.equal(shouldOfferLevelChoice({ hash: '#nbody/measure' }), false);
+    assert.equal(shouldOfferLevelChoice({ hash: '#' }), true);
+});

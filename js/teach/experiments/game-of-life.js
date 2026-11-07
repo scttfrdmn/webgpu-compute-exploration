@@ -95,6 +95,7 @@ const soup = {
     baseline: 'CI (shipped shader on a CPU-emulated GPU, 256 × 256, seed 3): 0 mismatching cells at every checkpoint. '
         + 'The live fraction jumps from 0.30 to 0.34 in the first generation (crowded births), then falls to 0.21 after '
         + '10, 0.095 after 100 and 0.046 after 1,000, still settling toward the stable and oscillating "ash" a soup leaves behind.',
+    plannedSteps: () => CHECKPOINTS.length,
     async *run(ctx, { side }) {
         const s = Math.min(side, 256);
         let gpu = randomGrid(s, s), cpu = gpu;

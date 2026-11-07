@@ -15,7 +15,10 @@ export default defineConfig({
     workers: 1,                 // one software GPU (the runner's CPU cores): no parallel pages
     fullyParallel: false,
     retries: 1,                 // a retried pass is reported as "flaky" in the log
+    // A hung test fails by name after `timeout` (twice with the retry); globalTimeout stops the whole run, listing
+    // the interrupted test, before the CI step's 8-minute limit would kill it silently (#101)
     timeout: 90_000,
+    globalTimeout: 7 * 60_000,
     expect: { timeout: 20_000 },
     reporter: [['list']],
     forbidOnly: true,

@@ -4,11 +4,38 @@
 
 **Live demo:** https://scttfrdmn.github.io/webgpu-compute-exploration/
 
-Twenty-five interactive **WebGPU compute shader** examples that run in the browser, written in plain JavaScript and **WGSL** with no build step. They range from basic GPGPU (vector addition, matrix multiplication, Gaussian blur) to real-time simulations (SPH fluid, molecular dynamics, boids flocking, Game of Life, 3D diffusion-limited aggregation, Gray-Scott reaction-diffusion, water waves, falling sand), ray-marched 3D fractals, procedural Perlin/simplex noise, and parallel algorithms and signal processing (GPU FFT audio visualizer, bitonic and radix sort, k-means clustering, Voronoi jump flooding, maze solving), and advanced examples: cloth simulation, a Monte Carlo path tracer, an MNIST CNN that is trained and run entirely in compute shaders, Barnes-Hut N-body gravity with a GPU-built tree, and real-time partitioned-FFT convolution reverb. A Rust/WebAssembly example shows WASM coordinating GPU work.
+A browser laboratory for **GPU computing and computational science**: twenty-five **WebGPU** compute-shader
+examples in plain JavaScript and **WGSL** (no build step), from vector addition to Barnes-Hut gravity, an MNIST
+network trained in compute shaders and a Monte Carlo path tracer. Every example has an interactive **Explore** tab,
+an **Understand** page and **Measure** experiments that run on your GPU, check their answers against CPU references and
+test predictions against your measurements — at three visitor levels, from middle school to college.
 
 ![Ray-marched Mandelbulb rendered by the ray marching example](assets/social-preview.png)
 
-Open the page in a WebGPU browser and scroll: each interactive example is set up when it comes into view and starts when you press **Start**, so only what you are looking at uses the GPU. Ray marching renders while it is on screen.
+## Start here
+
+- **[Reference investigations](https://scttfrdmn.github.io/webgpu-compute-exploration/#reference-investigations)** — matrix multiplication, N-body gravity and parallel
+  sorting, each with a question, a fixed measurement protocol, a check against an independent reference and
+  predictions you can test on your own GPU.
+- **Learning paths** — a five-step first look for [Beginners](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html?level=beginner), a core-ideas track for
+  [Intermediate](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html?level=intermediate) and two tracks (GPU programming, computational science) at
+  [Advanced](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html).
+- **[Validation on physical GPUs](#validation-on-physical-gpus)** — what the reference investigations measured on real
+  hardware, per device and browser, and how to [run the validation on yours](https://scttfrdmn.github.io/webgpu-compute-exploration/validate.html).
+- **[For teachers and parents](https://scttfrdmn.github.io/webgpu-compute-exploration/facilitate.html)** — session guides with an observation rubric for running an
+  investigation with one learner, per level (N-body at Beginner and Intermediate, matrix multiplication at Advanced).
+- **[All 25 examples](#the-25-examples)** — the catalog.
+
+## Visitor levels
+
+A **Level** menu at the top of the catalog and the learning path switches between **Beginner** (middle school),
+**Intermediate** (high school) and **Advanced** (college and beyond). The science does not change with the level;
+the explanation does: fewer controls and "what to look for" prompts in Explore, simpler Understand pages, plain-language
+predictions and results in Measure, and a learning path per level. The same experiments run and produce the same
+result records at every level. A link with `?level=beginner` opens the site at that level and keeps it; a first-time
+visitor is asked once whether to learn or explore the technical details. Lower-level pages are checked for their
+outline and reading level (`js/teach/readability.js`), which is a mechanical check, not proof that they work for a
+learner.
 
 ## Explore, Understand, Measure
 
@@ -16,7 +43,8 @@ Every example has three tabs, aimed at two audiences: people learning **GPU prog
 synchronization, transfers) and people learning **computational science** (stability, convergence, accuracy,
 scaling).
 
-- **Explore** — the interactive demo.
+- **Explore** — the interactive demo. Each example is set up when it scrolls into view and runs only after you
+  press **Start**, so only what you are looking at uses the GPU; it pauses when it scrolls off screen.
 - **Understand** — how the algorithm works, how it maps to the GPU and why it maps well or poorly, its numerical
   behaviour, things to try, and references (Markdown with MathML equations, `content/understand/<id>.md`).
 - **Measure** — experiments you start on your own GPU (e.g. Barnes-Hut opening angle vs force error, scaling
@@ -26,8 +54,7 @@ scaling).
   PASS/FAIL checks against the references and can be downloaded as a versioned JSON record (schema
   `schema/experiment-result.v1.json`, stamped with the source commit) and compared with someone else's file.
 
-Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`. Content is being written example
-by example; tabs without content yet say so.
+Deep links open a tab directly, e.g. `#nbody/understand` or `#nbody/measure`.
 
 - **Learning path** — [learn.html](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html) orders the examples into steps.
 
@@ -45,244 +72,46 @@ learning path links to the same three.
 
 ### Learning path
 
-`learn.html` puts the 25 examples in order for each audience, in two tracks: **GPU programming** (dispatch and
+At Beginner, `learn.html` is a five-step first look (Game of Life, falling sand, waves, boids, N-body) and at
+Intermediate a seven-step core-ideas track. At Advanced it puts the 25 examples in order for each audience, in two tracks: **GPU programming** (dispatch and
 memory → stencils → reductions and atomics → scans and sorting → spatial trees → graph coloring → streaming and
 latency → ML → CPU/GPU split) and **computational science** (stencils and PDEs → stability and CFL → particles and
 integrators → stochastic growth → Monte Carlo → spectral methods → optimization → procedural fields). Each step says
 why it follows the previous one, gives one thing to try, and links to the examples' Explore, Understand and Measure
 tabs. Deep links select a track: `learn.html#gpu`, `learn.html#science`. The tracks are data in `js/teach/path.js`.
 
-## Features
+## The 25 examples
 
-### 1. Vector Addition
-Demonstrates basic GPU compute with parallel vector addition on 1 million elements.
-- **Shader**: WGSL compute shader with workgroup size optimization
-- **Use Case**: Foundation for understanding GPU parallelism
-- **Performance**: Processes millions of elements per millisecond
+Each links to its Explore tab; add `/understand` or `/measure` to the link for the other tabs. "Levels" lists the
+Understand pages written for each visitor level (other levels fall back to the next one up, with a note).
 
-### 2. Matrix Multiplication
-Implements efficient matrix multiplication using 2D workgroups.
-- **Dimensions**: 512×512 matrices
-- **Shader**: Optimized compute shader with proper indexing
-- **Use Case**: Neural networks, 3D graphics, scientific computing
-- **Performance**: GFLOPS measurements included
-
-### 3. Image Processing (Gaussian Blur)
-Real-time image filtering using compute shaders.
-- **Algorithm**: Gaussian blur, σ = 4 over a 25×25 kernel
-- **Shader**: 2D convolution with boundary handling
-- **Use Case**: Video filters, anti-aliasing, depth of field
-- **Visualization**: Side-by-side original and blurred images of a sharp-edged test pattern
-
-### 4. Conway's Game of Life
-Interactive cellular automaton with GPU acceleration.
-- **Grid Size**: 200×150 cells (30,000 cells)
-- **Interaction**: Click to toggle cells, load classic patterns
-- **Patterns**: Glider, Pulsar, Gosper Glider Gun, R-Pentomino, and more
-- **Performance**: Each generation is one compute dispatch; the grid is read back only when you click a cell
-- **Features**: Play/pause, step-through, adjustable speed
-
-### 5. Molecular Dynamics Simulation
-Real-time 3D physics simulation of interacting particles.
-- **Particles**: 100-5000 atoms with Lennard-Jones potential
-- **Physics**: Symplectic Euler integration, periodic boundaries, simple velocity-rescaling thermostat
-- **Rendering**: Instanced icosahedron atoms with diffuse lighting, inside a glass simulation box with glowing edges
-- **Interaction**: Mouse drag to rotate, wheel to zoom, right-drag to pan
-- **Visualization**: Speed-based coloring (blue = slow, red = fast)
-- **Performance**: O(N²) all-pairs forces on the GPU
-
-### 6. SPH Fluid Simulation
-Smoothed Particle Hydrodynamics for realistic fluid dynamics.
-- **Particles**: 2,000 particles in a dam-break start; **Add Water** drops in more (up to 4,000)
-- **Physics**: 2D Müller et al. kernels (Poly6 density, Spiky pressure, viscosity Laplacian), gravity
-- **Algorithm**: 3 compute passes (density, forces, integration), 6 substeps per frame for stability
-- **Features**: Adjustable gravity and viscosity
-- **Visualization**: Velocity-based coloring with alpha blending
-- **Performance**: O(N²) all-pairs neighbor search
-
-### 7. Ray Marching: 3D Fractals
-Volumetric rendering of complex 3D fractals using distance fields.
-- **Fractals**: Mandelbulb, Julia Set, Menger Sponge, Mandelbox
-- **Technique**: Sphere tracing with distance estimators
-- **Quality**: Adjustable steps (32-256) for performance/quality trade-off
-- **Rendering**: Phong lighting, ambient occlusion, fog
-- **Interaction**: Drag to rotate, wheel to zoom, auto-rotation
-- **Performance**: Real-time fragment-shader ray marching; renders only while visible
-
-### 8. Boids Flocking Simulation
-Craig Reynolds' emergent flocking behavior with thousands of agents.
-- **Agents**: 100-10,000 boids with adjustable speed
-- **Behaviors**: Separation, alignment, cohesion + special modes
-- **Modes**: Normal flocking, predator/prey, scatter, vortex
-- **Interaction**: Hold left mouse to attract, right mouse to repel
-- **Visualization**: Triangle agents colored by speed
-- **Performance**: O(N²) all-pairs neighbor checks on the GPU
-
-### 9. Diffusion Limited Aggregation (3D)
-Fractal growth simulation creating dendritic crystal structures.
-- **Grid**: 64³ voxel space (262,144 cells)
-- **Particles**: 5,000 random walkers, each with its own PCG random state
-- **Algorithm**: A walker sticks (with adjustable probability) when next to the aggregate, then retires
-- **Seeds**: Single center, line, circle, or multiple points
-- **Rendering**: Instanced cubes with gradient coloring
-- **Interaction**: Drag to rotate, wheel to zoom, adjustable stickiness
-
-### 10. Reaction-Diffusion (Gray-Scott)
-Two virtual chemicals diffuse and react, producing Turing patterns like coral, spots and mazes.
-- **Grid**: 512×384 cells that wrap at the edges, (U, V) per cell in two ping-pong storage buffers
-- **Algorithm**: Gray-Scott model, 3×3 Laplacian, Du = 1.0, Dv = 0.5, dt = 1.0; 1-32 substeps per frame, one dispatch each
-- **Presets**: Coral, Mitosis, Maze, Holes, Chaos, Cells, plus feed and kill sliders
-- **Interaction**: Hold the left mouse button and drag to paint chemical V, also while paused
-- **Visualization**: Full-screen fragment shader maps V through an Ocean, Magma or Mono color ramp
-- **Performance**: Measured FPS and simulation steps per second; no CPU readback
-
-### 11. Wave Equation
-Water ripples from the 2D wave equation: drop ripples, draw walls, and watch them reflect and interfere.
-- **Grid**: 512×384 cells, one height per cell in two storage buffers (u(t) and u(t−1)) plus a per-cell wall mask
-- **Algorithm**: Damped wave equation u_tt + γu_t = c²∇²u, centered (leapfrog) differences and a 5-point Laplacian; Courant number C = 0.1-0.7 (stable up to 1/√2), default 0.5; 1-16 steps per frame, one dispatch each
-- **Boundaries**: Walls and the grid edge are fixed at u = 0 and reflect waves; optional absorbing sponge layer at the edges
-- **Presets**: Open water, Double slit (plane-wave source, interference fringes), Ellipse (a drop at one focus refocuses at the other)
-- **Interaction**: Click or hold to drop ripples, shift-drag to draw walls, Rain toggle with drops placed by a GPU hash
-- **Rendering**: Full-screen fragment shader computes surface normals from height differences, diffuse + specular lighting over a blue/teal height ramp
-- **Performance**: Measured FPS and simulation steps per second; no CPU readback
-
-### 12. Falling Sand
-A sandbox cellular automaton with interacting materials.
-- **Grid**: 320×240 cells, one u32 each (material, color shade, fire life or liquid flow direction), updated in place in one storage buffer
-- **Algorithm**: Margolus neighborhood: each step one invocation owns a 2×2 block (offset alternating between (0,0) and (1,1)), applies reactions, then moves cells only by swapping; randomness from a PCG hash of block and step
-- **Materials**: Sand, water, stone, oil, fire, plant, acid; density order fire < air < oil < water < acid < sand; fire burns oil and plants where there is air, water puts it out, acid dissolves stone, sand and plants, plants grow into water
-- **Interaction**: Left mouse paints the selected material, right mouse erases (also while paused); brush size and 1-8 steps per frame; Sandbox scene and Clear
-- **Visualization**: Full-screen fragment shader with per-grain shading, flickering fire and a fire glow
-- **Performance**: Measured FPS and simulation steps per second; no CPU readback
-
-### 13. Procedural Noise
-3D gradient (Perlin) and simplex noise, summed as fractal Brownian motion, for terrain and texture generation.
-- **Compute**: One dispatch evaluates the noise for every pixel of a 1024×768 field into a storage buffer (one f32 per pixel)
-- **Algorithms**: Improved Perlin noise (quintic fade, 12 edge gradients) and simplex noise, with a PCG integer hash instead of a permutation table; time is the third coordinate
-- **fBm**: 1-8 octaves, lacunarity, persistence, optional ridged mode, and domain warping (fBm of fBm)
-- **Presets**: Terrain, Mountains, Clouds, Marble, Warped
-- **Interaction**: Drag to pan, wheel to zoom; Animate moves through time, and while paused any change re-runs one compute + render
-- **Visualization**: Full-screen fragment shader colors the field as hillshaded terrain bands, clouds, veined marble or grayscale
-- **Performance**: Measured FPS and noise evaluations per frame; no CPU readback
-
-### 14. FFT Audio Visualizer
-A real-time spectrum analyzer with the FFT computed on the GPU instead of by the browser's AnalyserNode.
-- **Input**: Web Audio API time-domain samples from a built-in synth demo (chord, exponential sweep, 120 BPM kick; no permissions), the microphone, or a looping audio file
-- **Algorithm**: Hann window and bit-reversal permutation in one dispatch, then log2(N) radix-2 Cooley-Tukey butterfly stages, one dispatch each, ping-ponging two complex vec2<f32> buffers; stage index via a dynamic uniform offset; precomputed twiddle table; N = 1024, 2048 or 4096
-- **Analysis**: Magnitudes in dBFS with adjustable smoothing, resampled onto 256 log-spaced rows (20 Hz-20 kHz); spectrogram history in a 512-column GPU ring buffer; beat detection (40-150 Hz energy rising above 1.6× its running average) on the GPU
-- **Views**: Bars (64 log-frequency bands colored from bass to treble), triggered Waveform, scrolling Spectrogram with a heat color map; a beat flash indicator
-- **Controls**: Source buttons, Start/Pause (also suspends the audio), Mute, view, FFT size, smoothing and dB range, presets
-- **Performance**: Measured FPS and dispatches per frame; only N samples are uploaded per frame, no CPU readback
-
-### 15. Parallel Sorting
-GPU sorting algorithms with a correctness-checked benchmark and an animated bar chart.
-- **Algorithms**: Bitonic sort as one global compare-exchange dispatch per (k, j) stage, or with workgroup memory for the stages with j ≤ 256; LSD radix sort with 4-bit digits (8 passes of per-workgroup histogram, single-workgroup exclusive scan, stable scatter)
-- **Benchmark**: 65,536 to 4,194,304 u32 or f32 keys (f32 via the order-preserving bit flip); non-power-of-two sizes are padded with 0xFFFFFFFF for bitonic; the result is read back once and compared element by element with the CPU sort of the same input
-- **Performance**: GPU time (best of 3, submit to `onSubmittedWorkDone`) next to `Uint32Array`/`Float32Array.prototype.sort`, keys per second and dispatch count
-- **Visualization**: 512-2048 bars sorted by bitonic sort one stage per tick (Play, Pause, Step, Shuffle, 1-60 stages per second) with Random, Reversed, Nearly sorted and Few unique data; the background and a strip under the bars show the next stage's block size k and compare distance j
-- **Rendering**: Full-screen fragment shader reads the sorted storage buffer directly; no CPU readback during the animation
-
-### 16. K-Means Clustering
-Lloyd's algorithm on a 2D point cloud, one iteration at a time so you can watch it converge.
-- **Data**: 10k-500k points from 1-16 anisotropic Gaussian blobs plus 0-50% uniform noise, generated on the CPU from a seed
-- **Assignment**: One invocation per 4 points finds the nearest of K = 2-16 centroids and counts label changes with an atomic counter
-- **Update**: Two-level reduction: each workgroup tree-reduces per-cluster (sum x, sum y, count, squared distance) for its 1,024 points in workgroup memory, then one workgroup sums the partials; empty clusters keep their old centroid
-- **Initialization**: Random data points or k-means++ (on the CPU, from up to 20,000 sampled points)
-- **Convergence**: Stops when no point changes cluster; iteration, changed points, inertia and cluster sizes in the info panel from an 80-byte readback per iteration
-- **Rendering**: Instanced point quads colored by cluster, centroid markers with trails of their last 23 moves, optional Voronoi overlay (full-screen fragment shader, nearest centroid per pixel, with cell borders)
-- **Controls**: Start/Pause, Step, Reset, Regenerate, K, point count, true cluster count, noise, iterations per second, init method, Voronoi toggle; FPS readout
-
-### 17. Voronoi (Jump Flooding)
-Voronoi diagrams and distance fields for up to 1024 seeds with the Jump Flooding Algorithm (Rong & Tan 2006).
-- **Grid**: 1024×768 pixels, one u32 seed index each in two ping-pong storage buffers; seeds (position + color) in a storage buffer
-- **Algorithm**: A seed pass writes each seed's index into its pixel (atomicMin), then 10 flood passes with steps 512, 256, …, 1; each pixel checks itself and its 8 neighbors at ±step and keeps the closest seed. Optional JFA+1 adds a final step-1 pass. One dispatch per pass, each with its own dynamic-offset uniform slot
-- **Metrics**: Euclidean, Manhattan, Chebyshev
-- **Interaction**: Click to add a seed, drag to move one, right-click or shift-click to remove the nearest; Random seeds (2-1024), Clear, and Random / Jittered grid / Sunflower / Clusters layouts; Animate lets the seeds drift and bounce, and while paused every edit recomputes once
-- **Visualization**: Colored cells with dark borders, a grayscale distance field with iso-distance lines, or both combined; seeds drawn as dots
-- **Accuracy**: Exact check brute-forces the nearest seed for every pixel on the GPU and reads back the number of pixels where JFA is wrong
-- **Performance**: Measured FPS, dispatches and pixel updates per frame; no CPU readback except the exact check
-
-### 18. Maze Generation & Solving
-Which graph algorithms parallelize: mazes are carved on the CPU and solved by a breadth-first wavefront on the GPU.
-- **Mazes**: 63×47, 255×191, 511×383 or 1023×767 cells, one u32 per cell with open-passage bits, drawn as the (2w+1)×(2h+1) wall lattice
-- **Generation (CPU)**: Recursive backtracker (DFS), Kruskal's (shuffled walls + union-find) and randomized Prim's, all sequential by nature; a Loops slider removes 0-30% of the remaining walls so several routes exist
-- **Solving (GPU)**: One compute dispatch per BFS level, one invocation per cell: an unreached cell next to a cell at distance d takes d+1. Writes only touch the invocation's own cell, so the result is order-independent and equals a queue-based BFS; 1-512 levels per frame through dynamic uniform offsets
-- **Termination**: A 12-byte readback (cells reached, largest distance, goal distance) every 4 frames; then one distance-field readback and a CPU walk from the goal to a neighbor one step closer gives a shortest path
-- **Interaction**: Click to set the start, shift-click or right-click to set the goal; Solve, Pause, Clear solution, steps per frame
-- **Visualization**: Flood colored by distance with the wavefront highlighted, shortest path in yellow
-- **Performance**: Measured FPS, generation time, BFS levels, cells visited, path length
-
-### 19. Cloth Simulation
-A hanging, draping and tearing fabric simulated with position-based dynamics (PBD).
-- **Cloth**: 32×32 to 128×128 particles (xyz + inverse mass, previous position for Verlet) joined by structural, shear and bend distance constraints, up to 97,026 links
-- **Solver**: Fixed 1/240 s substeps: Verlet integration (gravity, gusty wind and air drag along the per-vertex normals), long-range tethers to the nearest pins, 1-30 Gauss-Seidel iterations, then collisions. The links are split by graph coloring into 12 sets in which no two links share a particle, one dispatch per color, so the parallel projections never race; each dispatch picks its range through a dynamic uniform offset
-- **Collisions**: Sphere and floor with Coulomb friction (static and kinetic), so a draped cloth stays put
-- **Tearing**: Optional; a structural or shear link stretched past the threshold (1.1-4×) is flagged as broken and skipped, bend links break with the links they span, and the mesh omits triangles with a broken edge
-- **Presets**: Hang from two corners, Hang from top edge, Curtain (gathered on a rod, wind, a sphere behind it), Drop on sphere, Flag (strong gusty wind)
-- **Interaction**: Orbit, pan and zoom camera; shift-drag grabs the cloth at the particle nearest the mouse ray (one position readback per grab, picked on the CPU) and pulls a small patch around it
-- **Rendering**: Lit two-sided mesh (gingham front, blue back) with normals computed on the GPU, optional wireframe and particles, a sphere and a grid floor, 4× MSAA
-- **Controls**: Start/Pause/Reset, presets, grid size, iterations, stiffness, wind, gravity, tearing toggle and threshold; info panel with particle and link counts, torn links and FPS
-
-### 20. Path Tracer
-Monte Carlo path tracing with progressive accumulation: one path per pixel per frame, averaged until a target sample count.
-- **Scenes**: Cornell box (rotated box, glass and metal spheres), Spheres (checker ground, 61 spheres of mixed materials, sky light), Caustics (glass sphere focusing a small light), Materials (diffuse, mirror, rough gold and two glass spheres on rotated pedestals under an area light and a sphere light)
-- **Geometry**: Spheres, parallelogram quads, boxes rotated about the vertical axis and infinite planes, packed as 96-byte vec4 records in a storage buffer; brute-force closest hit over at most 64 primitives
-- **Materials**: Lambertian diffuse (cosine-weighted sampling), metal with roughness, glass (Schlick Fresnel, Snell refraction, total internal reflection), emissive
-- **Light transport**: Next-event estimation (area sampling for quad lights, cone sampling for sphere lights) combined with BSDF sampling by multiple importance sampling (power heuristic); 1-8 bounces, Russian roulette after the third; PCG random numbers seeded from pixel and sample index
-- **Camera**: Orbit, pan and zoom, field of view, thin-lens depth of field with click-to-focus (one CPU ray against the same scene data)
-- **Display**: Running average in a vec4 storage buffer, exposure, ACES or Reinhard tone mapping, sRGB; optional firefly clamp; 100%, 75% or 50% of 800×600
-- **Performance**: Samples per pixel, FPS and rays per second from a GPU ray counter (4-byte readback twice a second); stops at 64-4096 spp so the GPU idles once converged
-
-### 21. MNIST: Train
-A small CNN learns handwritten digits in the browser, with every step of training in compute shaders.
-- **Network**: 28×28 input → conv 5×5×8 → ReLU → 2×2 max-pool → conv 5×5×16 → ReLU → 2×2 max-pool → dense 256→10 → softmax; 5,994 weights, shared with example 22 through `js/examples/mnist-model.js`
-- **Data**: the first 10,000 MNIST training and 2,000 test images (gzipped, 1.9 MB, loaded on the first Start); shuffled on the CPU every epoch, batches gathered on the GPU by index, each image shifted by a hashed random offset of up to ±2 px
-- **Training (GPU)**: forward pass, log-sum-exp softmax cross-entropy, backprop through the dense layer, both max-pools (gradient to the window's argmax), both ReLUs and both convolutions; per-sample gradients in their own buffer rows, then one invocation per weight sums its batch in order (race-free, no atomics) and applies SGD with momentum, weight decay and a per-epoch learning-rate decay. 14 dispatches per mini-batch, 1-16 mini-batches per frame
-- **Charts**: training loss (log scale) and accuracy curves with hover readout, test accuracy after every epoch, epoch/batch counters and images per second, from a 32-byte readback per frame
-- **Filters**: the 8 first-layer 5×5 kernels drawn from the GPU weights buffer every frame
-- **Controls**: Start/Pause, Reset (next seed), learning rate, batch size (32/64/128), epochs, batches per frame, random shifts; Export weights (.bin) and Use in Recognize
-- **Same algorithm as the cached weights**: `tools/train-mnist.mjs` trains the same network on the CPU (98.00% test accuracy with the default settings); a browser run with the defaults and first seed repeats it
-- **Data license**: MNIST by LeCun, Cortes and Burges, CC BY-SA 3.0 (see `data/mnist/LICENSE.md`)
-
-### 22. MNIST: Recognize
-Draw a digit and classify it on the GPU with the same network.
-- **Weights**: `data/mnist/weights.bin` (trained by `tools/train-mnist.mjs`, 98.00% on the 2,000 test images) by default, or the weights handed over by example 21; the status shows which
-- **Drawing**: 280×280 canvas, mouse, pen or touch (pointer events), Clear
-- **Preprocessing (CPU)**: like MNIST: bounding box scaled to fit 20×20 with area averaging, then shifted so the center of mass sits at the middle of 28×28
-- **Inference (GPU)**: batch-1 forward pass when a stroke ends and every 120 ms while drawing; a 40-byte readback of the probabilities
-- **Visualization**: 10 confidence bars, the 28×28 input the network sees, and the ReLU activation maps of both conv layers (8 × 24×24, 16 × 8×8), drawn from the GPU buffer
-- **Random test digit**: one of the 2,000 test images with its true label and whether the prediction is right
-- **Data license**: the cached weights are derived from MNIST and are CC BY-SA 3.0, like the data
-
-### 23. N-Body Gravity (Barnes-Hut)
-Self-gravitating stars with two force solvers, leapfrog integration and an energy-conservation readout.
-- **Bodies**: 4,096 to 262,144 equal-mass bodies (xyz + mass, velocity + origin tag), Plummer-softened gravity with G = 1
-- **Brute force**: O(N²) direct sum with 256-body tiles in workgroup memory (GPU Gems 3, ch. 31), up to 32,768 bodies
-- **Barnes-Hut (GPU-built tree every step)**: bounding-box reduction, 30-bit Morton codes, 8-pass radix sort of (code, index), binary radix tree per Karras 2012 (duplicate codes made unique by index), bottom-up mass, center of mass and bounds with an atomic visit counter per node, then a per-body traversal with a 64-entry stack and the opening test d < l/θ + δ; 33 dispatches per step
-- **Integration**: kick-drift-kick leapfrog with a fixed time step, 1-4 steps per frame (fewer when a frame would exceed 2·10⁹ interactions)
-- **Presets**: Spiral galaxy (exponential disk + Plummer bulge, circular velocities from the enclosed mass), Galaxy collision (two disks on a parabolic encounter), Plummer sphere (virialized), Cold collapse (uniform sphere at rest)
-- **Rendering**: additive point sprites with a soft glow in an HDR target, exponential tone mapping; colored by speed or by origin; optional fading trails from a ring buffer of 8 past positions per body
-- **Readout**: N, mode, interactions per frame (measured on the GPU for Barnes-Hut), FPS, and the energy drift (E − E₀)/|E₀| from a GPU reduction of the kinetic and potential energy with a 16-byte readback once per second
-- **Controls**: Start/Pause/Reset, presets, body count, mode, θ (0.3-1), softening, time step, speed, color mode, trails; orbit, pan and zoom camera
-
-### 24. Convolution Reverb
-A live stereo signal convolved on the GPU with an impulse response of up to 6 s, with an A/B switch to the browser's ConvolverNode.
-- **Impulse responses**: generated procedurally, no files: Small room, Concert hall, Cathedral, Plate and Reverse. Decorrelated stereo noise split into three bands, each with its own exponential decay (highs die first), plus a build-up, early reflections and a pre-delay; Decay (RT60) and Pre-delay sliders. Or upload a WAV (first two channels, up to 6 s). The RT60 is measured from the Schroeder integral (T30)
-- **Algorithm**: uniformly partitioned overlap-save (Gardner 1995, Wefers 2015). The IR is cut into P partitions of B = 1024 or 2048 samples, each FFT'd once at N = 2B (batched dispatches). For every input block the GPU runs an FFT of [previous, current] block into a frequency-domain delay line, sums X·H over all P partitions in one dispatch (one invocation per bin, loop bounded at 563), runs one inverse FFT and keeps the last B samples. Radix-2 FFT stages are separate dispatches with dynamic uniform offsets
-- **Stereo**: both channels share one complex FFT (z = L + i·R). The spectra are split with Z[k] and conj(Z[N−k]), and Y = Y_L + i·Y_R comes back from a single inverse FFT
-- **Streaming**: an inline AudioWorklet posts each block to the main thread, which convolves it on the GPU and posts the wet block back (one 8-16 KB readback per block). Wet block k plays at a fixed delay of (1 + D)·B samples: one block for the partition plus D = 1-5 blocks of GPU slack (64 ms at B = 1024, D = 2, 48 kHz). A late block plays as silence and is counted as an underrun. The dry path and the ConvolverNode are delayed to match
-- **Accuracy**: a self-test per IR pushes a noise block through every partition and compares six read-back blocks with a direct CPU convolution; the first non-silent block of each stream is checked the same way. Both are shown in the info panel
-- **Sources**: built-in synth demo (plucks, claps, a chord, with gaps for the tails; no permissions), microphone (on button press), looping audio file
-- **Controls**: Start/Stop, sources, Bypass, A/B (GPU vs ConvolverNode), Space presets, decay, pre-delay, wet/dry mix, output gain (at most 0.5, then a limiter and a soft clip), block size, GPU slack
-- **Visualization**: render pass showing the IR waveform, its spectrogram with the energy decay curve and the RT60 marker, the latest input and wet blocks, and peak meters for input, wet and output
-- **Performance**: round-trip time per block against its deadline, backlog, underruns, and the self-test throughput in multiples of realtime
-
-### 25. WASM Integration (Mandelbrot Set)
-Demonstrates Rust/WASM coordinating WebGPU compute shaders.
-- **Architecture**: Rust handles configuration, WebGPU performs computation
-- **Rendering**: 800×600 fractal with HSV color mapping
-- **Use Case**: Complex applications requiring both CPU and GPU
-- **Performance**: Full pipeline benchmarking
+| # | Example | What it shows | Levels |
+| --- | --- | --- | --- |
+| 1 | [Vector Addition](https://scttfrdmn.github.io/webgpu-compute-exploration/#vector-addition) | Demonstrates basic GPU compute with parallel vector addition on 1 million elements. | Advanced |
+| 2 | [Matrix Multiplication](https://scttfrdmn.github.io/webgpu-compute-exploration/#matrix-multiplication) | Implements efficient matrix multiplication using 2D workgroups. | Beginner · Intermediate · Advanced |
+| 3 | [Image Processing (Gaussian Blur)](https://scttfrdmn.github.io/webgpu-compute-exploration/#gaussian-blur) | Real-time image filtering using compute shaders. | Advanced |
+| 4 | [Conway's Game of Life](https://scttfrdmn.github.io/webgpu-compute-exploration/#game-of-life) | Interactive cellular automaton with GPU acceleration. | Beginner · Intermediate · Advanced |
+| 5 | [Molecular Dynamics Simulation](https://scttfrdmn.github.io/webgpu-compute-exploration/#molecular-dynamics) | Real-time 3D physics simulation of interacting particles. | Advanced |
+| 6 | [SPH Fluid Simulation](https://scttfrdmn.github.io/webgpu-compute-exploration/#sph-fluid) | Smoothed Particle Hydrodynamics for realistic fluid dynamics. | Advanced |
+| 7 | [Ray Marching: 3D Fractals](https://scttfrdmn.github.io/webgpu-compute-exploration/#ray-marching) | Volumetric rendering of complex 3D fractals using distance fields. | Advanced |
+| 8 | [Boids Flocking Simulation](https://scttfrdmn.github.io/webgpu-compute-exploration/#boids) | Craig Reynolds' emergent flocking behavior with thousands of agents. | Beginner · Intermediate · Advanced |
+| 9 | [Diffusion Limited Aggregation (3D)](https://scttfrdmn.github.io/webgpu-compute-exploration/#dla) | Fractal growth simulation creating dendritic crystal structures. | Advanced |
+| 10 | [Reaction-Diffusion (Gray-Scott)](https://scttfrdmn.github.io/webgpu-compute-exploration/#reaction-diffusion) | Two virtual chemicals diffuse and react, producing Turing patterns like coral, spots and mazes. | Advanced |
+| 11 | [Wave Equation](https://scttfrdmn.github.io/webgpu-compute-exploration/#wave-equation) | Water ripples from the 2D wave equation: drop ripples, draw walls, and watch them reflect and interfere. | Beginner · Intermediate · Advanced |
+| 12 | [Falling Sand](https://scttfrdmn.github.io/webgpu-compute-exploration/#falling-sand) | A sandbox cellular automaton with interacting materials. | Beginner · Intermediate · Advanced |
+| 13 | [Procedural Noise](https://scttfrdmn.github.io/webgpu-compute-exploration/#noise) | 3D gradient (Perlin) and simplex noise, summed as fractal Brownian motion, for terrain and texture generation. | Advanced |
+| 14 | [FFT Audio Visualizer](https://scttfrdmn.github.io/webgpu-compute-exploration/#fft-audio) | A real-time spectrum analyzer with the FFT computed on the GPU instead of by the browser's AnalyserNode. | Advanced |
+| 15 | [Parallel Sorting](https://scttfrdmn.github.io/webgpu-compute-exploration/#parallel-sort) | GPU sorting algorithms with a correctness-checked benchmark and an animated bar chart. | Beginner · Intermediate · Advanced |
+| 16 | [K-Means Clustering](https://scttfrdmn.github.io/webgpu-compute-exploration/#kmeans) | Lloyd's algorithm on a 2D point cloud, one iteration at a time so you can watch it converge. | Advanced |
+| 17 | [Voronoi (Jump Flooding)](https://scttfrdmn.github.io/webgpu-compute-exploration/#voronoi) | Voronoi diagrams and distance fields for up to 1024 seeds with the Jump Flooding Algorithm (Rong & Tan 2006). | Advanced |
+| 18 | [Maze Generation & Solving](https://scttfrdmn.github.io/webgpu-compute-exploration/#maze) | Which graph algorithms parallelize: mazes are carved on the CPU and solved by a breadth-first wavefront on the GPU. | Advanced |
+| 19 | [Cloth Simulation](https://scttfrdmn.github.io/webgpu-compute-exploration/#cloth) | A hanging, draping and tearing fabric simulated with position-based dynamics (PBD). | Advanced |
+| 20 | [Path Tracer](https://scttfrdmn.github.io/webgpu-compute-exploration/#path-tracer) | Monte Carlo path tracing with progressive accumulation: one path per pixel per frame, averaged until a target sample count. | Advanced |
+| 21 | [MNIST: Train](https://scttfrdmn.github.io/webgpu-compute-exploration/#mnist-train) | A small CNN learns handwritten digits in the browser, with every step of training in compute shaders. | Advanced |
+| 22 | [MNIST: Recognize](https://scttfrdmn.github.io/webgpu-compute-exploration/#mnist-recognize) | Draw a digit and classify it on the GPU with the same network. | Advanced |
+| 23 | [N-Body Gravity (Barnes-Hut)](https://scttfrdmn.github.io/webgpu-compute-exploration/#nbody) | Self-gravitating stars with two force solvers, leapfrog integration and an energy-conservation readout. | Beginner · Intermediate · Advanced |
+| 24 | [Convolution Reverb](https://scttfrdmn.github.io/webgpu-compute-exploration/#convolution-reverb) | A live stereo signal convolved on the GPU with an impulse response of up to 6 s, with an A/B switch to the browser's ConvolverNode. | Advanced |
+| 25 | [WASM Integration (Mandelbrot Set)](https://scttfrdmn.github.io/webgpu-compute-exploration/#wasm-mandelbrot) | Demonstrates Rust/WASM coordinating WebGPU compute shaders. | Beginner · Intermediate · Advanced |
 
 ## Browser Support
 
@@ -532,6 +361,14 @@ features are enabled (`chrome://flags/#enable-webgpu-developer-features`), so ve
 
 ## Validation on physical GPUs
 
+**Contribute a run.** Open the [validation page](https://scttfrdmn.github.io/webgpu-compute-exploration/validate.html) on the deployed site (not `?smoke=1`, a reduced
+CI plan the summary rejects) in the browser you want to record, fill in the environment fields and press **Run
+validation**, then **Download validation bundle (JSON)**. Open a [validation bundle
+issue](https://github.com/scttfrdmn/webgpu-compute-exploration/issues/new?template=validation-bundle.md), fill in the
+browser, OS and hardware, and attach the file (zip it if GitHub refuses `.json`). A maintainer checks it with
+`node tools/validation-summary.mjs`, commits it under `data/validation/<environment>/` and regenerates the tables below;
+no pull request is needed.
+
 CI runs everything on software GPUs (lavapipe, SwiftShader): a correctness gate, not a performance or
 portability result. The physical-GPU validation matrix records what the flagship investigations (matrix
 multiplication, N-body, parallel sorting) do on real devices, starting with:
@@ -567,6 +404,11 @@ _Generated by `node tools/validation-summary.mjs --write` from 6 bundles in `dat
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | apple-silicon-chrome (Apple silicon Mac · Chrome) | 2026-11-02-097c558.json | 3 | v2 | 0.6.0 @ 097c558 | chrome 156.0.8078.74 | macos 27.2.0 | M4 Pro | apple / metal-3 | yes | — |
 | apple-silicon-safari26 (Apple silicon Mac · Safari (26 or later)) | 2026-11-02-097c558.json | 3 | v2 | 0.6.0 @ 097c558 | safari 27.2 | macos 27.2 | M4 Pro | apple / apple / apple / apple | yes | — |
+| windows-nvidia-chrome (Windows PC, NVIDIA GPU · Chrome) | no bundle yet | 0 | — | — | — | — | — | — | — | — |
+| windows-amd-chrome (Windows PC, AMD GPU · Chrome) | no bundle yet | 0 | — | — | — | — | — | — | — | — |
+| windows-intel-chrome (Windows PC, Intel GPU · Chrome) | no bundle yet | 0 | — | — | — | — | — | — | — | — |
+| windows-firefox (Windows PC · Firefox) | no bundle yet | 0 | — | — | — | — | — | — | — | — |
+| linux-vulkan-chrome (Linux, Vulkan · Chrome) | no bundle yet | 0 | — | — | — | — | — | — | — | — |
 
 **Correctness** — verification checks against CPU references (PASS = no check failed; passed/total).
 
@@ -626,6 +468,31 @@ _Generated by `node tools/validation-summary.mjs --write` from 6 bundles in `dat
 | nbody | energy-drift (n=2048, mode=bh, preset=plummer) | timestamp-query | timestamp-query |
 | parallel-sort | scaling (dataType=u32, maxN=4194304) | timestamp-query | timestamp-query |
 | parallel-sort | scaling (dataType=f32, maxN=4194304) | timestamp-query | timestamp-query |
+
+**Features and limits** — what each adapter offers (availability, not speed).
+
+| Feature or limit | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- |
+| feature timestamp-query | not recorded | not recorded |
+| feature shader-f16 | not recorded | not recorded |
+| feature subgroups | not recorded | not recorded |
+| feature float32-filterable | not recorded | not recorded |
+| feature bgra8unorm-storage | not recorded | not recorded |
+| limit maxBufferSize | not recorded | not recorded |
+| limit maxStorageBufferBindingSize | not recorded | not recorded |
+| limit maxComputeWorkgroupStorageSize | not recorded | not recorded |
+| limit maxComputeInvocationsPerWorkgroup | not recorded | not recorded |
+| limit maxComputeWorkgroupsPerDimension | not recorded | not recorded |
+
+**Performance** — per device, at each run's largest size. Not a ranking: devices, browsers, clocks and timer resolution differ, and the correctness and interpretation tables matter more.
+
+| Measurement | apple-silicon-chrome | apple-silicon-safari26 |
+| --- | --- | --- |
+| matmul: tiled GPU GFLOPS | 838 at n = 2048 | 358 at n = 2048 |
+| matmul: naive GPU GFLOPS | 365 at n = 2048 | 309 at n = 2048 |
+| N-body: Barnes-Hut force evaluation | 47.3 ms (GPU) at N = 262,144 | 48.3 ms (GPU) at N = 262,144 |
+| N-body: brute-force force evaluation | 28.3 ms (GPU) at N = 65,536 | 34.8 ms (GPU) at N = 65,536 |
+| sort u32: radix | 5.77 ms (GPU) at N = 4,194,304 | 8 ms (wall; GPU timestamps exceed it) at N = 4,194,304 |
 
 **Interpretation** — measured vs predicted (agrees / disagrees / undetermined within the stated uncertainty).
 

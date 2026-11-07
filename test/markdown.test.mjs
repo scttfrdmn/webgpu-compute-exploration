@@ -115,8 +115,8 @@ test('blockquotes and horizontal rules', () => {
     for (const hr of ['---', '***', '___', '- - -']) assert.equal(md(hr), '<hr>', hr);
 });
 
-test('callouts: all five types', () => {
-    const types = { 'GPU': 'gpu', 'Numerics': 'numerics', 'Try this': 'try', 'Note': 'note', 'Warning': 'warning' };
+test('callouts: all six types', () => {
+    const types = { 'GPU': 'gpu', 'Numerics': 'numerics', 'Try this': 'try', 'Note': 'note', 'Warning': 'warning', 'Say': 'say' };
     for (const [label, cls] of Object.entries(types)) {
         assert.equal(md(`> **${label}:** body *text*`),
             `<aside class="callout callout-${cls}">\n<p><strong class="callout-label">${label}:</strong> body <em>text</em></p>\n</aside>`);

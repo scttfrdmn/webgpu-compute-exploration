@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>For teachers and parents — WebGPU Compute Shader Examples</title>
+    <meta name="description" content="Facilitator guides for running a 25-minute session with one learner on the WebGPU examples, at Beginner, Intermediate and Advanced level: what to say, what not to explain first, prompts if stuck, and an observation rubric.">
+    <meta name="author" content="Scott Friedman">
+    <link rel="canonical" href="https://scttfrdmn.github.io/webgpu-compute-exploration/facilitate.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="For teachers and parents — WebGPU Compute Shader Examples">
+    <meta property="og:description" content="Session guides and observation rubrics for running one learner through the N-body and matrix multiplication examples.">
+    <meta property="og:url" content="https://scttfrdmn.github.io/webgpu-compute-exploration/facilitate.html">
+    <meta property="og:image" content="https://scttfrdmn.github.io/webgpu-compute-exploration/assets/social-preview.png">
+    <meta property="og:image:width" content="1280">
+    <meta property="og:image:height" content="640">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#0d1117">
+    <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+    <header class="hero">
+        <div class="inner">
+            <h1>For teachers <span>and parents</span></h1>
+            <p id="facilitate-intro">Guides for running one session with one learner, at the learner's level. Each
+            guide says what to set up, what to say, what <em>not</em> to explain first, how to help when the learner
+            is stuck, and how to end, in about 25 minutes. Each ends with an observation rubric: four things to watch
+            for — forming a prediction, changing one thing at a time, reading the measurement correctly, explaining
+            the conclusion in their own words — each at three levels with examples.</p>
+            <p class="hint">The site collects nothing: there is no account, no tracking and nothing is sent anywhere.
+            Write your observations on paper or in your own notes. Sessions with minors need the usual consent from
+            parents or the school. If you share what you saw, share it anonymised, for example with the
+            <a href="https://github.com/scttfrdmn/webgpu-compute-exploration/issues/new?template=learning-session.md">learning
+            session form</a>.</p>
+            <div class="hero-links">
+                <a href="index.html">All examples</a>
+                <a href="learn.html">Learning path</a>
+                <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">Source on GitHub</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="page facilitate">
+        <nav aria-labelledby="session-list-title">
+            <h2 id="session-list-title">Sessions</h2>
+            <ul class="session-list" id="session-list">
+                <li><a href="#nbody-beginner" data-path="content/facilitate/nbody.beginner.md">N-body: shortcuts and how to tell if they are worth it<span class="session-level">Beginner (middle school) · 25–30 minutes</span></a></li>
+                <li><a href="#nbody-intermediate" data-path="content/facilitate/nbody.intermediate.md">N-body: does a smaller time step always help?<span class="session-level">Intermediate (high school) · 25–30 minutes</span></a></li>
+                <li><a href="#matrix-multiplication-advanced" data-path="content/facilitate/matrix-multiplication.advanced.md">Matrix multiplication: testing the predictions of a reference investigation<span class="session-level">Advanced (college) · 25–30 minutes</span></a></li>
+            </ul>
+        </nav>
+        <div id="facilitate-guide" aria-live="polite">
+            <noscript><p class="hint">The guides are shown with JavaScript. Without it, read them as Markdown:
+            <a href="content/facilitate/nbody.beginner.md">N-body, Beginner</a>,
+            <a href="content/facilitate/nbody.intermediate.md">N-body, Intermediate</a>,
+            <a href="content/facilitate/matrix-multiplication.advanced.md">Matrix multiplication, Advanced</a>.</p></noscript>
+        </div>
+    </main>
+
+    <footer>
+        Source, issues and roadmap on <a href="https://github.com/scttfrdmn/webgpu-compute-exploration">GitHub</a> · MIT License · © 2025-2026 Scott Friedman
+    </footer>
+
+    <script type="module" src="./js/teach/facilitate.js"></script>
+</body>
+</html>

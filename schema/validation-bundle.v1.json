@@ -216,6 +216,20 @@
               ]
             }
           }
+        },
+        "features": {
+          "type": "array",
+          "description": "Optional: which of the reported adapter features (REPORTED_FEATURES in js/teach/validation.js) the adapter offers",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "description": "Optional: selected adapter limits (REPORTED_LIMITS in js/teach/validation.js)",
+          "additionalProperties": {
+            "type": "number"
+          }
         }
       }
     },

@@ -141,6 +141,7 @@ const thetaError = {
         + 'θ = 0.5; 1.5e-3 / 2.6e-3 / 4.2e-3 / 8.6e-3 / 1.5e-2 / 2.6e-2 at θ = 0.3 … 1.2, close to θ², with 997 → 134 '
         + `interactions per body (brute force: 4,095). Errors are checked on ${SAMPLE} bodies against a float64 direct sum. `
         + 'Fitted slopes (95% CI): error vs θ 2.09 (2.01 … 2.16), interactions vs θ −1.46 (−1.50 … −1.42).',
+    plannedSteps: () => THETAS.length,
     async *run(ctx, { n, preset }) {
         const N = Math.min(n, BH_MAX_N);
         const { positions } = generateBodies(preset, N, SOFTENING, SEED);

@@ -49,6 +49,19 @@ header.hero p { margin: 0 0 18px; max-width: 760px; color: var(--muted); font-si
 .level-select select { border-radius: 999px; padding: 4px 10px; font-size: 0.9rem; }
 .level-select:focus-within { border-color: var(--accent); }
 .level-fallback-note { margin: 0 0 12px; }
+/* First visit (#108): learn at a level, or the technical view */
+.first-visit {
+    position: relative; margin: 0 0 28px; padding: 18px 22px; border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface);
+}
+.first-visit h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.first-visit .hint { margin: 0 0 14px; max-width: 760px; }
+.first-visit-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.first-visit-close {
+    position: absolute; top: 8px; right: 10px; border: none; background: none; color: var(--muted);
+    font-size: 1.3rem; line-height: 1; padding: 4px 8px; cursor: pointer;
+}
+.first-visit-close:hover { color: var(--text); }
 
 /* Opt-in device report: built on request, copied to the clipboard, never sent automatically */
 .device-report { margin-top: 12px; max-width: 760px; }
@@ -232,6 +245,9 @@ footer {
 .callout-numerics { border-left-color: var(--accent-2); }
 .callout-try { border-left-color: #c98500; }
 .callout-warning { border-left-color: var(--error); }
+/* Words a facilitator reads out to the learner (content/facilitate/) */
+.callout-say { border-left-color: #b48ead; }
+.callout-say .callout-label { color: #d3b5cf; }
 
 /* Series colors: dataviz reference palette, dark steps, fixed order, validated on #161b22 */
 .measure-root, .tab-panel-measure {
@@ -289,6 +305,8 @@ footer {
 .experiment-numbers summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin: 6px 0; }
 .experiment-numbers summary:hover { color: var(--text); }
 .experiment-checks .check-summary { color: var(--text); }
+.experiment-checks .check-summary-fail { color: var(--error); font-weight: 600; }
+.experiment-interpretation .claims-note { margin: 2px 0 6px; }
 .understand .code-block { position: relative; }
 .understand .code-lang { position: absolute; top: 6px; right: 10px; font-size: 0.75rem; color: var(--muted); }
 .understand .table-wrap { overflow-x: auto; }
@@ -330,9 +348,22 @@ footer {
 .experiment-interpretation h5 { margin: 12px 0 4px; font-size: 0.95rem; }
 .experiment-interpretation table { border-collapse: collapse; font-size: 0.85rem; }
 .experiment-interpretation th, .experiment-interpretation td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
-.verdict-agrees { color: var(--accent-2); }
-.verdict-disagrees { color: var(--error); }
+/* A verdict says what the numbers mean, not whether they are right (#105): no success or error colours,
+   which belong to the checks */
+.verdict-agrees { color: var(--text); }
+.verdict-disagrees { color: var(--text); font-weight: 600; }
 .verdict-undetermined { color: var(--muted); }
+
+/* ---- Facilitator guides (facilitate.html, js/teach/facilitate.js) ---- */
+.facilitate .session-list { list-style: none; padding: 0; margin: 18px 0; display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.facilitate .session-list a { display: block; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px; color: var(--text); text-decoration: none; }
+.facilitate .session-list a:hover { border-color: var(--accent); }
+.facilitate .session-list a[aria-current="page"] { border-color: var(--accent); background: var(--surface-2); }
+.facilitate .session-level { display: block; color: var(--muted); font-size: 0.85rem; }
+.facilitate .facilitate-guide { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 24px 18px; }
 
 /* ---- Reference investigations (index.html cards, learn.html pointer; js/teach/flagships.js) ---- */
 .flagships > .hint { max-width: 760px; }

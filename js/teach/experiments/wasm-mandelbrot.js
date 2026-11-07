@@ -80,6 +80,7 @@ const gpuVsCpu = {
         + 'it differs from the float64 reference on 0.085% of the pixels, all near the boundary of the set, where the '
         + 'f32 orbit diverges from the float64 one. At small sizes the GPU wall time is the fixed cost of a submit and a '
         + 'readback, so the CPU can win. (In CI the "GPU" is emulated on the CPU, so its times say nothing about a real GPU.)',
+    plannedSteps: () => RESOLUTIONS.length,
     async *run(ctx, { maxIterations }) {
         const wasm = await loadWasmModule();
         for (const [width, height] of RESOLUTIONS) {
