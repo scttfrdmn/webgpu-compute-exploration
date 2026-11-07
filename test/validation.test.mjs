@@ -415,3 +415,22 @@ test('summary performance cells: the run\'s largest size, GPU time unless it exc
     const tiled = PERFORMANCE.find(p => p.label === 'matmul: tiled GPU GFLOPS');
     assert.equal(tiled.cell([{ n: 1024, tiledGflops: 800 }, { n: 2048, tiledGflops: null }]), '800 at n = 1024');
 });
+
+// Contributor workflow (#103): validate.html points at the issue template, and the template asks for every
+// field matrix.json says to record, for the deployed site and not the smoke plan
+test('the validation-bundle issue template asks for the recorded fields; validate.html links to it', () => {
+    const tpl = readFileSync(join(root, '.github/ISSUE_TEMPLATE/validation-bundle.md'), 'utf8');
+    assert.match(tpl, /^---\nname: .+\nabout: .+\ntitle: .+\n---\n/);
+    const matrix = JSON.parse(readFileSync(join(root, 'data/validation/matrix.json'), 'utf8'));
+    assert.ok(matrix.record.length >= 5);
+    for (const { field } of matrix.record) assert.ok(tpl.includes(`\`${field}\``), `the template asks for ${field}`);
+    assert.ok(tpl.includes('`environment.id`') && tpl.includes(matrix.environments[0].id), 'the template asks for the matrix environment');
+    assert.match(tpl, /https:\/\/scttfrdmn\.github\.io\/webgpu-compute-exploration\/validate\.html/, 'points at the deployed page');
+    assert.match(tpl, /\?smoke=1/, 'warns against the smoke plan');
+    assert.match(tpl, /-smoke\.json/);
+    const html = readFileSync(join(root, 'validate.html'), 'utf8');
+    for (const label of ['Download validation bundle (JSON)', 'Run validation', 'Matrix environment']) {
+        assert.ok(tpl.includes(label) && html.includes(label), `the template names "${label}" as validate.html labels it`);
+    }
+    assert.match(html, /href="https:\/\/github\.com\/scttfrdmn\/webgpu-compute-exploration\/issues\/new\?template=validation-bundle\.md"/);
+});
