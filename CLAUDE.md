@@ -67,6 +67,11 @@ One example (#10) uses a Rust/WASM crate in `wasm/`.
   presets, canvas or output) and each example has `.look-for` prompts (`test/explore-levels.test.mjs`). Measure
   experiments may declare `levels` and claims a `plain` text (`js/teach/measure-levels.js`; never copied into
   records). Learning-path tracks per level are `TRACKS_BY_LEVEL` in `path.js`.
+- `facilitate.html` + `js/teach/facilitate.js` (`SESSIONS`) + `content/facilitate/<id>.<level>.md` — session guides for
+  running an investigation with a learner; learner-facing lines are `> **Say:**` callouts, held to the level's
+  reading rules by `test/facilitate.test.mjs`. Validation runs from others arrive through
+  `.github/ISSUE_TEMPLATE/validation-bundle.md`; environments (with `vendors` matched against the adapter) are in
+  `data/validation/matrix.json`.
 - `js/teach/flagships.js` — data for the landing page's three reference investigations; each card cites `interpret()`
   claims by their stable `key`, and `test/flagships.test.mjs` fails if a card's wording drifts from the claims.
 - `schema/experiment-result.v1.json` — the experiment result schema. `tools/write-version.mjs` writes `version.json`

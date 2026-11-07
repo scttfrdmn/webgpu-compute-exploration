@@ -22,6 +22,8 @@ test predictions against your measurements — at three visitor levels, from mid
   [Advanced](https://scttfrdmn.github.io/webgpu-compute-exploration/learn.html).
 - **[Validation on physical GPUs](#validation-on-physical-gpus)** — what the reference investigations measured on real
   hardware, per device and browser, and how to [run the validation on yours](https://scttfrdmn.github.io/webgpu-compute-exploration/validate.html).
+- **[For teachers and parents](https://scttfrdmn.github.io/webgpu-compute-exploration/facilitate.html)** — session guides with an observation rubric for running an
+  investigation with one learner, per level (N-body at Beginner and Intermediate, matrix multiplication at Advanced).
 - **[All 25 examples](#the-25-examples)** — the catalog.
 
 ## Visitor levels
@@ -358,6 +360,14 @@ features are enabled (`chrome://flags/#enable-webgpu-developer-features`), so ve
 0 or 0.1 ms; long passes and averages over many frames are still meaningful.
 
 ## Validation on physical GPUs
+
+**Contribute a run.** Open the [validation page](https://scttfrdmn.github.io/webgpu-compute-exploration/validate.html) on the deployed site (not `?smoke=1`, a reduced
+CI plan the summary rejects) in the browser you want to record, fill in the environment fields and press **Run
+validation**, then **Download validation bundle (JSON)**. Open a [validation bundle
+issue](https://github.com/scttfrdmn/webgpu-compute-exploration/issues/new?template=validation-bundle.md), fill in the
+browser, OS and hardware, and attach the file (zip it if GitHub refuses `.json`). A maintainer checks it with
+`node tools/validation-summary.mjs`, commits it under `data/validation/<environment>/` and regenerates the tables below;
+no pull request is needed.
 
 CI runs everything on software GPUs (lavapipe, SwiftShader): a correctness gate, not a performance or
 portability result. The physical-GPU validation matrix records what the flagship investigations (matrix

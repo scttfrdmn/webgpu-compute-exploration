@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   are not used).
 - First visit (#108): the catalog asks a new visitor once whether to learn (Beginner or Intermediate, opening
   the learning path) or use the technical view (Advanced). Not shown on deep links or with ?level=.
+- Learning-evaluation kit (#107): `facilitate.html` with session guides for running an investigation with one
+  learner — N-body at Beginner ("what changes when you let the computer take shortcuts, and how can you tell
+  whether they are worth it?") and Intermediate, matrix multiplication at Advanced — each with what to say, what
+  not to explain first, prompts, and an observation rubric; a learning-session feedback issue template. The
+  site collects nothing.
+- Contributing validation runs (#103): a validation-bundle issue template, linked from validate.html and the README.
 
 ### Changed
 - README (#109): opens with what the project is and where to start (reference investigations, learning paths
