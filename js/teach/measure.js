@@ -17,6 +17,7 @@
 //     scope?: { shows: [string], doesNotShow: [string] },   // shown on the card before running
 //                                                // optional checks recorded with the result (see "Verification")
 //     levels?: ['beginner', 'intermediate', 'advanced'],   // visitor levels it is listed at (default: all)
+//     plannedSteps?(settings) → number,          // rows a complete run yields, so a stopped run can say "3 of 5"
 //     async *run(ctx, settings) { ... yield row ... }   // one row per sweep step
 //   }
 //
@@ -82,7 +83,7 @@ import { sourceInfo } from '../source-info.js';
 import { getLevel, onLevelChange } from './levels.js';
 import {
     experimentsForLevel, noExperimentsNote, resultView, INTRO_SIMPLE, claimsForLevel, rawClaimsOf, verdictText, agreesKey,
-    checksSummary, simpleProtocolText, rangeHeader, chartSpreadText, chartsForLevel,
+    runSummary, simpleProtocolText, rangeHeader, chartSpreadText, chartsForLevel,
 } from './measure-levels.js';
 
 export const MAX_BUDGET_MS = 20000;
@@ -121,6 +122,20 @@ export function outcomeOf(error) {
     if (!error) return { status: 'done' };
     if (error instanceof ExperimentStopped) return { status: error.reason, message: error.message };
     return { status: 'error', message: `Error: ${error.message}` };
+}
+
+// How a run ended, for runSummary (js/teach/measure-levels.js): the outcome, how many steps it has of how many
+// planned (experiment.plannedSteps, ignored when missing or inconsistent) and what the first column covers
+export function runState(experiment, settings, rows, error, { elapsedMs = 0, budgetMs = MAX_BUDGET_MS } = {}) {
+    let plannedSteps = null;
+    try {
+        const p = experiment.plannedSteps?.(settings);
+        if (Number.isInteger(p) && p >= rows.length && p > 0) plannedSteps = p;
+    } catch { /* unknown */ }
+    const column = experiment.columns?.[0];
+    const value = (row) => (column && row ? formatCell(column, row[column.key]) : null);
+    const covered = column && rows.length ? { label: column.label, first: value(rows[0]), last: value(rows.at(-1)) } : null;
+    return { outcome: outcomeOf(error), steps: rows.length, plannedSteps, elapsedMs, budgetMs, covered };
 }
 
 // Drives one experiment. Pure apart from the ctx it is given, so it is testable with a mock device.
@@ -360,6 +375,7 @@ function experimentCard(exampleId, experiment, panel) {
     runButtons.add(run);
     let rows = [];
     let record = null;
+    let lastRun = null;           // runState of the last finished run
     let settingsUsed = null;
     let drawn = false;
     let controller = null;
@@ -384,6 +400,7 @@ function experimentCard(exampleId, experiment, panel) {
         const settings = Object.fromEntries(Object.entries(values).map(([k, get]) => [k, get()]));
         rows = [];
         record = null;
+        lastRun = null;
         settingsUsed = settings;
         recordBar.hidden = true;
         protocol.hidden = true;
@@ -401,11 +418,8 @@ function experimentCard(exampleId, experiment, panel) {
                     + `${(ctx.elapsedMs() / 1000).toFixed(1)} s`;
                 redraw();
             });
-            status.textContent = `Done: ${rows.length} steps in ${(ctx.elapsedMs() / 1000).toFixed(1)} s.`;
         } catch (error) {
             failure = error;
-            const { message } = outcomeOf(error);
-            status.textContent = rows.length ? `${message} (${rows.length} step${rows.length === 1 ? '' : 's'} completed).` : `${message}.`;
             if (!(error instanceof ExperimentStopped)) {
                 status.className = 'experiment-status error';
                 console.error(`[Measure] ${exampleId}/${experiment.id}:`, error);
@@ -413,6 +427,9 @@ function experimentCard(exampleId, experiment, panel) {
         } finally {
             setIdle();
         }
+        // How the run ended comes first, at every level, before any check or claim (#105)
+        lastRun = runState(experiment, settings, rows, failure, { elapsedMs: ctx.elapsedMs(), budgetMs: ctx.budgetMs });
+        showStatus();
         redraw();
         if (!rows.length) { flushLevel(); return; }
         record = buildResultRecord({
@@ -458,12 +475,19 @@ function experimentCard(exampleId, experiment, panel) {
         await showComparison(compare, record, file);
     });
 
-    // The parts of a finished result that depend on the level (the record itself does not)
+    // The parts of a finished result that depend on the level (the record itself does not). The summary lines
+    // keep completion, verification and interpretation apart: status, then checks, then claims.
+    const claimsShown = () => claimsForLevel(record.interpretation,
+        level === 'advanced' ? [] : rawClaimsOf(experiment, rows, settingsUsed), level);
+    const summary = () => runSummary({ ...lastRun, checks: record?.verification ?? null, claims: record ? claimsShown() : [] }, level);
+    function showStatus() {
+        if (lastRun) status.textContent = summary()[0].text;
+    }
     function showRecord() {
+        const lines = summary();
         showProtocol(protocol, record, level);
-        showChecks(checks, record.verification, level);
-        const raw = level === 'advanced' ? [] : rawClaimsOf(experiment, rows, settingsUsed);
-        showInterpretation(interpretation, claimsForLevel(record.interpretation, raw, level), level);
+        showChecks(checks, record.verification, level, lines.find(l => l.kind === 'checks'));
+        showInterpretation(interpretation, claimsShown(), level, lines.find(l => l.kind === 'claims'));
     }
     const showScope = () => { if (scope) scope.hidden = !resultView(level).scope; };
     showScope();
@@ -472,6 +496,7 @@ function experimentCard(exampleId, experiment, panel) {
         level = next;
         showScope();
         if (drawn) drawResults(experiment, rows, charts, table, level);
+        showStatus();
         if (record) showRecord();
     };
     return { element: card, setLevel };
@@ -519,11 +544,19 @@ function scopeNote(scope) {
 // Measured vs predicted: each claim with the theory's expectation, the measurement with its uncertainty,
 // and whether they agree — in words, never color alone. `claims` come from claimsForLevel (at Advanced the
 // record's claims as they are).
-function showInterpretation(el, claims, level) {
+// `line` is runSummary's claims line (Beginner and Intermediate): a verdict is not a check of correctness.
+function showInterpretation(el, claims, level, line) {
     el.replaceChildren();
     if (!claims?.length) { el.hidden = true; return; }
     const heading = document.createElement('h5');
     heading.textContent = 'Measured vs predicted';
+    el.append(heading);
+    if (line) {
+        const p = document.createElement('p');
+        p.className = `hint claims-note claims-note-${line.status}`;
+        p.textContent = line.text;
+        el.append(p);
+    }
     const t = document.createElement('table');
     cellsRow(t.createTHead().insertRow(), ['Claim', 'Predicted', 'Measured', 'Verdict'], true);
     const body = t.createTBody();
@@ -539,22 +572,23 @@ function showInterpretation(el, claims, level) {
             notes.append(li);
         }
     }
-    el.append(heading, t);
+    el.append(t);
     if (notes.childElementCount) el.append(notes);
     el.hidden = false;
 }
 
-function showChecks(list, verification, level) {
+// The checks: at Beginner the summary line and each failed check, at Intermediate the summary line and every
+// check, at Advanced every check. `line` is runSummary's checks line (none at Advanced).
+function showChecks(list, verification, level, line) {
     list.replaceChildren();
-    if (resultView(level).checks === 'summary') {
+    if (line) {
         const li = document.createElement('li');
-        li.className = 'check-summary';
-        li.textContent = checksSummary(verification);
+        li.className = `check-summary check-summary-${line.status}`;
+        li.textContent = line.text;
         list.append(li);
-        list.hidden = false;
-        return;
     }
-    for (const c of verification) {
+    const shown = resultView(level).checks === 'summary' ? (line?.failed ?? verification.filter(c => c.status === 'fail')) : verification;
+    for (const c of shown) {
         const li = document.createElement('li');
         const s = document.createElement('span');
         s.className = 'check-status';

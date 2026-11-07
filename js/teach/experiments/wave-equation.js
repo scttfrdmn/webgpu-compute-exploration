@@ -62,6 +62,7 @@ const cfl = {
         + 'the amplitude never above its starting value and the discrete energy constant to 4e-7. Above the limit the run '
         + 'passes 1,000 × its starting amplitude after 110 steps at C = 0.71 (|g| = 1.20), 50 at 0.72 (|g| = 1.46) and 30 '
         + 'at 0.75 (|g| = 2.0). Nothing in the initial drop excites the checkerboard mode: rounding error seeds it.',
+    plannedSteps: () => COURANTS.length,
     async *run(ctx) {
         for (const courant of COURANTS) {
             await ctx.step();

@@ -305,6 +305,8 @@ footer {
 .experiment-numbers summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; margin: 6px 0; }
 .experiment-numbers summary:hover { color: var(--text); }
 .experiment-checks .check-summary { color: var(--text); }
+.experiment-checks .check-summary-fail { color: var(--error); font-weight: 600; }
+.experiment-interpretation .claims-note { margin: 2px 0 6px; }
 .understand .code-block { position: relative; }
 .understand .code-lang { position: absolute; top: 6px; right: 10px; font-size: 0.75rem; color: var(--muted); }
 .understand .table-wrap { overflow-x: auto; }
@@ -346,8 +348,10 @@ footer {
 .experiment-interpretation h5 { margin: 12px 0 4px; font-size: 0.95rem; }
 .experiment-interpretation table { border-collapse: collapse; font-size: 0.85rem; }
 .experiment-interpretation th, .experiment-interpretation td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
-.verdict-agrees { color: var(--accent-2); }
-.verdict-disagrees { color: var(--error); }
+/* A verdict says what the numbers mean, not whether they are right (#105): no success or error colours,
+   which belong to the checks */
+.verdict-agrees { color: var(--text); }
+.verdict-disagrees { color: var(--text); font-weight: 600; }
 .verdict-undetermined { color: var(--muted); }
 
 /* ---- Facilitator guides (facilitate.html, js/teach/facilitate.js) ---- */

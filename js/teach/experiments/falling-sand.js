@@ -131,6 +131,7 @@ const conservation = {
         + 'With fire, 408 of the 708 oil cells burn within about 300 steps and the fire is out by step 1,000, while sand, '
         + 'stone and water are untouched. With plants under water, 996 water cells turn into plant in 2,000 steps and '
         + 'water + plant stays exact.',
+    plannedSteps: () => CHECKPOINTS.length,
     async *run(ctx, { scene: key = 'plants' }) {
         const grid = scene(key);
         const c0 = materialCounts(grid);

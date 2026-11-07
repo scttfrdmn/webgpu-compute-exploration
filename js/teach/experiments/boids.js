@@ -123,6 +123,7 @@ const order = {
     baseline: 'The polarization starts near 1/√N (random headings). Alignment acts only within 50 px, so flocks form '
         + 'locally with different headings first; the global value rises as they merge. CI (N = 500, seed 21): 0.08 at '
         + 'the start, 0.36 after 150 steps, 0.65 after 300, 0.92 after 600, then 0.87–0.92 as flocks meet and split.',
+    plannedSteps: () => ORDER_SAMPLES + 1,   // the start, then one row per sample
     async *run(ctx, { n }) {
         const N = Math.min(n, MAX_BOIDS);
         let boids = randomBoids(N);
