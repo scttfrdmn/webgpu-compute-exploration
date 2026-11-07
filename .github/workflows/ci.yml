@@ -71,10 +71,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The lavapipe .debs are cached per runner image (#101): a slow Ubuntu mirror once took 8 minutes for the
+      # 19 MB mesa-vulkan-drivers download and ran this job into its limit. On a cache hit apt only fetches
+      # the package lists; a slow mirror on a miss now fails this step after 4 minutes, by name.
+      - name: Runner image (apt cache key)
+        id: image
+        run: echo "key=apt-lavapipe-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache Mesa lavapipe packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.image.outputs.key }}
       - name: Install Mesa lavapipe (software Vulkan)
+        timeout-minutes: 4
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+          mkdir -p ~/apt-archives/partial
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 \
+            -o Dir::Cache::Archives="$HOME/apt-archives" -o APT::Keep-Downloaded-Packages=true \
+            mesa-vulkan-drivers libvulkan1 vulkan-tools
+          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          ls ~/apt-archives
       - name: Force the lavapipe ICD
         run: |
           icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
@@ -85,9 +102,12 @@ jobs:
         run: vulkaninfo --summary
       - name: Install WebGPU runtime (dawn.node)
         run: npm install --no-save --no-package-lock --ignore-scripts "webgpu@$WEBGPU_NPM_VERSION"
+      # --test-timeout: the slowest single test seen in CI is ~97 s (maze "experiment size" on a slow runner,
+      # 37 s on a fast one), so 180 s fails a hung test by name with ~2x margin; the spec reporter prints
+      # "✖ <name> ... test timed out after 180000ms". GPU waits themselves time out after 90 s (harness.mjs).
       - name: GPU kernel tests
         run: >-
-          node --test --test-reporter=spec --test-concurrency=2 --test-timeout=240000
+          node --test --test-reporter=spec --test-concurrency=2 --test-timeout=180000
           --test-force-exit 'test/gpu/*.gpu.test.mjs'
 
   # Real-browser regression tests (test/browser/, #77): headless Chromium driven by Playwright on a
@@ -104,10 +124,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The lavapipe .debs are cached per runner image (#101): a slow Ubuntu mirror once took 8 minutes for the
+      # 19 MB mesa-vulkan-drivers download and ran this job into its limit. On a cache hit apt only fetches
+      # the package lists; a slow mirror on a miss now fails this step after 4 minutes, by name.
+      - name: Runner image (apt cache key)
+        id: image
+        run: echo "key=apt-lavapipe-$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache Mesa lavapipe packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.image.outputs.key }}
       - name: Install Mesa lavapipe (software Vulkan)
+        timeout-minutes: 4
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+          mkdir -p ~/apt-archives/partial
+          sudo apt-get update -q -o Acquire::Retries=3
+          sudo apt-get install -y -q --no-install-recommends -o Acquire::Retries=3 \
+            -o Dir::Cache::Archives="$HOME/apt-archives" -o APT::Keep-Downloaded-Packages=true \
+            mesa-vulkan-drivers libvulkan1 vulkan-tools
+          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+          ls ~/apt-archives
       - name: Force the lavapipe ICD
         run: |
           icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
@@ -115,9 +152,19 @@ jobs:
           echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
           echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
       - name: Install Playwright and Chromium (CI only, not saved to package.json)
+        timeout-minutes: 4
         run: |
           npm install --no-save --no-package-lock --ignore-scripts "@playwright/test@$PLAYWRIGHT_VERSION"
-          npx playwright install --with-deps chromium
+          npx playwright install chromium
+      # `install --with-deps` apt-installed Chromium's system libraries; on the runner image only optional
+      # fonts were missing, and their download from a slow mirror ran the job into its limit (#101). apt now
+      # runs only if a shared library of the downloaded browsers is actually missing.
+      - name: Chromium system libraries
+        timeout-minutes: 4
+        run: |
+          missing=$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell -o -name headless_shell \) \
+            -exec ldd {} \; | grep 'not found' | sort -u || true)
+          if [ -n "$missing" ]; then echo "$missing"; npx playwright install-deps chromium; else echo "all shared libraries present"; fi
       - name: Pick Chromium flags for a software WebGPU adapter
         timeout-minutes: 4
         run: node test/browser/probe.mjs

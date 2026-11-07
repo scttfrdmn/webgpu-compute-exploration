@@ -40,8 +40,51 @@ if (process.platform !== 'linux') refuse(`platform is ${process.platform}, not l
 const { create, globals } = await import('webgpu');
 Object.assign(globalThis, globals);   // GPUBufferUsage, GPUMapMode, GPUShaderStage, ...
 
+// ---- Hang guards (#101) ----
+// A GPU wait that never settles would otherwise sit until node --test's per-test timeout (or, at import
+// time, where there is no test timeout, until the CI job limit) with no hint of what was waiting. Every
+// wait below, and every mapAsync / onSubmittedWorkDone the examples' own code makes on this device, fails
+// after GPU_WAIT_MS with an error naming the call. The longest single wait is printed when a file ends
+// ("longest GPU wait"); in CI it is seconds, so 90 s only trips on a real hang, and inside the 180 s
+// --test-timeout of the gpu-software job.
+export const GPU_WAIT_MS = 90_000;
+const longest = { ms: 0, what: '' };
+
+/** `promise`, or a rejection naming `what` if it has not settled after `ms`. */
+export function withTimeout(promise, what, ms = GPU_WAIT_MS) {
+    const start = performance.now();
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`[test/gpu] ${what} did not settle within ${ms / 1000} s (GPU hang?)`)), ms);
+        timer.unref?.();
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+        clearTimeout(timer);
+        const took = performance.now() - start;
+        if (took > longest.ms) Object.assign(longest, { ms: took, what });
+    });
+}
+
+// Replaces method `name`, found on the prototype chain of `object`, with a timed version on the object that
+// defines it (the class prototype, so every buffer / the queue gets it). Returns where it went.
+function guardMethod(object, name, describe) {
+    let owner = object;
+    while (owner && !Object.prototype.hasOwnProperty.call(owner, name)) owner = Object.getPrototypeOf(owner);
+    if (!owner) return 'missing';
+    const original = owner[name];
+    try {
+        Object.defineProperty(owner, name, {
+            value: function (...args) { return withTimeout(original.apply(this, args), describe(this, args)); },
+            writable: true, configurable: true,
+        });
+    } catch (e) {
+        return `not wrapped: ${e.message}`;
+    }
+    return owner === object ? 'own property' : 'prototype';
+}
+
 let gpu = create(['backend=vulkan', 'adapter=llvmpipe']);
-const adapter = await gpu.requestAdapter();
+const adapter = await withTimeout(gpu.requestAdapter(), 'gpu.requestAdapter()');
 if (!adapter) refuse('no WebGPU adapter (is mesa-vulkan-drivers installed and VK_ICD_FILENAMES set?)');
 
 const info = adapter.info ?? {};
@@ -57,12 +100,27 @@ export const adapterInfo = `${infoText} fallback=${isFallback}`;
 console.log(`[test/gpu] adapter: ${adapterInfo}`);
 
 // Default limits, as a page calling requestDevice() without requiredLimits gets.
-export const device = await adapter.requestDevice();
+export const device = await withTimeout(adapter.requestDevice(), 'adapter.requestDevice()');
+
+// Timed GPU waits for everything that uses this device (the examples' compute exports included)
+{
+    const probe = device.createBuffer({ size: 16, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    const where = {
+        mapAsync: guardMethod(probe, 'mapAsync', (b, [mode]) =>
+            `GPUBuffer.mapAsync(${mode === GPUMapMode.READ ? 'READ' : mode === GPUMapMode.WRITE ? 'WRITE' : mode}) `
+            + `on a ${b.size}-byte buffer${b.label ? ` "${b.label}"` : ''}`),
+        onSubmittedWorkDone: guardMethod(device.queue, 'onSubmittedWorkDone', () => 'GPUQueue.onSubmittedWorkDone()'),
+    };
+    probe.destroy();
+    console.log(`[test/gpu] GPU waits time out after ${GPU_WAIT_MS / 1000} s: `
+        + Object.entries(where).map(([k, v]) => `${k} (${v})`).join(', '));
+}
 const uncaptured = [];
 device.addEventListener?.('uncapturederror', e => uncaptured.push(e.error.message));
 device.lost.then(i => { if (i.reason !== 'destroyed') console.error(`[test/gpu] device lost: ${i.message}`); });
 
 after(() => {
+    if (longest.what) console.log(`[test/gpu] longest GPU wait in this file: ${longest.ms.toFixed(0)} ms (${longest.what})`);
     device.destroy();
     gpu = null;   // dawn.node keeps the process alive while the instance is referenced
 });
