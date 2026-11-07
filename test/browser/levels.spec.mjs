@@ -66,3 +66,25 @@ test('Measure lists the experiments for the level', async ({ page }) => {
     await expect(visibleExperiments(page, 'cloth')).toHaveCount(0);
     await expect(panel(page, 'cloth', 'measure').locator('.measure-level-note')).toBeVisible();
 });
+
+test('first visit (#108): the catalog offers Learn or the technical view once; Learn opens the path at that level', async ({ page }) => {
+    await openSite(page, 'index.html');
+    const choice = page.locator('#first-visit .first-visit');
+    await expect(choice).toBeVisible();
+    await choice.locator('[data-choice="beginner"]').click();
+    await expect(page).toHaveURL(/learn\.html\?level=beginner/);
+    await expect(levelMenu(page)).toHaveValue('beginner');
+    await openSite(page, 'index.html');
+    await expect(page.locator('#first-visit .first-visit')).toHaveCount(0);
+});
+
+test('first visit: closing it keeps the technical view and it is not offered again; deep links never show it', async ({ page }) => {
+    await openSite(page, 'index.html#nbody/measure');
+    await expect(page.locator('#first-visit .first-visit')).toHaveCount(0);
+    await openSite(page, 'index.html');
+    await page.locator('#first-visit .first-visit-close').click();
+    await expect(page.locator('#first-visit')).toBeHidden();
+    await expect(levelMenu(page)).toHaveValue('advanced');
+    await page.reload();
+    await expect(page.locator('#first-visit .first-visit')).toHaveCount(0);
+});

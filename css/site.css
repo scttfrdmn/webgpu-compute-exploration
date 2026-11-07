@@ -49,6 +49,19 @@ header.hero p { margin: 0 0 18px; max-width: 760px; color: var(--muted); font-si
 .level-select select { border-radius: 999px; padding: 4px 10px; font-size: 0.9rem; }
 .level-select:focus-within { border-color: var(--accent); }
 .level-fallback-note { margin: 0 0 12px; }
+/* First visit (#108): learn at a level, or the technical view */
+.first-visit {
+    position: relative; margin: 0 0 28px; padding: 18px 22px; border: 1px solid var(--border);
+    border-left: 3px solid var(--accent); border-radius: 10px; background: var(--surface);
+}
+.first-visit h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.first-visit .hint { margin: 0 0 14px; max-width: 760px; }
+.first-visit-choices { display: flex; flex-wrap: wrap; gap: 10px; }
+.first-visit-close {
+    position: absolute; top: 8px; right: 10px; border: none; background: none; color: var(--muted);
+    font-size: 1.3rem; line-height: 1; padding: 4px 8px; cursor: pointer;
+}
+.first-visit-close:hover { color: var(--text); }
 
 /* Opt-in device report: built on request, copied to the clipboard, never sent automatically */
 .device-report { margin-top: 12px; max-width: 760px; }

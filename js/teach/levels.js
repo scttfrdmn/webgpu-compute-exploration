@@ -59,7 +59,14 @@ export function shownFor(levelList, level) {
     return String(levelList ?? '').split(/\s+/).some(v => parseLevel(v) === at);
 }
 
-export const levelText =(level) => `${LEVEL_INFO[level].label} (${LEVEL_INFO[level].audience})`;
+// The first-visit choice (#108) is offered on the catalog only to someone with no level yet: no ?level=, nothing
+// stored, and no deep link to an example (#nbody/measure: they came for something specific)
+export function shouldOfferLevelChoice({ search = '', stored = null, hash = '' } = {}) {
+    if (parseLevel(new URLSearchParams(search).get(PARAM)) || parseLevel(stored)) return false;
+    return !String(hash).replace(/^#/, '');
+}
+
+export const levelText = (level) => `${LEVEL_INFO[level].label} (${LEVEL_INFO[level].audience})`;
 
 // ---- browser ------------------------------------------------------------------------------------------
 let current = null;
@@ -93,6 +100,45 @@ export function setLevel(level) {
 export function onLevelChange(callback) {
     listeners.add(callback);
     return () => listeners.delete(callback);
+}
+
+// The first-visit choice: Learn (Beginner or Intermediate, opening the learning path) or the technical view
+// (Advanced, staying here). Any choice, or dismissing it, stores a level, so it is offered once.
+export function mountFirstVisitChoice(container, { learnPage = 'learn.html' } = {}) {
+    if (!shouldOfferLevelChoice({ search: location.search, stored: readStored(), hash: location.hash })) return false;
+    const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text) n.textContent = text; return n; };
+    const box = el('section', 'first-visit');
+    box.setAttribute('aria-labelledby', 'first-visit-title');
+    const title = el('h2', null, 'How would you like to start?');
+    title.id = 'first-visit-title';
+    const choices = el('div', 'first-visit-choices');
+    const choose = (level, go) => {
+        setLevel(level);
+        try { localStorage.setItem(STORAGE_KEY, level); } catch { /* the URL carries it */ }
+        container.hidden = true;
+        box.remove();
+        if (go) location.href = `${learnPage}${searchWithLevel('', level)}`;
+    };
+    for (const [level, text, go] of [
+        ['beginner', 'Learn — Beginner (middle school)', true],
+        ['intermediate', 'Learn — Intermediate (high school)', true],
+        ['advanced', 'Technical exploration (college and beyond)', false],
+    ]) {
+        const button = el('button', level === 'advanced' ? null : 'primary', text);
+        button.type = 'button';
+        button.dataset.choice = level;
+        button.addEventListener('click', () => choose(level, go));
+        choices.append(button);
+    }
+    const close = el('button', 'first-visit-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Close and use the technical view');
+    close.addEventListener('click', () => choose('advanced', false));
+    box.append(close, title, el('p', 'hint', 'Learning starts with a guided path and simpler explanations. The technical view shows '
+        + 'every control and the full measurement detail. You can change this at any time with the Level menu at the top.'), choices);
+    container.append(box);
+    container.hidden = false;
+    return true;
 }
 
 // A labelled <select> for the hero links of index.html and learn.html

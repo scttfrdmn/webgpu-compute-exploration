@@ -12,6 +12,8 @@ All notable changes to this project are documented here. The format follows
   vendor, and bundles record the adapter's features and key limits. The README summary adds a features and
   limits table and a per-device performance table (not a ranking; GPU timestamps that exceed the wall time
   are not used).
+- First visit (#108): the catalog asks a new visitor once whether to learn (Beginner or Intermediate, opening
+  the learning path) or use the technical view (Advanced). Not shown on deep links or with ?level=.
 
 ## [0.8.0] - 2026-11-05
 
