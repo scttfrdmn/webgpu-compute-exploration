@@ -67,3 +67,32 @@ export function controllableDeviceLoss() {
         return device;
     };
 }
+
+// A page clock the test can jump forward (#105): performance.now() gets an offset, and
+// window.__stopAfterSteps(statusElement, k) adds an hour to it as soon as that Measure status reports k finished
+// steps. The run's next step boundary then sees its time budget spent and stops with reason 'budget', after
+// exactly k steps, however fast or slow the GPU is.
+export function controllableClock() {
+    const now = performance.now.bind(performance);
+    let offset = 0;
+    performance.now = () => now() + offset;
+    window.__stopAfterSteps = (status, steps) => {
+        const observer = new MutationObserver(() => {
+            const m = /^Running… (\d+) step/.exec(status.textContent);
+            if (m && Number(m[1]) >= steps) { offset += 3600_000; observer.disconnect(); }
+        });
+        observer.observe(status, { childList: true, characterData: true, subtree: true });
+    };
+}
+
+// A wrong CPU reference: Uint32Array sort() swaps the first and last keys of its result, so every GPU sort that
+// is compared with it (parallel-sort's verify()) fails its check
+export function corruptUint32Sort() {
+    const sort = Uint32Array.prototype.sort;
+    Uint32Array.prototype.sort = function (...args) {
+        const out = sort.apply(this, args);
+        const last = this.length - 1;
+        if (last > 0 && this[0] !== this[last]) [this[0], this[last]] = [this[last], this[0]];
+        return out;
+    };
+}

@@ -482,6 +482,7 @@ const scaling = {
             'Production GPU sorting: these are teaching implementations (4-bit digits, a one-workgroup scan)',
         ],
     },
+    plannedSteps: ({ maxN } = {}) => COUNTS.filter(n => n <= Math.min(maxN ?? MAX_N, MAX_N, MEASURE_MAX_KEYS)).length,
     async *run(ctx, { dataType, maxN }) {
         const timerMs = timerResolution();   // performance.now() resolution, recorded in every row
         const clock = new PhaseClock();

@@ -252,6 +252,7 @@ const threeWay = {
         + '(1.24–1.33) at 1,024. Fitted slopes over n = 128 … 1,024: naive 2.91 (95% CI 2.73 … 3.09), tiled 2.80 (1.67 … 3.92); '
         + 'CPU over 64 … 512: 2.82 (2.17 … 3.47). Errors 0.71–0.90 √n·u for all three, naive and tiled bit-identical at every n. '
         + 'On a real GPU expect tens to thousands of GFLOPS, a larger tiling gain, and a crossover with the CPU at a few hundred.',
+    plannedSteps: ({ maxN = DEFAULT_MAX_N } = {}) => SIZES.filter(n => n <= Math.min(maxN, MAX_SIZE, MAX_MATMUL_DIM)).length,
     async *run(ctx, { maxN = DEFAULT_MAX_N } = {}) {
         const useGpu = ctx.timestamps === true;
         const timing = useGpu ? 'timestamps' : 'wall (submit → done)';
